@@ -1,0 +1,13 @@
+# Rust
+target/
+Cargo.lock
+
+# Environment
+.env
+
+# IDEs
+.idea/
+.vscode/
+
+# OS generated files
+.DS_Store
