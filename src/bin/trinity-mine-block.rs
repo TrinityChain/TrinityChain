@@ -6,7 +6,6 @@ use trinitychain::crypto::KeyPair;
 use trinitychain::miner::mine_block;
 use trinitychain::wallet;
 use secp256k1::SecretKey;
-use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");

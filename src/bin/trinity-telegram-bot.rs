@@ -1,5 +1,6 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
 use log::info;
+use trinitychain::persistence::Database;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -49,19 +50,66 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
             info!("Handled /blocks command for user: {:?}", message.from());
         }
         Command::Genesis => {
-            bot.send_message(message.chat.id, "Genesis block: coming soon...").await?;
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        if let Some(genesis_block) = chain.blocks.get(0) {
+                            let header = &genesis_block.header;
+                            let timestamp = chrono::NaiveDateTime::from_timestamp_opt(header.timestamp, 0)
+                                .map(|t| t.to_string())
+                                .unwrap_or_else(|| "Invalid timestamp".to_string());
+                            let headline = header.headline.as_deref().unwrap_or("N/A");
+                            format!(
+                                "Genesis Block:\n- Timestamp: {}\n- Headline: {}\n- Hash: {}",
+                                timestamp,
+                                headline,
+                                hex::encode(genesis_block.hash)
+                            )
+                        } else {
+                            "Genesis block not found.".to_string()
+                        }
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /genesis command for user: {:?}", message.from());
         }
         Command::Triangles => {
-            bot.send_message(message.chat.id, "Total triangles in UTXO: coming soon...").await?;
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => format!("Total triangles in UTXO set: {}", chain.state.count()),
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /triangles command for user: {:?}", message.from());
         }
         Command::Difficulty => {
-            bot.send_message(message.chat.id, "Current mining difficulty: coming soon...").await?;
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => format!("Current mining difficulty: {}", chain.difficulty),
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /difficulty command for user: {:?}", message.from());
         }
         Command::Height => {
-            bot.send_message(message.chat.id, "Current blockchain height: coming soon...").await?;
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
+                        format!("Current blockchain height: {}", height)
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /height command for user: {:?}", message.from());
         }
         Command::About => {
