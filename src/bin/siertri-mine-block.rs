@@ -51,10 +51,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let coinbase = CoinbaseTx { reward_area: 1000, beneficiary_address: address };
 
-    let transactions = vec![
-        Transaction::Coinbase(coinbase),
-        Transaction::Subdivision(tx),
-    ];
+    // Include pending transactions from mempool (prioritized by fee)
+    let mempool_txs = chain.mempool.get_transactions_by_fee(100); // Get up to 100 highest-fee transactions
+
+    let mut transactions = vec![Transaction::Coinbase(coinbase)];
+
+    // Add mempool transactions first (they have fees!)
+    transactions.extend(mempool_txs);
+
+    // Then add our subdivision transaction
+    transactions.push(Transaction::Subdivision(tx));
 
     println!("⛏️  Mining block (difficulty {})...", chain.difficulty);
 

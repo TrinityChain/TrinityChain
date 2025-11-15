@@ -21,24 +21,38 @@ const LOGO: &str = r#"
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", LOGO.bright_cyan());
 
+    let args: Vec<String> = std::env::args().collect();
     let home = std::env::var("HOME")?;
-    let wallet_file = format!("{}/.siertrichain/wallet.json", home);
 
-    let wallet_content = std::fs::read_to_string(&wallet_file)
-        .map_err(|e| {
-            eprintln!("{}", "╔══════════════════════════════════════════╗".red());
-            eprintln!("{}", "║         ❌ Wallet Not Found!            ║".red().bold());
-            eprintln!("{}", "╚══════════════════════════════════════════╝".red());
-            eprintln!();
-            eprintln!("{}", "💡 Run 'wallet new' to create a wallet".yellow());
-            format!("No wallet found at {}: {}", wallet_file, e)
-        })?;
+    // Check if address was provided as argument
+    let my_address = if args.len() > 1 {
+        args[1].clone()
+    } else {
+        // Otherwise, load from wallet file (support WALLET_NAME env var)
+        let wallet_name = std::env::var("WALLET_NAME").unwrap_or_else(|_| String::new());
+        let wallet_file = if wallet_name.is_empty() {
+            format!("{}/.siertrichain/wallet.json", home)
+        } else {
+            format!("{}/.siertrichain/wallet_{}.json", home, wallet_name)
+        };
 
-    let wallet_data: serde_json::Value = serde_json::from_str(&wallet_content)
-        .map_err(|e| format!("Failed to parse wallet: {}", e))?;
+        let wallet_content = std::fs::read_to_string(&wallet_file)
+            .map_err(|e| {
+                eprintln!("{}", "╔══════════════════════════════════════════╗".red());
+                eprintln!("{}", "║         ❌ Wallet Not Found!            ║".red().bold());
+                eprintln!("{}", "╚══════════════════════════════════════════╝".red());
+                eprintln!();
+                eprintln!("{}", "💡 Run 'siertri-wallet-new <name>' to create a wallet".yellow());
+                format!("No wallet found at {}: {}", wallet_file, e)
+            })?;
 
-    let my_address = wallet_data["address"].as_str()
-        .ok_or("Wallet address not found in wallet file")?;
+        let wallet_data: serde_json::Value = serde_json::from_str(&wallet_content)
+            .map_err(|e| format!("Failed to parse wallet: {}", e))?;
+
+        wallet_data["address"].as_str()
+            .ok_or("Wallet address not found in wallet file")?
+            .to_string()
+    };
 
     let db = Database::open("siertrichain.db")
         .map_err(|e| format!("Failed to open database: {}", e))?;
@@ -69,11 +83,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut total_area = 0.0;
     let mut triangle_list = Vec::new();
 
+    // Filter triangles owned by this address
     for (hash, triangle) in &chain.state.utxo_set {
-        my_triangles += 1;
-        total_area += triangle.area();
-        let hash_hex = hex::encode(hash);
-        triangle_list.push((hash_hex, triangle.area()));
+        if triangle.owner == my_address {
+            my_triangles += 1;
+            total_area += triangle.area();
+            let hash_hex = hex::encode(hash);
+            triangle_list.push((hash_hex, triangle.area()));
+        }
     }
 
     if my_triangles == 0 {

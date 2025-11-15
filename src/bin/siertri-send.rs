@@ -71,9 +71,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pb.enable_steady_tick(Duration::from_millis(100));
 
     let home = std::env::var("HOME")?;
-    let wallet_file = format!("{}/.siertrichain/wallet.json", home);
 
-    let wallet_content = std::fs::read_to_string(&wallet_file)?;
+    // Support WALLET_NAME environment variable for multi-wallet support
+    let wallet_name = std::env::var("WALLET_NAME").unwrap_or_else(|_| String::new());
+    let wallet_file = if wallet_name.is_empty() {
+        format!("{}/.siertrichain/wallet.json", home)
+    } else {
+        format!("{}/.siertrichain/wallet_{}.json", home, wallet_name)
+    };
+
+    let wallet_content = std::fs::read_to_string(&wallet_file)
+        .map_err(|e| format!("Wallet not found at {}: {}", wallet_file, e))?;
     let wallet_data: serde_json::Value = serde_json::from_str(&wallet_content)?;
 
     let from_address = wallet_data["address"].as_str()
