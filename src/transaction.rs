@@ -1,4 +1,4 @@
-//! Transaction types for siertrichain
+//! Transaction types for TrinityChain
 
 use sha2::{Digest, Sha256};
 use crate::blockchain::{Sha256Hash, TriangleState};

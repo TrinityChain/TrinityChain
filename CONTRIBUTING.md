@@ -1,6 +1,6 @@
 # Contributing to Sierpinski Triangle Blockchain
 
-Thank you for your interest in contributing to **siertrichain**! This is a unique project combining fractal geometry with blockchain technology, and we're excited to have you here.
+Thank you for your interest in contributing to **TrinityChain**! This is a unique project combining fractal geometry with blockchain technology, and we're excited to have you here.
 
 ## 🌟 Welcome New Contributors!
 
@@ -20,8 +20,8 @@ This project is currently in **early development** (v0.1.0), which means:
 
 ```bash
 # Fork the repository on GitHub, then:
-git clone https://github.com/YOUR_USERNAME/seirtrichain.git
-cd seirtrichain
+git clone https://github.com/YOUR_USERNAME/trinitychain.git
+cd trinitychain
 ```
 
 ### 2. Build & Test
@@ -34,8 +34,8 @@ cargo build --release
 cargo test
 
 # Try the miner
-cargo run --bin siertri-wallet-new
-cargo run --release --bin siertri-miner <your_address>
+cargo run --bin trinity-wallet-new
+cargo run --release --bin trinity-miner <your_address>
 ```
 
 ### 3. Create a Branch
@@ -89,7 +89,7 @@ This is a novel blockchain design! We welcome research on:
 
 ### Step 1: Pick an Issue (or Create One)
 
-Browse [GitHub Issues](https://github.com/littlekickoffkittie/seirtrichain/issues) for:
+Browse [GitHub Issues](https://github.com/littlekickoffkittie/trinitychain/issues) for:
 - `good first issue` - Perfect for newcomers
 - `help wanted` - We need your expertise
 - `bug` - Something's broken
@@ -111,7 +111,7 @@ cargo test
 cargo build --release
 
 # Test mining/wallet functionality
-cargo run --release --bin siertri-miner <address>
+cargo run --release --bin trinity-miner <address>
 ```
 
 ### Step 3: Write Good Commit Messages
@@ -277,7 +277,7 @@ cargo clippy --fix
 ## 🏗️ Project Structure
 
 ```
-siertrichain/
+TrinityChain/
 ├── src/
 │   ├── lib.rs              # Public API exports
 │   ├── blockchain.rs       # Core blockchain logic
@@ -288,8 +288,8 @@ siertrichain/
 │   ├── network.rs          # P2P networking
 │   ├── error.rs            # Error types
 │   └── bin/                # CLI tools
-│       ├── siertri-miner.rs
-│       ├── siertri-wallet.rs
+│       ├── trinity-miner.rs
+│       ├── trinity-wallet.rs
 │       └── ...
 ├── tests/                  # Integration tests
 ├── Cargo.toml              # Dependencies
@@ -320,7 +320,7 @@ Found a bug? Please report it!
 Clear description of the bug
 
 **Steps to Reproduce**
-1. Run `cargo run --bin siertri-miner <address>`
+1. Run `cargo run --bin trinity-miner <address>`
 2. Wait for 10 blocks
 3. See error: ...
 
@@ -465,8 +465,8 @@ These areas need help but may change significantly:
 
 ## 📞 Contact
 
-- **GitHub Issues**: [siertrichain/issues](https://github.com/littlekickoffkittie/seirtrichain/issues)
-- **Repository**: [github.com/littlekickoffkittie/seirtrichain](https://github.com/littlekickoffkittie/seirtrichain)
+- **GitHub Issues**: [TrinityChain/issues](https://github.com/littlekickoffkittie/trinitychain/issues)
+- **Repository**: [github.com/littlekickoffkittie/trinitychain](https://github.com/littlekickoffkittie/trinitychain)
 
 ---
 

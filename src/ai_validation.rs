@@ -1,4 +1,4 @@
-//! AI Validation module for siertrichain
+//! AI Validation module for TrinityChain
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,7 @@ impl AIValidator {
     }
 
     pub async fn validate_transaction(&self, transaction_data: &str) -> Result<bool, ChainError> {
-        let prompt = format!("Is the following transaction valid for the siertrichain network? Respond with only 'true' or 'false'.\n\n{}", transaction_data);
+        let prompt = format!("Is the following transaction valid for the TrinityChain network? Respond with only 'true' or 'false'.\n\n{}", transaction_data);
 
         let request_body = ApiRequestBody {
             model: "deepseek-coder".to_string(),

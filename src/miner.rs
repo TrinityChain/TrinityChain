@@ -1,4 +1,4 @@
-//! Proof-of-Work (PoW) implementation for siertrichain.
+//! Proof-of-Work (PoW) implementation for TrinityChain.
 
 use crate::blockchain::{Block, Sha256Hash};
 use crate::error::ChainError;

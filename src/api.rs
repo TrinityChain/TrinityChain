@@ -55,7 +55,7 @@ struct AppState {
 }
 
 pub async fn run_api_server() {
-    let db = Database::open("siertrichain.db").unwrap();
+    let db = Database::open("trinitychain.db").unwrap();
     let blockchain = db.load_blockchain().unwrap();
 
     let app_state = AppState {
@@ -68,7 +68,7 @@ pub async fn run_api_server() {
     // Initialize network state with default values
     {
         let mut node_id = app_state.network.node_id.lock().unwrap();
-        *node_id = format!("siertri-node-{}", rand::random::<u32>());
+        *node_id = format!("trinity-node-{}", rand::random::<u32>());
         let mut port = app_state.network.listening_port.lock().unwrap();
         *port = 8333;
     }
@@ -399,10 +399,10 @@ async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
     }
 
     // Get a wallet address for mining rewards
-    let wallet_path = std::env::var("HOME").unwrap_or_else(|_| ".".to_string()) + "/.siertrichain/wallet.json";
+    let wallet_path = std::env::var("HOME").unwrap_or_else(|_| ".".to_string()) + "/.trinitychain/wallet.json";
     let wallet_data = match std::fs::read_to_string(&wallet_path) {
         Ok(data) => data,
-        Err(_) => return (StatusCode::BAD_REQUEST, "No wallet found. Create a wallet first using siertri-wallet-new").into_response(),
+        Err(_) => return (StatusCode::BAD_REQUEST, "No wallet found. Create a wallet first using trinity-wallet-new").into_response(),
     };
 
     let wallet: serde_json::Value = match serde_json::from_str(&wallet_data) {

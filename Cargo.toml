@@ -1,10 +1,10 @@
 [package]
-name = "siertrichain"
+name = "trinitychain"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "siertrichain"
+name = "trinitychain"
 path = "src/lib.rs"
 
 [dependencies]
@@ -33,52 +33,52 @@ parking_lot = "0.12"
 ipnetwork = "0.20"
 
 [[bin]]
-name = "siertri-wallet"
-path = "src/bin/siertri-wallet.rs"
+name = "trinity-wallet"
+path = "src/bin/trinity-wallet.rs"
 
 [[bin]]
-name = "siertri-miner"
-path = "src/bin/siertri-miner.rs"
+name = "trinity-miner"
+path = "src/bin/trinity-miner.rs"
 
 [[bin]]
-name = "siertri-node"
-path = "src/bin/siertri-node.rs"
+name = "trinity-node"
+path = "src/bin/trinity-node.rs"
 
 [[bin]]
-name = "siertri-send"
-path = "src/bin/siertri-send.rs"
+name = "trinity-send"
+path = "src/bin/trinity-send.rs"
 
 [[bin]]
-name = "siertri-wallet-new"
-path = "src/bin/siertri-wallet-new.rs"
+name = "trinity-wallet-new"
+path = "src/bin/trinity-wallet-new.rs"
 
 [[bin]]
-name = "siertri-balance"
-path = "src/bin/siertri-balance.rs"
+name = "trinity-balance"
+path = "src/bin/trinity-balance.rs"
 
 [[bin]]
-name = "siertri-mine-block"
-path = "src/bin/siertri-mine-block.rs"
+name = "trinity-mine-block"
+path = "src/bin/trinity-mine-block.rs"
 
 [[bin]]
-name = "siertri-history"
-path = "src/bin/siertri-history.rs"
+name = "trinity-history"
+path = "src/bin/trinity-history.rs"
 
 [[bin]]
-name = "siertri-wallet-backup"
-path = "src/bin/siertri-wallet-backup.rs"
+name = "trinity-wallet-backup"
+path = "src/bin/trinity-wallet-backup.rs"
 
 [[bin]]
-name = "siertri-wallet-restore"
-path = "src/bin/siertri-wallet-restore.rs"
+name = "trinity-wallet-restore"
+path = "src/bin/trinity-wallet-restore.rs"
 
 [[bin]]
-name = "siertri-addressbook"
-path = "src/bin/siertri-addressbook.rs"
+name = "trinity-addressbook"
+path = "src/bin/trinity-addressbook.rs"
 
 [[bin]]
-name = "siertri-api"
-path = "src/bin/siertri-api.rs"
+name = "trinity-api"
+path = "src/bin/trinity-api.rs"
 
 [dev-dependencies]
 axum-test = "14.1.1"

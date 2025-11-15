@@ -114,7 +114,7 @@ impl AddressBook {
 /// Get the default address book path
 pub fn get_addressbook_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".siertrichain").join("addressbook.json")
+    PathBuf::from(home).join(".trinitychain").join("addressbook.json")
 }
 
 /// Load the default address book

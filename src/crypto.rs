@@ -1,4 +1,4 @@
-//! Cryptographic primitives for siertrichain
+//! Cryptographic primitives for TrinityChain
 
 use sha2::{Digest, Sha256};
 use secp256k1::{Secp256k1, SecretKey, PublicKey, Message, ecdsa::Signature};
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn test_signing_and_verification() {
         let keypair = KeyPair::generate().unwrap();
-        let message = b"Hello, siertrichain!";
+        let message = b"Hello, TrinityChain!";
         
         let signature = keypair.sign(message).unwrap();
         let pubkey_bytes = keypair.public_key.serialize();

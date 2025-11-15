@@ -1,6 +1,6 @@
 # Siertrichain Security Implementation Guide
 
-This document describes the comprehensive security features implemented in siertrichain v0.1.0+, including wallet encryption, peer authentication, firewall rules, VPN support, and rate limiting.
+This document describes the comprehensive security features implemented in TrinityChain v0.1.0+, including wallet encryption, peer authentication, firewall rules, VPN support, and rate limiting.
 
 ## Table of Contents
 
@@ -38,7 +38,7 @@ wallet-new
 # Enter a strong password (16+ characters recommended)
 # Confirm the password
 
-# Wallet saved to ~/.siertrichain/wallet.json
+# Wallet saved to ~/.TrinityChain/wallet.json
 ```
 
 ### Loading an Encrypted Wallet
@@ -124,8 +124,8 @@ Each node's public key is included in authentication messages. Store trusted pee
 
 ```bash
 # Save peer's public key for reference
-mkdir -p ~/.siertrichain/trusted_peers
-echo "peer1_pubkey" > ~/.siertrichain/trusted_peers/peer1.pub
+mkdir -p ~/.TrinityChain/trusted_peers
+echo "peer1_pubkey" > ~/.TrinityChain/trusted_peers/peer1.pub
 ```
 
 ## Firewall Rules
@@ -492,8 +492,8 @@ Before production deployment:
 wallet-restore
 
 # Check file permissions
-ls -la ~/.siertrichain/wallet.json
-chmod 600 ~/.siertrichain/wallet.json
+ls -la ~/.TrinityChain/wallet.json
+chmod 600 ~/.TrinityChain/wallet.json
 ```
 
 ### API Rate Limit Exceeded
@@ -510,7 +510,7 @@ export SIERTRI_API_RATE_LIMIT=100
 Found a security vulnerability? Please report it responsibly:
 
 1. **Don't** create a public GitHub issue
-2. **Do** email security@siertrichain.dev with:
+2. **Do** email security@TrinityChain.dev with:
    - Description of vulnerability
    - Steps to reproduce
    - Potential impact

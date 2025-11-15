@@ -1,4 +1,4 @@
-# siertrichain
+# TrinityChain
 
 **🎉 MAJOR MILESTONE: Core Blockchain + Cryptography Complete! 🎉**
 

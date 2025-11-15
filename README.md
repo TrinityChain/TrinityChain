@@ -1,4 +1,4 @@
-# siertrichain
+# TrinityChain
 
 > A revolutionary blockchain using Sierpinski triangles as the fundamental unit of value
 
@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.90%2B-orange)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
-**siertrichain** is a novel blockchain implementation that replaces traditional cryptocurrency coins with **fractal geometric shapes** (Sierpinski triangles). Instead of transferring coins, users subdivide and transfer triangular regions, creating a unique economy based on fractal geometry.
+**TrinityChain** is a novel blockchain implementation that replaces traditional cryptocurrency coins with **fractal geometric shapes** (Sierpinski triangles). Instead of transferring coins, users subdivide and transfer triangular regions, creating a unique economy based on fractal geometry.
 
 ## Key Features
 
@@ -22,7 +22,7 @@
 
 ### Triangle Economy
 
-Traditional blockchains use coins. **siertrichain** uses geometric triangles:
+Traditional blockchains use coins. **TrinityChain** uses geometric triangles:
 
 1. **Genesis Triangle**: The blockchain starts with one large triangle
 2. **Subdivision**: Triangles can be split into 3 smaller triangles (75% area conservation)
@@ -52,8 +52,8 @@ Each triangle has:
 
 ```bash
 # Clone the repository
-git clone https://github.com/littlekickoffkittie/seirtrichain.git
-cd seirtrichain
+git clone https://github.com/littlekickoffkittie/trinitychain.git
+cd trinitychain
 
 # Build the project
 cargo build --release
@@ -68,9 +68,9 @@ cargo test
 
 ```bash
 # Generate a new wallet with keypair
-cargo run --bin siertri-wallet-new
+cargo run --bin trinity-wallet-new
 
-# This creates: ~/.siertrichain/wallet.json
+# This creates: ~/.TrinityChain/wallet.json
 ```
 
 Your wallet contains:
@@ -82,17 +82,17 @@ Your wallet contains:
 
 ```bash
 # Start a standalone node on port 8333
-cargo run --bin siertri-node 8333
+cargo run --bin trinity-node 8333
 
 # Connect to another node
-cargo run --bin siertri-node 8334 --peer 192.168.1.100:8333
+cargo run --bin trinity-node 8334 --peer 192.168.1.100:8333
 ```
 
 ### 3. Check Balance
 
 ```bash
 # View your triangle holdings
-cargo run --bin siertri-balance
+cargo run --bin trinity-balance
 
 # Output shows:
 # - Triangle hashes you own
@@ -104,13 +104,13 @@ cargo run --bin siertri-balance
 
 ```bash
 # Get your wallet address first
-cargo run --bin siertri-wallet
+cargo run --bin trinity-wallet
 
 # Run continuous mining (RECOMMENDED - includes full statistics)
-cargo run --release --bin siertri-miner <your_wallet_address>
+cargo run --release --bin trinity-miner <your_wallet_address>
 
 # Mine a single block
-cargo run --bin siertri-mine-block
+cargo run --bin trinity-mine-block
 ```
 
 **New Enhanced Miner Output:**
@@ -140,12 +140,12 @@ Mining process:
 
 ```bash
 # Send a triangle to another address
-cargo run --bin siertri-send <recipient_address> <triangle_hash>
+cargo run --bin trinity-send <recipient_address> <triangle_hash>
 ```
 
 Example:
 ```bash
-cargo run --bin siertri-send \
+cargo run --bin trinity-send \
   1a2b3c4d5e6f7g8h9i0j \
   abc123def456triangle_hash_here
 ```
@@ -156,7 +156,7 @@ The blockchain can be queried through a REST API.
 
 **Start the API Server:**
 ```bash
-cargo run --bin siertri-api
+cargo run --bin trinity-api
 ```
 
 **Endpoints:**
@@ -170,19 +170,19 @@ cargo run --bin siertri-api
 
 | Tool | Purpose |
 |------|---------|
-| `siertri-api` | Runs the REST API server |
-| `siertri-wallet-new` | Create a new wallet |
-| `siertri-wallet` | Manage existing wallet |
-| `siertri-balance` | Check triangle holdings |
-| `siertri-send` | Transfer triangles |
-| `siertri-mine-block` | Mine a single block |
-| `siertri-miner` | Continuous mining daemon |
-| `siertri-node` | P2P network node |
+| `trinity-api` | Runs the REST API server |
+| `trinity-wallet-new` | Create a new wallet |
+| `trinity-wallet` | Manage existing wallet |
+| `trinity-balance` | Check triangle holdings |
+| `trinity-send` | Transfer triangles |
+| `trinity-mine-block` | Mine a single block |
+| `trinity-miner` | Continuous mining daemon |
+| `trinity-node` | P2P network node |
 
 ## Architecture
 
 ```
-siertrichain/
+TrinityChain/
 ├── src/
 │   ├── lib.rs              # Module exports
 │   ├── geometry.rs         # Sierpinski triangle math
@@ -195,7 +195,7 @@ siertrichain/
 │   ├── error.rs            # Error handling
 │   └── bin/                # CLI tools (7 binaries)
 ├── Cargo.toml
-└── siertrichain.db         # Blockchain database
+└── TrinityChain.db         # Blockchain database
 ```
 
 ## Database Schema
@@ -270,7 +270,7 @@ Environment variables:
 
 ```bash
 # Wallet location
-HOME=~/.siertrichain
+HOME=~/.TrinityChain
 
 # Optional: AI validation (experimental) - leave blank if not using
 # DEEPSEEK_API_KEY=sk-your-key-here
@@ -308,28 +308,28 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for the full roadmap (200+ planned fe
 
 ```bash
 # 1. Create two wallets
-cargo run --bin siertri-wallet-new
+cargo run --bin trinity-wallet-new
 # Save address as ALICE_ADDR
 
-cargo run --bin siertri-wallet-new
+cargo run --bin trinity-wallet-new
 # Save address as BOB_ADDR
 
 # 2. Mine blocks (Alice's wallet is active)
-cargo run --bin siertri-mine-block
+cargo run --bin trinity-mine-block
 
 # 3. Check Alice's balance
-cargo run --bin siertri-balance
+cargo run --bin trinity-balance
 # Note a triangle hash: TRIANGLE_HASH
 
 # 4. Send triangle to Bob
-cargo run --bin siertri-send $BOB_ADDR $TRIANGLE_HASH
+cargo run --bin trinity-send $BOB_ADDR $TRIANGLE_HASH
 
 # 5. Mine another block to confirm
-cargo run --bin siertri-mine-block
+cargo run --bin trinity-mine-block
 
 # 6. Bob checks balance (switch wallet first)
-cargo run --bin siertri-wallet # Use Bob's wallet
-cargo run --bin siertri-balance
+cargo run --bin trinity-wallet # Use Bob's wallet
+cargo run --bin trinity-balance
 # Bob now owns the triangle!
 ```
 
@@ -498,13 +498,13 @@ A: Block time is 60s (vs Bitcoin's 10min), but it's not optimized for speed yet.
 A: Not yet. GPU mining kernels are on the roadmap (Phase 2).
 
 **Q: How do I backup my wallet?**
-A: Copy `~/.siertrichain/wallet.json` to a secure location. Wallet encryption coming soon.
+A: Copy `~/.TrinityChain/wallet.json` to a secure location. Wallet encryption coming soon.
 
 ## Resources
 
 - **Documentation**: [PROJECT_STATUS.md](PROJECT_STATUS.md)
-- **Source Code**: [GitHub](https://github.com/littlekickoffkittie/seirtrichain)
-- **Issue Tracker**: [GitHub Issues](https://github.com/littlekickoffkittie/seirtrichain/issues)
+- **Source Code**: [GitHub](https://github.com/littlekickoffkittie/trinitychain)
+- **Issue Tracker**: [GitHub Issues](https://github.com/littlekickoffkittie/trinitychain/issues)
 - **Sierpinski Triangle**: [Wikipedia](https://en.wikipedia.org/wiki/Sierpi%C5%84ski_triangle)
 
 ## License
@@ -526,7 +526,7 @@ Built with Rust 🦀
 
 Found a bug? Have a question?
 
-- Open an [issue](https://github.com/littlekickoffkittie/seirtrichain/issues)
+- Open an [issue](https://github.com/littlekickoffkittie/trinitychain/issues)
 - Read the [docs](PROJECT_STATUS.md)
 - Check existing [tests](src/) for examples
 
@@ -534,4 +534,4 @@ Found a bug? Have a question?
 
 **Built with fractals, secured with cryptography, powered by Rust.** 🔺⛓️
 
-*siertrichain - Where geometry meets blockchain*
+*TrinityChain - Where geometry meets blockchain*

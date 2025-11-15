@@ -9,7 +9,7 @@ This guide provides quick command shortcuts for the Seirtrichain blockchain proj
 Load the shortcuts in your current terminal session:
 
 ```bash
-source ~/seirtrichain/shortcuts.sh
+source ~/trinitychain/shortcuts.sh
 ```
 
 ### Permanent Setup
@@ -17,7 +17,7 @@ source ~/seirtrichain/shortcuts.sh
 To automatically load shortcuts every time you open a terminal:
 
 ```bash
-echo "source ~/seirtrichain/shortcuts.sh" >> ~/.bashrc
+echo "source ~/trinitychain/shortcuts.sh" >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -31,38 +31,38 @@ For other shells:
 
 | Shortcut | Full Command | Description |
 |----------|--------------|-------------|
-| `wallet` | `cargo run --bin siertri-wallet` | Main wallet interface |
-| `wallet-new` | `cargo run --bin siertri-wallet-new` | Create a new wallet |
-| `wallet-backup` | `cargo run --bin siertri-wallet-backup` | Backup your wallet |
-| `wallet-restore` | `cargo run --bin siertri-wallet-restore` | Restore wallet from backup |
+| `wallet` | `cargo run --bin trinity-wallet` | Main wallet interface |
+| `wallet-new` | `cargo run --bin trinity-wallet-new` | Create a new wallet |
+| `wallet-backup` | `cargo run --bin trinity-wallet-backup` | Backup your wallet |
+| `wallet-restore` | `cargo run --bin trinity-wallet-restore` | Restore wallet from backup |
 
 ### Transactions
 
 | Shortcut | Full Command | Description |
 |----------|--------------|-------------|
-| `send` | `cargo run --bin siertri-send` | Send coins to an address |
-| `balance` | `cargo run --bin siertri-balance` | Check wallet balance |
-| `history` | `cargo run --bin siertri-history` | View transaction history |
+| `send` | `cargo run --bin trinity-send` | Send coins to an address |
+| `balance` | `cargo run --bin trinity-balance` | Check wallet balance |
+| `history` | `cargo run --bin trinity-history` | View transaction history |
 
 ### Mining
 
 | Shortcut | Full Command | Description |
 |----------|--------------|-------------|
-| `miner` | `cargo run --bin siertri-miner` | Start the mining process |
-| `mine-block` | `cargo run --bin siertri-mine-block` | Mine a single block |
+| `miner` | `cargo run --bin trinity-miner` | Start the mining process |
+| `mine-block` | `cargo run --bin trinity-mine-block` | Mine a single block |
 
 ### Network
 
 | Shortcut | Full Command | Description |
 |----------|--------------|-------------|
-| `node` | `cargo run --bin siertri-node` | Start a blockchain node |
-| `api` | `cargo run --bin siertri-api` | Start the API server |
+| `node` | `cargo run --bin trinity-node` | Start a blockchain node |
+| `api` | `cargo run --bin trinity-api` | Start the API server |
 
 ### Utilities
 
 | Shortcut | Full Command | Description |
 |----------|--------------|-------------|
-| `addressbook` | `cargo run --bin siertri-addressbook` | Manage address book |
+| `addressbook` | `cargo run --bin trinity-addressbook` | Manage address book |
 
 ### Release Mode (Optimized)
 
@@ -136,7 +136,7 @@ wallet-restore
 
 4. **Updating Shortcuts**: If you modify `shortcuts.sh`, reload it with:
    ```bash
-   source ~/seirtrichain/shortcuts.sh
+   source ~/trinitychain/shortcuts.sh
    ```
 
 ## Troubleshooting
@@ -147,12 +147,12 @@ If shortcuts aren't recognized:
 
 1. Make sure you've sourced the file:
    ```bash
-   source ~/seirtrichain/shortcuts.sh
+   source ~/trinitychain/shortcuts.sh
    ```
 
 2. Check that the file is executable:
    ```bash
-   chmod +x ~/seirtrichain/shortcuts.sh
+   chmod +x ~/trinitychain/shortcuts.sh
    ```
 
 3. Verify the path in your shell config matches your installation location.

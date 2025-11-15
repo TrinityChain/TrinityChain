@@ -1368,36 +1368,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
-name = "siertrichain"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "argon2",
- "axum",
- "axum-test",
- "base64",
- "bincode",
- "chrono",
- "colored",
- "comfy-table",
- "console",
- "hex",
- "humantime",
- "indicatif",
- "ipnetwork",
- "parking_lot",
- "rand",
- "rpassword",
- "rusqlite",
- "secp256k1",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tower-http",
-]
-
-[[package]]
 name = "signal-hook-registry"
 version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1655,6 +1625,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "trinitychain"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "axum",
+ "axum-test",
+ "base64",
+ "bincode",
+ "chrono",
+ "colored",
+ "comfy-table",
+ "console",
+ "hex",
+ "humantime",
+ "indicatif",
+ "ipnetwork",
+ "parking_lot",
+ "rand",
+ "rpassword",
+ "rusqlite",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tower-http",
 ]
 
 [[package]]

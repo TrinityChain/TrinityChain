@@ -1,4 +1,4 @@
-//! Core geometric primitives and fractal logic for siertrichain.
+//! Core geometric primitives and fractal logic for TrinityChain.
 //! Defines the Point and Triangle structs, subdivision logic, and validation.
 
 use serde::{Serialize, Deserialize};
@@ -120,7 +120,7 @@ impl Triangle {
     // 1.6 Genesis Triangle Implementation
     // ------------------------------------------------------------------------
 
-    /// Defines the canonical Genesis Triangle for the siertrichain.
+    /// Defines the canonical Genesis Triangle for the TrinityChain.
     pub fn genesis() -> Self {
         const SQRT3: Coord = 1.7320508075688772;
         const HALF_SQRT3: Coord = 0.8660254037844386;

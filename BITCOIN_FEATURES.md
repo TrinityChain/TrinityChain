@@ -187,7 +187,7 @@ The Bitcoin-like features only affect:
 
 ```bash
 cargo build --release
-./target/release/siertri-miner <your_address>
+./target/release/trinity-miner <your_address>
 ```
 
 ### Monitor Supply
@@ -202,10 +202,10 @@ The miner automatically displays:
 
 ```bash
 # View recent blocks
-sqlite3 siertrichain.db "SELECT height, difficulty, timestamp FROM blocks ORDER BY height DESC LIMIT 10"
+sqlite3 TrinityChain.db "SELECT height, difficulty, timestamp FROM blocks ORDER BY height DESC LIMIT 10"
 
 # Check current difficulty
-sqlite3 siertrichain.db "SELECT * FROM metadata WHERE key='difficulty'"
+sqlite3 TrinityChain.db "SELECT * FROM metadata WHERE key='difficulty'"
 ```
 
 ---

@@ -1,4 +1,4 @@
-//! Error types for siertrichain
+//! Error types for TrinityChain
 
 use std::fmt;
 

@@ -8,14 +8,14 @@ Welcome to the **Sierpinski Triangle Blockchain**! This guide will get you from 
 
 ```bash
 # 1. Clone and build
-git clone https://github.com/littlekickoffkittie/seirtrichain.git
-cd seirtrichain && cargo build --release
+git clone https://github.com/littlekickoffkittie/trinitychain.git
+cd trinitychain && cargo build --release
 
 # 2. Create wallet
-cargo run --release --bin siertri-wallet-new
+cargo run --release --bin trinity-wallet-new
 
 # 3. Start mining (use the address from step 2)
-cargo run --release --bin siertri-miner <YOUR_ADDRESS_HERE>
+cargo run --release --bin trinity-miner <YOUR_ADDRESS_HERE>
 ```
 
 That's it! You're now mining triangular cryptocurrency. 🔺⛓️
@@ -54,8 +54,8 @@ rustc --version
 ### Step 2: Clone Repository
 
 ```bash
-git clone https://github.com/littlekickoffkittie/seirtrichain.git
-cd seirtrichain
+git clone https://github.com/littlekickoffkittie/trinitychain.git
+cd trinitychain
 ```
 
 ### Step 3: Build Project
@@ -68,24 +68,24 @@ cargo build --release
 ```
 
 **Available Commands:**
-- `siertri-wallet-new` - Create wallet
-- `siertri-wallet` - View wallet info
-- `siertri-miner` - Mine blocks (recommended)
-- `siertri-balance` - Check your balance
-- `siertri-send` - Transfer triangles
-- `siertri-node` - Run P2P node
-- `siertri-api` - REST API server
+- `trinity-wallet-new` - Create wallet
+- `trinity-wallet` - View wallet info
+- `trinity-miner` - Mine blocks (recommended)
+- `trinity-balance` - Check your balance
+- `trinity-send` - Transfer triangles
+- `trinity-node` - Run P2P node
+- `trinity-api` - REST API server
 
 ### Step 4: Create Wallet
 
 ```bash
-cargo run --release --bin siertri-wallet-new
+cargo run --release --bin trinity-wallet-new
 ```
 
 **Output:**
 ```
 🎉 Wallet created successfully!
-📁 Location: /home/you/.siertrichain/wallet.json
+📁 Location: /home/you/.TrinityChain/wallet.json
 
 📋 Your Address:
 1KjT9P8mW...xyz123
@@ -99,7 +99,7 @@ cargo run --release --bin siertri-wallet-new
 
 ```bash
 # Replace with YOUR address from step 4
-cargo run --release --bin siertri-miner 1KjT9P8mW...xyz123
+cargo run --release --bin trinity-miner 1KjT9P8mW...xyz123
 ```
 
 **What you'll see:**
@@ -161,7 +161,7 @@ cargo run --release --bin siertri-miner 1KjT9P8mW...xyz123
 ### Check Your Balance
 
 ```bash
-cargo run --release --bin siertri-balance
+cargo run --release --bin trinity-balance
 ```
 
 **Output:**
@@ -185,10 +185,10 @@ Total: 2 triangles, 2000.0 area units
 
 ```bash
 # Get a friend's address, then:
-cargo run --release --bin siertri-send <FRIEND_ADDRESS> <TRIANGLE_HASH>
+cargo run --release --bin trinity-send <FRIEND_ADDRESS> <TRIANGLE_HASH>
 
 # Example:
-cargo run --release --bin siertri-send \
+cargo run --release --bin trinity-send \
   1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2 \
   a3b5c7d9e1f3...xyz123
 ```
@@ -197,13 +197,13 @@ cargo run --release --bin siertri-send \
 
 ```bash
 # Person A (host):
-cargo run --release --bin siertri-node 8333
+cargo run --release --bin trinity-node 8333
 
 # Person B (connect to A):
-cargo run --release --bin siertri-node 8334 --peer <PERSON_A_IP>:8333
+cargo run --release --bin trinity-node 8334 --peer <PERSON_A_IP>:8333
 
 # Now Person B can mine:
-cargo run --release --bin siertri-miner <YOUR_ADDRESS> --peer <PERSON_A_IP>:8333
+cargo run --release --bin trinity-miner <YOUR_ADDRESS> --peer <PERSON_A_IP>:8333
 ```
 
 ---
@@ -271,7 +271,7 @@ This usually means:
 # Stop miner (Ctrl+C)
 # Wait 1-2 seconds
 # Restart miner
-cargo run --release --bin siertri-miner <YOUR_ADDRESS>
+cargo run --release --bin trinity-miner <YOUR_ADDRESS>
 ```
 
 ### "Database is locked"
@@ -280,8 +280,8 @@ Only one process can write to the database at a time.
 
 **Fix:**
 ```bash
-# Stop all running siertri-* processes
-pkill siertri
+# Stop all running trinity-* processes
+pkill trinity
 
 # Then restart what you need
 ```
@@ -290,7 +290,7 @@ pkill siertri
 
 ```bash
 # Create a new wallet:
-cargo run --release --bin siertri-wallet-new
+cargo run --release --bin trinity-wallet-new
 
 # Or specify wallet location:
 export HOME=/path/to/wallet/directory
@@ -319,9 +319,9 @@ This is normal! CPU mining is intentionally slow.
 
 ## 💬 Get Help
 
-**Found a bug?** [Open an issue](https://github.com/littlekickoffkittie/seirtrichain/issues)
+**Found a bug?** [Open an issue](https://github.com/littlekickoffkittie/trinitychain/issues)
 
-**Have questions?** Check existing [issues](https://github.com/littlekickoffkittie/seirtrichain/issues) or ask!
+**Have questions?** Check existing [issues](https://github.com/littlekickoffkittie/trinitychain/issues) or ask!
 
 **Want to contribute?** Read [CONTRIBUTING.md](CONTRIBUTING.md)
 
@@ -333,25 +333,25 @@ This is normal! CPU mining is intentionally slow.
 
 ```bash
 # Start mining, that's it!
-cargo run --release --bin siertri-miner <YOUR_ADDRESS>
+cargo run --release --bin trinity-miner <YOUR_ADDRESS>
 ```
 
 **You'll get:**
 - All blocks you find
 - Full 1,000 area reward per block
-- Stored in local `siertrichain.db`
+- Stored in local `TrinityChain.db`
 
 ### Scenario 2: Mining with Friends (P2P Network)
 
 ```bash
 # Friend 1 (host node):
-cargo run --release --bin siertri-node 8333
+cargo run --release --bin trinity-node 8333
 
 # Friend 2 (connect to Friend 1):
-cargo run --release --bin siertri-miner <ADDRESS> --peer <FRIEND1_IP>:8333
+cargo run --release --bin trinity-miner <ADDRESS> --peer <FRIEND1_IP>:8333
 
 # Friend 3 (connect to Friend 1):
-cargo run --release --bin siertri-miner <ADDRESS> --peer <FRIEND1_IP>:8333
+cargo run --release --bin trinity-miner <ADDRESS> --peer <FRIEND1_IP>:8333
 ```
 
 **Now you're all on the same blockchain!**
@@ -363,13 +363,13 @@ cargo run --release --bin siertri-miner <ADDRESS> --peer <FRIEND1_IP>:8333
 
 ```bash
 # Delete old blockchain:
-rm siertrichain.db
+rm TrinityChain.db
 
 # Create new wallet:
-cargo run --release --bin siertri-wallet-new
+cargo run --release --bin trinity-wallet-new
 
 # Start mining from genesis:
-cargo run --release --bin siertri-miner <YOUR_ADDRESS>
+cargo run --release --bin trinity-miner <YOUR_ADDRESS>
 ```
 
 ---
@@ -377,7 +377,7 @@ cargo run --release --bin siertri-miner <YOUR_ADDRESS>
 ## 🔥 Pro Tips
 
 1. **Always use `--release`** - It's 10-50x faster than debug builds
-2. **Backup your wallet** - Copy `~/.siertrichain/wallet.json` somewhere safe
+2. **Backup your wallet** - Copy `~/.TrinityChain/wallet.json` somewhere safe
 3. **Monitor difficulty** - As it increases, blocks take longer
 4. **Wait for halvings** - First halving at block 210,000 (reward drops to 500)
 5. **Check supply** - Track how much of the 420M has been mined

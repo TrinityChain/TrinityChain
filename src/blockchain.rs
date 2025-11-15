@@ -1,4 +1,4 @@
-//! Core blockchain implementation for siertrichain
+//! Core blockchain implementation for TrinityChain
 
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -102,6 +102,8 @@ pub struct BlockHeader {
     pub difficulty: u64,
     pub nonce: u64,
     pub merkle_root: Sha256Hash,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headline: Option<String>,
 }
 
 impl BlockHeader {
@@ -143,6 +145,7 @@ impl Block {
             difficulty,
             nonce: 0,
             merkle_root,
+            headline: None, // Only genesis block has a headline
         };
 
         Block {
@@ -451,10 +454,11 @@ impl Blockchain {
             header: BlockHeader {
                 height: 0,
                 previous_hash: [0; 32],
-                timestamp: Utc::now().timestamp(),
+                timestamp: 1731685200, // Nov 15, 2025 12:00:00 UTC
                 difficulty: 2,
                 nonce: 0,
                 merkle_root: [0; 32],
+                headline: Some("Stock market closes mixed to cap volatile week as Fed cut in doubt".to_string()),
             },
             hash: [0; 32],
             transactions: vec![],

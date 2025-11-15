@@ -207,7 +207,7 @@ cargo test --lib
 
 To benchmark mining:
 ```bash
-./target/release/siertri-mine-block
+./target/release/trinity-mine-block
 ```
 
 ## Notes

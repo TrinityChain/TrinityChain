@@ -77,7 +77,7 @@ and run nodes. Looking for contributors interested in:
 - Rust development
 - Novel crypto-economics
 
-GitHub: https://github.com/littlekickoffkittie/seirtrichain
+GitHub: https://github.com/littlekickoffkittie/trinitychain
 Docs: [Link to QUICKSTART.md]
 
 Happy to answer questions! This is a solo project (with AI assistance)
@@ -98,7 +98,7 @@ The unique part: transactions subdivide Sierpinski triangles following
 fractal math rules. Each "coin" is a geometric shape with coordinates
 and provable area.
 
-GitHub: https://github.com/littlekickoffkittie/seirtrichain
+GitHub: https://github.com/littlekickoffkittie/trinitychain
 Quick Start: [Link]
 
 Looking for feedback and contributors! Built solo (with AI) so far.

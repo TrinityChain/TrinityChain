@@ -1,6 +1,6 @@
 # Siertrichain P2P Network Setup Guide (Secure)
 
-A comprehensive step-by-step guide to set up and run a **secure distributed siertrichain P2P network** across multiple machines with peer authentication, firewall protection, VPN support, and rate limiting.
+A comprehensive step-by-step guide to set up and run a **secure distributed TrinityChain P2P network** across multiple machines with peer authentication, firewall protection, VPN support, and rate limiting.
 
 ## Table of Contents
 
@@ -27,8 +27,8 @@ A comprehensive step-by-step guide to set up and run a **secure distributed sier
 ### 1.1 Clone the Repository
 
 ```bash
-git clone https://github.com/littlekickoffkittie/seirtrichain.git
-cd seirtrichain
+git clone https://github.com/littlekickoffkittie/trinitychain.git
+cd trinitychain
 ```
 
 ### 1.2 Build the Project
@@ -42,18 +42,18 @@ This compiles all binaries optimized for production. Takes 4-5 minutes on first 
 ### 1.3 Load Shell Shortcuts (Optional but Recommended)
 
 ```bash
-source ~/seirtrichain/shortcuts.sh
+source ~/trinitychain/shortcuts.sh
 ```
 
 For permanent setup, add to your shell config:
 
 ```bash
 # For Bash
-echo "source ~/seirtrichain/shortcuts.sh" >> ~/.bashrc
+echo "source ~/trinitychain/shortcuts.sh" >> ~/.bashrc
 source ~/.bashrc
 
 # For Zsh
-echo "source ~/seirtrichain/shortcuts.sh" >> ~/.zshrc
+echo "source ~/trinitychain/shortcuts.sh" >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -89,7 +89,7 @@ wallet-new
 # Example: "MySecureP@ss123!Siertri"
 # Confirm the password
 
-# Wallet saved to ~/.siertrichain/wallet.json
+# Wallet saved to ~/.TrinityChain/wallet.json
 ```
 
 **Password Requirements:**
@@ -104,7 +104,7 @@ wallet-new
 # Create encrypted backup
 wallet-backup
 
-# Backup saved to ~/.siertrichain/wallet_backup.json
+# Backup saved to ~/.TrinityChain/wallet_backup.json
 # Store this file in a secure location offline
 ```
 
@@ -289,7 +289,7 @@ node-release 8333
 
 **Expected output:**
 ```
-🔺 siertri-node v0.1.0
+🔺 trinity-node v0.1.0
    Starting on port 8333...
 
 📊 Current height: 684
@@ -370,7 +370,7 @@ On each machine (or one machine for multiple wallets):
 wallet-new
 
 # Enter password when prompted
-# Wallet created: ~/.siertrichain/wallet.json
+# Wallet created: ~/.TrinityChain/wallet.json
 ```
 
 ### 5.2 Mine Blocks
@@ -592,7 +592,7 @@ Verify firewall is blocking unauthorized IPs:
 Inspect the blockchain database:
 
 ```bash
-sqlite3 ~/.siertrichain/siertrichain.db
+sqlite3 ~/.TrinityChain/TrinityChain.db
 
 # Then query tables:
 .tables                    # List tables
@@ -631,10 +631,10 @@ netstat -an | grep 8333
 # Make sure you're entering the correct password
 
 # Wallet not found
-ls -la ~/.siertrichain/wallet.json
+ls -la ~/.TrinityChain/wallet.json
 
 # Check file permissions
-chmod 600 ~/.siertrichain/wallet.json
+chmod 600 ~/.TrinityChain/wallet.json
 
 # Restore from backup
 wallet-restore
@@ -683,7 +683,7 @@ wallet-restore
 
 ```bash
 ssh user@machine-a
-cd ~/seirtrichain
+cd ~/trinitychain
 
 # Create encrypted wallet
 wallet-new
@@ -706,7 +706,7 @@ node-release 8333
 
 ```bash
 ssh user@machine-b
-cd ~/seirtrichain
+cd ~/trinitychain
 
 # Create encrypted wallet
 wallet-new
@@ -726,7 +726,7 @@ node-release 8334 --peer 192.168.1.230:8333
 
 ```bash
 ssh user@machine-c
-cd ~/seirtrichain
+cd ~/trinitychain
 
 # Create encrypted wallet
 wallet-new
@@ -769,8 +769,8 @@ watch -n 1 'echo "Height: " && curl -s http://localhost:3000/blockchain/height'
 
 ## Support
 
-- **Issues**: https://github.com/littlekickoffkittie/seirtrichain/issues
-- **Discussions**: https://github.com/littlekickoffkittie/seirtrichain/discussions
+- **Issues**: https://github.com/littlekickoffkittie/trinitychain/issues
+- **Discussions**: https://github.com/littlekickoffkittie/trinitychain/discussions
 - **Security**: See [SECURITY.md](SECURITY.md) for responsible disclosure
 
 ---

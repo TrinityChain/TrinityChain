@@ -1,4 +1,4 @@
-//! P2P Networking for siertrichain
+//! P2P Networking for TrinityChain
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

@@ -1,4 +1,4 @@
-//! Wallet management for siertrichain
+//! Wallet management for TrinityChain
 //!
 //! Provides functionality for creating, loading, and managing wallets
 //! that store keypairs and track triangle ownership.
@@ -75,7 +75,7 @@ impl Wallet {
 /// Get the default wallet directory
 pub fn get_wallet_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".siertrichain")
+    PathBuf::from(home).join(".trinitychain")
 }
 
 /// Get the default wallet file path
@@ -138,7 +138,7 @@ pub fn load_default_wallet() -> Result<Wallet, ChainError> {
 
     if !path.exists() {
         return Err(ChainError::WalletError(
-            "No wallet found. Run 'siertri-wallet new' first.".to_string()
+            "No wallet found. Run 'trinity-wallet new' first.".to_string()
         ));
     }
 

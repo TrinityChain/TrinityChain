@@ -1,4 +1,4 @@
-//! Database persistence layer for siertrichain
+//! Database persistence layer for TrinityChain
 
 use rusqlite::{Connection, params};
 use crate::blockchain::{Blockchain, Block, BlockHeader, TriangleState, Mempool};
@@ -218,6 +218,7 @@ impl Database {
                     difficulty: difficulty as u64,
                     nonce: nonce as u64,
                     merkle_root,
+                    headline: None, // Headlines not stored in old blocks
                 },
                 hash,
                 transactions,

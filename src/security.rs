@@ -1,4 +1,4 @@
-//! Security module for siertrichain
+//! Security module for TrinityChain
 //!
 //! Provides peer authentication, firewall rules, rate limiting, and VPN support
 
