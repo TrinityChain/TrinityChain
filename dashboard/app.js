@@ -1,4 +1,23 @@
-const API_BASE = 'http://localhost:3000/api';
+// Telegram Web App initialization
+let tg = window.Telegram?.WebApp;
+
+// API base URL - can be configured via Telegram Bot
+const API_BASE = tg?.initDataUnsafe?.start_param || 'http://localhost:3000/api';
+
+// Initialize Telegram Web App
+if (tg) {
+    tg.ready();
+    tg.expand();
+
+    // Apply Telegram theme colors
+    document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#0a0e27');
+    document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#e0e0e0');
+    document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || '#888');
+    document.documentElement.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color || '#00ff88');
+    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#00ff88');
+    document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color || '#ffffff');
+    document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color || '#1a1f3a');
+}
 
 // Format timestamp
 function formatTime(timestamp) {
@@ -37,12 +56,22 @@ async function fetchStats() {
             const difficultyData = await difficultyResponse.json();
             document.getElementById('difficulty').textContent = difficultyData.difficulty || '2';
         }
+
+        // Provide haptic feedback on successful data load
+        if (tg) {
+            tg.HapticFeedback.impactOccurred('light');
+        }
     } catch (error) {
         console.error('Error fetching stats:', error);
         document.getElementById('blockHeight').textContent = 'Offline';
         document.getElementById('totalTriangles').textContent = 'Offline';
         document.getElementById('totalArea').textContent = 'Offline';
         document.getElementById('difficulty').textContent = 'Offline';
+
+        // Notify user of error in Telegram
+        if (tg) {
+            tg.showAlert('Unable to connect to blockchain API. Please check your connection.');
+        }
     }
 }
 
@@ -93,4 +122,11 @@ function startAutoUpdate() {
 }
 
 // Start when page loads
-document.addEventListener('DOMContentLoaded', startAutoUpdate);
+document.addEventListener('DOMContentLoaded', () => {
+    startAutoUpdate();
+
+    // Log Telegram user info if available
+    if (tg && tg.initDataUnsafe.user) {
+        console.log('Telegram User:', tg.initDataUnsafe.user.username || tg.initDataUnsafe.user.first_name);
+    }
+});

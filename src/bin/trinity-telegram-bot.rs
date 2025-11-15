@@ -25,6 +25,8 @@ enum Command {
     Height,
     #[command(description = "learn about TrinityChain")]
     About,
+    #[command(description = "open the blockchain explorer dashboard")]
+    Dashboard,
 }
 
 async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<()> {
@@ -209,6 +211,22 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
                 Mining is currently active and rewards decrease over time through halvings.";
             bot.send_message(message.chat.id, about_msg).await?;
             info!("Handled /about command for user: {:?}", message.from());
+        }
+        Command::Dashboard => {
+            let dashboard_msg = "🔺 TrinityChain Dashboard 🔺\n\n\
+                The blockchain explorer dashboard is available as a Telegram Mini App!\n\n\
+                To set it up:\n\
+                1. Host the dashboard files from the /dashboard folder on HTTPS\n\
+                2. Configure the Web App URL with @BotFather\n\
+                3. Access it via the bot menu button\n\n\
+                The dashboard shows:\n\
+                • Real-time blockchain statistics\n\
+                • Recent blocks\n\
+                • Genesis block info\n\
+                • And more!\n\n\
+                For setup instructions, see dashboard/README.md in the repository.";
+            bot.send_message(message.chat.id, dashboard_msg).await?;
+            info!("Handled /dashboard command for user: {:?}", message.from());
         }
     }
     Ok(())
