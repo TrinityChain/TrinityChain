@@ -30,7 +30,12 @@ enum Command {
 async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<()> {
     match command {
         Command::Start => {
-            bot.send_message(message.chat.id, "Welcome to TrinityChain Telegram Bot!").await?;
+            let welcome_msg = "🔺 Welcome to TrinityChain Bot! 🔺\n\n\
+                TrinityChain is a unique blockchain based on triangle geometry.\n\n\
+                Use /help to see all available commands.\n\
+                Use /stats to view blockchain statistics.\n\
+                Use /about to learn more about TrinityChain.";
+            bot.send_message(message.chat.id, welcome_msg).await?;
             info!("Handled /start command for user: {:?}", message.from());
         }
         Command::Help => {
@@ -38,15 +43,93 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
             info!("Handled /help command for user: {:?}", message.from());
         }
         Command::Stats => {
-            bot.send_message(message.chat.id, "Blockchain statistics: coming soon...").await?;
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
+                        let total_supply = trinitychain::blockchain::Blockchain::calculate_current_supply(height);
+                        let current_reward = trinitychain::blockchain::Blockchain::calculate_block_reward(height);
+                        let triangles = chain.state.count();
+
+                        format!(
+                            "📊 Blockchain Statistics:\n\n\
+                            🏔️ Height: {}\n\
+                            💰 Total Supply: {} area\n\
+                            🎁 Current Block Reward: {} area\n\
+                            🔺 Active Triangles: {}\n\
+                            ⚡ Mining Difficulty: {}",
+                            height, total_supply, current_reward, triangles, chain.difficulty
+                        )
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /stats command for user: {:?}", message.from());
         }
         Command::Balance(address) => {
-            bot.send_message(message.chat.id, format!("Balance for {}: coming soon...", address)).await?;
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let triangles_owned: Vec<_> = chain.state.utxo_set.iter()
+                            .filter(|(_, triangle)| triangle.owner == address)
+                            .collect();
+
+                        let balance: f64 = triangles_owned.iter()
+                            .map(|(_, triangle)| triangle.area())
+                            .sum();
+
+                        format!(
+                            "💰 Balance for {}:\n\n\
+                            Total Area: {:.6} area\n\
+                            Number of Triangles: {}",
+                            if address.len() > 20 {
+                                format!("{}...{}", &address[..8], &address[address.len()-8..])
+                            } else {
+                                address.clone()
+                            },
+                            balance,
+                            triangles_owned.len()
+                        )
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /balance command for user: {:?}", message.from());
         }
         Command::Blocks => {
-            bot.send_message(message.chat.id, "Recent blocks: coming soon...").await?;
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let num_blocks = chain.blocks.len().min(5);
+                        let recent_blocks = &chain.blocks[chain.blocks.len().saturating_sub(num_blocks)..];
+
+                        let mut msg = format!("📦 Recent {} Blocks:\n\n", num_blocks);
+                        for block in recent_blocks.iter().rev() {
+                            let timestamp = chrono::NaiveDateTime::from_timestamp_opt(block.header.timestamp, 0)
+                                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+                                .unwrap_or_else(|| "Invalid".to_string());
+                            let hash_hex = hex::encode(block.hash);
+                            let hash_display = format!("{}...{}", &hash_hex[..8], &hash_hex[hash_hex.len()-8..]);
+
+                            msg.push_str(&format!(
+                                "🔺 Block #{}\n  Hash: {}\n  Time: {}\n  Txs: {}\n\n",
+                                block.header.height,
+                                hash_display,
+                                timestamp,
+                                block.transactions.len()
+                            ));
+                        }
+                        msg
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /blocks command for user: {:?}", message.from());
         }
         Command::Genesis => {
@@ -113,7 +196,18 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
             info!("Handled /height command for user: {:?}", message.from());
         }
         Command::About => {
-            bot.send_message(message.chat.id, "TrinityChain is a blockchain project.").await?;
+            let about_msg = "🔺 About TrinityChain 🔺\n\n\
+                TrinityChain is an innovative blockchain built on triangle geometry.\n\n\
+                Key Features:\n\
+                • Geometric-based ownership using triangles\n\
+                • Proof-of-Work consensus mechanism\n\
+                • Triangle subdivision for value transfer\n\
+                • Bitcoin-style supply curve (21M total)\n\
+                • Halving events every 210,000 blocks\n\n\
+                Each unit of value is represented as a geometric triangle with an area.\n\
+                The blockchain maintains a UTXO (Unspent Triangle Output) set.\n\n\
+                Mining is currently active and rewards decrease over time through halvings.";
+            bot.send_message(message.chat.id, about_msg).await?;
             info!("Handled /about command for user: {:?}", message.from());
         }
     }

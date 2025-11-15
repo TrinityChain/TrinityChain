@@ -103,17 +103,17 @@ impl NetworkPolicy {
         let mut policy = Self::new();
 
         // Check for VPN tunnel
-        if let Ok(interface) = std::env::var("SIERTRI_VPN_INTERFACE") {
+        if let Ok(interface) = std::env::var("TRINITY_VPN_INTERFACE") {
             policy.vpn_interface = Some(interface);
         }
 
         // Check for SOCKS5 proxy
-        if let Ok(proxy) = std::env::var("SIERTRI_SOCKS5_PROXY") {
+        if let Ok(proxy) = std::env::var("TRINITY_SOCKS5_PROXY") {
             policy.socks5_proxy = Some(proxy);
         }
 
         // Check if auth is required
-        if let Ok(auth) = std::env::var("SIERTRI_REQUIRE_AUTH") {
+        if let Ok(auth) = std::env::var("TRINITY_REQUIRE_AUTH") {
             policy.require_auth = auth.to_lowercase() != "false";
         }
 

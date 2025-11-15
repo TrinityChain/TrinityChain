@@ -1,4 +1,4 @@
-//! Core geometric primitives and fractal logic for TrinityChain.
+//! Core geometric primitives and triangle logic for TrinityChain.
 //! Defines the Point and Triangle structs, subdivision logic, and validation.
 
 use serde::{Serialize, Deserialize};

@@ -10,7 +10,7 @@ use chrono::Utc;
 pub type Sha256Hash = [u8; 32];
 pub type BlockHeight = u64;
 
-/// The genesis triangle - the root of all fractals
+/// The genesis triangle - the root of all triangles
 pub fn genesis_triangle() -> Triangle {
     Triangle::new(
         Point { x: 0.0, y: 0.0 },
