@@ -454,13 +454,13 @@ impl Blockchain {
             header: BlockHeader {
                 height: 0,
                 previous_hash: [0; 32],
-                timestamp: 1731685200, // Nov 15, 2025 12:00:00 UTC
+                timestamp: Utc::now().timestamp(), // Use current time for genesis
                 difficulty: 2,
                 nonce: 0,
                 merkle_root: [0; 32],
-                headline: Some("Stock market closes mixed to cap volatile week as Fed cut in doubt".to_string()),
+                headline: Some("Al's forward march confronts investor jitters over staggering valuations and a bull case that won't quit.".to_string()),
             },
-            hash: [0; 32],
+            hash: [0; 32], // Will be calculated based on header content
             transactions: vec![],
         };
 

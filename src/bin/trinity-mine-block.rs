@@ -4,7 +4,9 @@ use trinitychain::persistence::Database;
 use trinitychain::transaction::{Transaction, SubdivisionTx, CoinbaseTx};
 use trinitychain::crypto::KeyPair;
 use trinitychain::miner::mine_block;
+use trinitychain::wallet;
 use secp256k1::SecretKey;
+use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
@@ -17,10 +19,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Blockchain is empty")?;
     println!("📊 Current height: {}", current_height);
 
-    let home = std::env::var("HOME")?;
-    let wallet_file = format!("{}/.trinitychain/wallet.json", home);
+    // Ensure wallet exists, create if it doesn't
+    let wallet_path = wallet::get_default_wallet_path();
+    if !wallet_path.exists() {
+        println!("👛 No default wallet found. Creating a new one...");
+        wallet::create_default_wallet()?;
+        println!("✅ New wallet created at: {}", wallet_path.display());
+    }
 
-    let wallet_content = std::fs::read_to_string(&wallet_file)?;
+    let wallet_content = std::fs::read_to_string(&wallet_path)?;
     let wallet_data: serde_json::Value = serde_json::from_str(&wallet_content)?;
 
     let address = wallet_data["address"].as_str()

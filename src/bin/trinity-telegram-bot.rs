@@ -1,5 +1,5 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
-use log::{info, error};
+use log::info;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -79,7 +79,7 @@ async fn main() {
 
     let bot = Bot::from_env();
 
-    Dispatcher::builder(bot, dptree::entry().branch(Update::filter_message().endpoint(answer)))
+    Dispatcher::builder(bot, Update::filter_message().filter_command::<Command>().endpoint(answer))
         .enable_ctrlc_handler()
         .build()
         .dispatch()
