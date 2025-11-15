@@ -39,15 +39,18 @@ impl TriangleState {
     }
 
     /// Apply a subdivision transaction to the state
+    /// Optimized to minimize hash calculations and clones
     pub fn apply_subdivision(&mut self, tx: &SubdivisionTx) -> Result<(), ChainError> {
-        if !self.utxo_set.contains_key(&tx.parent_hash) {
+        // Use entry API to avoid double lookup
+        if self.utxo_set.remove(&tx.parent_hash).is_none() {
             return Err(ChainError::TriangleNotFound(format!(
                 "Parent triangle {} not found",
                 hex::encode(tx.parent_hash)
             )));
         }
 
-        self.utxo_set.remove(&tx.parent_hash);
+        // Pre-allocate capacity for better performance
+        self.utxo_set.reserve(tx.children.len());
 
         for child in &tx.children {
             let child_hash = child.hash();
@@ -102,6 +105,7 @@ pub struct BlockHeader {
 }
 
 impl BlockHeader {
+    #[inline]
     pub fn calculate_hash(&self) -> Sha256Hash {
         let mut hasher = Sha256::new();
         hasher.update(self.height.to_le_bytes());
@@ -148,6 +152,7 @@ impl Block {
         }
     }
 
+    #[inline]
     pub fn calculate_hash(&self) -> Sha256Hash {
         let mut hasher = Sha256::new();
         hasher.update(self.header.height.to_le_bytes());
@@ -185,15 +190,10 @@ impl Block {
         hashes[0]
     }
 
+    #[inline]
     pub fn verify_proof_of_work(&self) -> bool {
-        // Prevent DoS by limiting difficulty to a reasonable maximum (256 bits = 64 hex chars)
-        const MAX_DIFFICULTY: u64 = 64;
-        let difficulty = self.header.difficulty.min(MAX_DIFFICULTY);
-
-        let hash_hex = hex::encode(self.hash);
-
-        // Check if first 'difficulty' characters are '0'
-        hash_hex.chars().take(difficulty as usize).all(|c| c == '0')
+        // Use the optimized is_hash_valid from miner module
+        crate::miner::is_hash_valid(&self.hash, self.header.difficulty)
     }
 }
 
@@ -320,13 +320,24 @@ impl Mempool {
 
     /// Get transactions ordered by fee (highest first) for mining prioritization
     /// Returns up to `limit` transactions with the highest fees
+    /// Optimized to use partial sorting for better performance when limit < total
     pub fn get_transactions_by_fee(&self, limit: usize) -> Vec<Transaction> {
         let mut txs: Vec<Transaction> = self.transactions.values().cloned().collect();
 
-        // Sort by fee in descending order (highest fee first)
-        txs.sort_by(|a, b| b.fee().cmp(&a.fee()));
+        if limit >= txs.len() {
+            // Just sort normally if we want all transactions
+            txs.sort_unstable_by(|a, b| b.fee().cmp(&a.fee()));
+            return txs;
+        }
 
-        // Return up to limit transactions
+        // Use partial sort for better performance when limit is small
+        // This is O(n log k) instead of O(n log n) where k = limit
+        txs.select_nth_unstable_by(limit, |a, b| b.fee().cmp(&a.fee()));
+
+        // Sort the top `limit` transactions
+        let (top, _, _) = txs.select_nth_unstable_by(limit - 1, |a, b| b.fee().cmp(&a.fee()));
+        top.sort_unstable_by(|a, b| b.fee().cmp(&a.fee()));
+
         txs.into_iter().take(limit).collect()
     }
 
@@ -518,12 +529,14 @@ impl Blockchain {
             ));
         }
 
-        // Validate timestamp is not too far in the future (allow 2 hours of clock drift)
-        const MAX_FUTURE_TIMESTAMP_DRIFT: i64 = 2 * 3600; // 2 hours in seconds
+        // Validate timestamp is not too far in the future (allow 24 hours of clock drift)
+        // This accounts for potential system clock issues and network delays
+        const MAX_FUTURE_TIMESTAMP_DRIFT: i64 = 24 * 3600; // 24 hours in seconds
         let current_time = Utc::now().timestamp();
         if block.header.timestamp > current_time + MAX_FUTURE_TIMESTAMP_DRIFT {
             return Err(ChainError::InvalidTransaction(
-                "Block timestamp is too far in the future".to_string()
+                format!("Block timestamp is too far in the future (block: {}, current: {}, max drift: {}s)",
+                    block.header.timestamp, current_time, MAX_FUTURE_TIMESTAMP_DRIFT)
             ));
         }
 

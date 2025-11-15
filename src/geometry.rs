@@ -47,10 +47,11 @@ impl Point {
     }
 
     /// Calculates a simple cryptographic hash of the point data.
+    /// Optimized to use direct byte conversion instead of string formatting.
     pub fn hash(&self) -> Sha256Hash {
-        let data = format!("{:.15},{:.15}", self.x, self.y);
         let mut hasher = Sha256::new();
-        hasher.update(data.as_bytes());
+        hasher.update(&self.x.to_le_bytes());
+        hasher.update(&self.y.to_le_bytes());
         hasher.finalize().into()
     }
 
@@ -98,13 +99,16 @@ impl Triangle {
     }
 
     /// Calculates the unique cryptographic hash of the triangle.
+    /// Optimized to work with raw bytes and avoid string allocations.
     pub fn hash(&self) -> Sha256Hash {
-        let mut hashes = vec![self.a.hash_str(), self.b.hash_str(), self.c.hash_str()];
-        hashes.sort(); 
-        
-        let data = hashes.join("");
+        let mut hashes = [self.a.hash(), self.b.hash(), self.c.hash()];
+        // Sort to ensure canonical ordering (same triangle regardless of vertex order)
+        hashes.sort_unstable();
+
         let mut hasher = Sha256::new();
-        hasher.update(data.as_bytes());
+        for hash in &hashes {
+            hasher.update(hash);
+        }
         hasher.finalize().into()
     }
 
@@ -136,10 +140,22 @@ impl Triangle {
     // ------------------------------------------------------------------------
 
     /// Subdivides the current triangle into three smaller, valid triangles.
+    /// Optimized to minimize allocations and reuse computed values.
+    #[inline]
     pub fn subdivide(&self) -> [Triangle; 3] {
-        let mid_ab = self.a.midpoint(&self.b);
-        let mid_bc = self.b.midpoint(&self.c);
-        let mid_ca = self.c.midpoint(&self.a);
+        // Compute midpoints inline to reduce function call overhead
+        let mid_ab = Point::new(
+            (self.a.x + self.b.x) * 0.5,
+            (self.a.y + self.b.y) * 0.5,
+        );
+        let mid_bc = Point::new(
+            (self.b.x + self.c.x) * 0.5,
+            (self.b.y + self.c.y) * 0.5,
+        );
+        let mid_ca = Point::new(
+            (self.c.x + self.a.x) * 0.5,
+            (self.c.y + self.a.y) * 0.5,
+        );
 
         let parent_hash = Some(self.hash());
 
@@ -151,7 +167,7 @@ impl Triangle {
 
         // Child 3 (mid_ca-mid_bc-C)
         let t3 = Triangle::new(mid_ca, mid_bc, self.c, parent_hash, self.owner.clone());
-        
+
         [t1, t2, t3]
     }
 
