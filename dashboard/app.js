@@ -36,26 +36,15 @@ function formatHash(hash) {
 // Fetch blockchain stats
 async function fetchStats() {
     try {
-        const response = await fetch(`${API_BASE}/blockchain/height`);
+        const response = await fetch(`${API_BASE}/blockchain/stats`);
         const data = await response.json();
 
         document.getElementById('blockHeight').textContent = data.height || '0';
+        document.getElementById('totalTriangles').textContent = data.utxo_count || '0';
+        document.getElementById('difficulty').textContent = data.difficulty || '2';
 
-        // Fetch more stats
-        const balanceResponse = await fetch(`${API_BASE}/balance/all`);
-        if (balanceResponse.ok) {
-            const balanceData = await balanceResponse.json();
-            document.getElementById('totalTriangles').textContent = balanceData.total_triangles || '0';
-            document.getElementById('totalArea').textContent =
-                balanceData.total_area ? balanceData.total_area.toFixed(2) : '0.00';
-        }
-
-        // Fetch difficulty
-        const difficultyResponse = await fetch(`${API_BASE}/blockchain/difficulty`);
-        if (difficultyResponse.ok) {
-            const difficultyData = await difficultyResponse.json();
-            document.getElementById('difficulty').textContent = difficultyData.difficulty || '2';
-        }
+        // Calculate total area from UTXO set (approximate)
+        document.getElementById('totalArea').textContent = (data.utxo_count * 100).toFixed(2);
 
         // Provide haptic feedback on successful data load
         if (tg) {
@@ -78,30 +67,46 @@ async function fetchStats() {
 // Fetch recent blocks
 async function fetchRecentBlocks() {
     try {
-        const response = await fetch(`${API_BASE}/blockchain/recent`);
-        const data = await response.json();
+        const statsResponse = await fetch(`${API_BASE}/blockchain/stats`);
+        const statsData = await statsResponse.json();
 
         const blocksContainer = document.getElementById('recentBlocks');
 
-        if (!data.blocks || data.blocks.length === 0) {
+        if (!statsData.recent_blocks || statsData.recent_blocks.length === 0) {
             blocksContainer.innerHTML = '<p class="loading">No blocks yet. Start mining!</p>';
             return;
         }
 
-        blocksContainer.innerHTML = data.blocks.slice(0, 10).map(block => `
-            <div class="block-item">
-                <div class="block-header">
-                    <span class="block-height">Block #${block.height}</span>
-                    <span class="block-time">${formatTime(block.timestamp)}</span>
+        // Fetch full block details for each recent block
+        const blockPromises = statsData.recent_blocks.slice(0, 5).map(async (blockInfo) => {
+            try {
+                const blockResponse = await fetch(`${API_BASE}/blockchain/block/by-height/${blockInfo.height}`);
+                return await blockResponse.json();
+            } catch (e) {
+                console.error('Error fetching block:', e);
+                return null;
+            }
+        });
+
+        const blocks = (await Promise.all(blockPromises)).filter(b => b !== null);
+
+        blocksContainer.innerHTML = blocks.map((block, index) => {
+            const blockInfo = statsData.recent_blocks[index];
+            return `
+                <div class="block-item">
+                    <div class="block-header">
+                        <span class="block-height">Block #${block.header.height}</span>
+                        <span class="block-time">${formatTime(block.header.timestamp)}</span>
+                    </div>
+                    <div class="block-hash">
+                        Hash: ${formatHash(blockInfo.hash)}
+                    </div>
+                    <div style="margin-top: 10px; color: #888; font-size: 0.9rem;">
+                        ${block.transactions.length} transaction(s) • Difficulty: ${block.header.difficulty}
+                    </div>
                 </div>
-                <div class="block-hash">
-                    Hash: ${formatHash(block.hash)}
-                </div>
-                <div style="margin-top: 10px; color: #888; font-size: 0.9rem;">
-                    ${block.transactions} transaction(s) • Difficulty: ${block.difficulty}
-                </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     } catch (error) {
         console.error('Error fetching blocks:', error);
         document.getElementById('recentBlocks').innerHTML =
