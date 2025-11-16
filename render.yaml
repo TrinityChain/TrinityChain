@@ -6,14 +6,11 @@ projects:
   - name: TrinityChain
     services:
     - type: web
-      name: TrinityChain is
+      name: TrinityChain-API
       runtime: rust
       repo: https://github.com/TrinityChain/TrinityChain
       plan: free
-      envVars:
-      - key: TELOXIDE_TOKEN
-        sync: false
       region: oregon
-      buildCommand: cargo build --release
-      startCommand: cargo run --bin trinity-api 
+      buildCommand: cargo build --release --bin trinity-api
+      startCommand: ./target/release/trinity-api
       autoDeployTrigger: commit
