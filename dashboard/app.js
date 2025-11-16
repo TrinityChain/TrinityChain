@@ -23,6 +23,15 @@ function resolveApiBase() {
 
 const API_BASE = resolveApiBase();
 
+// Debug logging
+console.log('🔺 TrinityChain Dashboard Debug Info:');
+console.log('API_BASE:', API_BASE);
+console.log('URL:', window.location.href);
+console.log('Telegram Web App:', tg ? 'Available' : 'Not available');
+if (tg && tg.initDataUnsafe) {
+    console.log('User:', tg.initDataUnsafe.user?.username || tg.initDataUnsafe.user?.first_name || 'Unknown');
+}
+
 // Initialize Telegram Web App
 if (tg) {
     tg.ready();
@@ -54,9 +63,17 @@ function formatHash(hash) {
 
 // Fetch blockchain stats
 async function fetchStats() {
+    const statsUrl = `${API_BASE}/blockchain/stats`;
+    console.log(`[fetchStats] Fetching from: ${statsUrl}`);
     try {
-        const response = await fetch(`${API_BASE}/blockchain/stats`);
+        const response = await fetch(statsUrl);
+        console.log(`[fetchStats] Response status: ${response.status}`);
+        if (!response.ok) {
+            console.error(`[fetchStats] HTTP error: ${response.status} ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
+        console.log('[fetchStats] Data received:', data);
 
         document.getElementById('blockHeight').textContent = data.height || '0';
         document.getElementById('totalTriangles').textContent = data.utxo_count || '0';
@@ -70,7 +87,7 @@ async function fetchStats() {
             tg.HapticFeedback.impactOccurred('light');
         }
     } catch (error) {
-        console.error('Error fetching stats:', error);
+        console.error('[fetchStats] Error:', error);
         document.getElementById('blockHeight').textContent = 'Offline';
         document.getElementById('totalTriangles').textContent = 'Offline';
         document.getElementById('totalArea').textContent = 'Offline';
@@ -85,9 +102,16 @@ async function fetchStats() {
 
 // Fetch recent blocks
 async function fetchRecentBlocks() {
+    const statsUrl = `${API_BASE}/blockchain/stats`;
+    console.log(`[fetchRecentBlocks] Fetching from: ${statsUrl}`);
     try {
-        const statsResponse = await fetch(`${API_BASE}/blockchain/stats`);
+        const statsResponse = await fetch(statsUrl);
+        console.log(`[fetchRecentBlocks] Response status: ${statsResponse.status}`);
+        if (!statsResponse.ok) {
+            throw new Error(`HTTP ${statsResponse.status}`);
+        }
         const statsData = await statsResponse.json();
+        console.log('[fetchRecentBlocks] Stats data:', statsData);
 
         const blocksContainer = document.getElementById('recentBlocks');
 
@@ -99,15 +123,18 @@ async function fetchRecentBlocks() {
         // Fetch full block details for each recent block
         const blockPromises = statsData.recent_blocks.slice(0, 5).map(async (blockInfo) => {
             try {
-                const blockResponse = await fetch(`${API_BASE}/blockchain/block/by-height/${blockInfo.height}`);
+                const blockUrl = `${API_BASE}/blockchain/block/by-height/${blockInfo.height}`;
+                console.log(`[fetchRecentBlocks] Fetching block from: ${blockUrl}`);
+                const blockResponse = await fetch(blockUrl);
                 return await blockResponse.json();
             } catch (e) {
-                console.error('Error fetching block:', e);
+                console.error('[fetchRecentBlocks] Error fetching block:', e);
                 return null;
             }
         });
 
         const blocks = (await Promise.all(blockPromises)).filter(b => b !== null);
+        console.log('[fetchRecentBlocks] Blocks loaded:', blocks.length);
 
         blocksContainer.innerHTML = blocks.map((block, index) => {
             const blockInfo = statsData.recent_blocks[index];
@@ -127,7 +154,7 @@ async function fetchRecentBlocks() {
             `;
         }).join('');
     } catch (error) {
-        console.error('Error fetching blocks:', error);
+        console.error('[fetchRecentBlocks] Error:', error);
         document.getElementById('recentBlocks').innerHTML =
             '<p class="loading">Unable to fetch blocks. Is the API server running?</p>';
     }
@@ -147,6 +174,10 @@ function startAutoUpdate() {
 
 // Start when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    // Update debug panel
+    document.getElementById('debugApiBase').textContent = API_BASE;
+    document.getElementById('debugStatus').textContent = 'Fetching data...';
+    
     startAutoUpdate();
 
     // Log Telegram user info if available
@@ -154,3 +185,9 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Telegram User:', tg.initDataUnsafe.user.username || tg.initDataUnsafe.user.first_name);
     }
 });
+
+// Toggle debug panel visibility
+function toggleDebugPanel() {
+    const panel = document.getElementById('debugPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}

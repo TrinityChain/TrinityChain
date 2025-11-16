@@ -85,6 +85,18 @@
             <p>TrinityChain Explorer • Open Source Blockchain</p>
             <p><a href="https://github.com/TrinityChain/TrinityChain" target="_blank">GitHub</a></p>
         </footer>
+
+        <div style="margin-top: 40px; padding: 20px; background: #1a1f3a; border-radius: 8px; font-size: 0.85rem; color: #888; border: 1px solid #00ff88; display: none;" id="debugPanel">
+            <h3 style="color: #00ff88; margin-top: 0;">🔧 Debug Console</h3>
+            <p><strong>API Base:</strong> <span id="debugApiBase">loading...</span></p>
+            <p><strong>Status:</strong> <span id="debugStatus">initializing...</span></p>
+            <p><strong>Last Error:</strong> <span id="debugError">none</span></p>
+            <p><button onclick="toggleDebugPanel()" style="padding: 8px 16px; background: #00ff88; color: #000; border: none; border-radius: 4px; cursor: pointer;">Hide Debug</button></p>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="toggleDebugPanel()" style="padding: 8px 16px; background: #00ff88; color: #000; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">Show Debug Info</button>
+        </div>
     </div>
 
     <script src="app.js"></script>
