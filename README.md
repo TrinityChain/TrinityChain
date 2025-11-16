@@ -15,35 +15,8 @@ A triangle-first blockchain: value is represented as geometric triangles (area =
 
 ## Architecture (high-level)
 
-Simple ASCII diagram:
-
-```
-                +-------------------+
-                |  CLI / Dashboard  |
-                +---------+---------+
-                          |
-               HTTP/JSON  |  P2P Messages
-                          |
-                +---------v---------+
-                |   API / Network   |
-                +----+--------+-----+
-                     |        |
-     Persist <-------+        +------> P2P peers
-               SQLite / DB      
-                     |
-                +----v----+
-                | Chain    |
-                | (UTXO)   |
-                +----+----+
-                     |
-                Mining & Txpool
-```
-
-Diagram (SVG) — falls back if Mermaid is not enabled on GitHub:
 
 ![Architecture diagram](assets/architecture.svg)
-
-Mermaid source (optional, may require enabling Mermaid rendering in your GitHub settings):
 
 
 ## Why we need contributors
