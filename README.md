@@ -39,16 +39,20 @@ Simple ASCII diagram:
                 Mining & Txpool
 ```
 
-Mermaid/graph (GitHub may render if enabled):
+Diagram (SVG) — falls back if Mermaid is not enabled on GitHub:
+
+![Architecture diagram](assets/architecture.svg)
+
+Mermaid source (optional, may require enabling Mermaid rendering in your GitHub settings):
 
 ```mermaid
 flowchart LR
-  CLI[CLI / Dashboard] --> API[API / Network]
-  API --> DB[SQLite / Persistence]
-  API --> Peers[P2P Peers]
-  DB --> Chain[Blockchain (UTXO)]
-  Chain --> Miner[Mining / Txpool]
-  Miner --> Chain
+     CLI[CLI / Dashboard] --> API[API / Network]
+     API --> DB[SQLite / Persistence]
+     API --> Peers[P2P Peers]
+     DB --> Chain[Blockchain (UTXO)]
+     Chain --> Miner[Mining / Txpool]
+     Miner --> Chain
 ```
 
 ## Why we need contributors

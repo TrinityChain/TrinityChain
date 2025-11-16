@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="320" viewBox="0 0 800 320">
+  <style>
+    .box { fill: #0b213f; stroke: #00ff88; stroke-width:2; rx:8; }
+    .label { fill: #e6f7ef; font-family: Arial, sans-serif; font-size:14px; }
+    .small { font-size:12px; fill:#aeeccf }
+    .arrow { stroke: #00ff88; stroke-width:2; fill:none; marker-end: url(#arrowhead); }
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#00ff88" />
+    </marker>
+  </defs>
+
+  <!-- CLI -->
+  <rect class="box" x="40" y="30" width="180" height="60" />
+  <text class="label" x="130" y="60" text-anchor="middle">CLI / Dashboard</text>
+  <text class="small" x="130" y="76" text-anchor="middle">HTTP / WebApp / Bot</text>
+
+  <!-- API -->
+  <rect class="box" x="300" y="30" width="200" height="60" />
+  <text class="label" x="400" y="60" text-anchor="middle">API / Network</text>
+
+  <!-- DB -->
+  <rect class="box" x="560" y="30" width="180" height="60" />
+  <text class="label" x="650" y="60" text-anchor="middle">SQLite / Persistence</text>
+
+  <!-- Chain -->
+  <rect class="box" x="300" y="140" width="200" height="60" />
+  <text class="label" x="400" y="170" text-anchor="middle">Blockchain (UTXO)</text>
+
+  <!-- Miner -->
+  <rect class="box" x="560" y="140" width="180" height="60" />
+  <text class="label" x="650" y="170" text-anchor="middle">Mining / Txpool</text>
+
+  <!-- Arrows -->
+  <path class="arrow" d="M220 60 L300 60" />
+  <path class="arrow" d="M500 60 L560 60" />
+  <path class="arrow" d="M400 90 L400 140" />
+  <path class="arrow" d="M500 170 L560 170" />
+  <path class="arrow" d="M740 170 L740 200" style="stroke-dasharray:4 3" />
+
+  <!-- Notes -->
+  <text class="small" x="400" y="218" text-anchor="middle">P2P peers (networked nodes)</text>
+</svg>
