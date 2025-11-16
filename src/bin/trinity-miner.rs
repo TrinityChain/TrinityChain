@@ -4,6 +4,7 @@ use trinitychain::blockchain::{Blockchain, Block};
 use trinitychain::persistence::Database;
 use trinitychain::network::NetworkNode;
 use trinitychain::transaction::{Transaction, CoinbaseTx};
+use trinitychain::miner::{mine_block, mine_block_parallel};
 use std::env;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
@@ -153,6 +154,21 @@ async fn main() {
 
         let mine_start = Instant::now();
         let mut hash_count = 0u64;
+    // Parse optional threads flag: --threads N
+    let mut threads: usize = 1;
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--threads" || args[i] == "-t" {
+            if i + 1 < args.len() {
+                if let Ok(n) = args[i + 1].parse::<usize>() {
+                    threads = n.max(1);
+                }
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
 
         loop {
             new_block.hash = new_block.calculate_hash();

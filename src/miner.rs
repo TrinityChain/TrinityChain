@@ -70,6 +70,8 @@ pub fn mine_block_parallel(block: Block) -> Result<Block, ChainError> {
 
     // Use atomic flag to signal when a solution is found
     let found = Arc::new(AtomicBool::new(false));
+    // Store the found nonce so we can reconstruct the block
+    let found_nonce = Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX));
 
     let result = (0..num_threads)
         .into_par_iter()
@@ -95,9 +97,19 @@ pub fn mine_block_parallel(block: Block) -> Result<Block, ChainError> {
                 let hash = test_block.calculate_hash();
 
                 if is_hash_valid(&hash, difficulty) {
-                    test_block.hash = hash;
-                    found.store(true, Ordering::Relaxed);
-                    return true;
+                    // attempt to record the nonce (only first wins)
+                    let prev = found_nonce
+                        .compare_exchange(u64::MAX, nonce, Ordering::SeqCst, Ordering::SeqCst)
+                        .unwrap_or(u64::MAX);
+                    if prev == u64::MAX {
+                        // we won the race
+                        test_block.hash = hash;
+                        found.store(true, Ordering::SeqCst);
+                        return true;
+                    } else {
+                        // another thread already recorded a nonce
+                        return false;
+                    }
                 }
             }
             false
@@ -105,10 +117,15 @@ pub fn mine_block_parallel(block: Block) -> Result<Block, ChainError> {
         .is_some();
 
     if result {
-        // Rebuild the mined block with the correct nonce
-        // This is a fallback - in production, we'd return the block directly
-        // For now, fall back to single-threaded
-        mine_block(block)
+        let nonce = found_nonce.load(Ordering::SeqCst);
+        if nonce == u64::MAX {
+            return Err(ChainError::InvalidProofOfWork);
+        }
+
+        let mut mined = block.clone();
+        mined.header.nonce = nonce;
+        mined.hash = mined.calculate_hash();
+        Ok(mined)
     } else {
         Err(ChainError::InvalidProofOfWork)
     }

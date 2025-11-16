@@ -3,12 +3,29 @@
 use trinitychain::persistence::Database;
 use trinitychain::transaction::{Transaction, SubdivisionTx, CoinbaseTx};
 use trinitychain::crypto::KeyPair;
-use trinitychain::miner::mine_block;
+use trinitychain::miner::{mine_block, mine_block_parallel};
+use std::env;
 use trinitychain::wallet;
 use secp256k1::SecretKey;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
+    let args: Vec<String> = env::args().collect();
+    // check for --threads N
+    let mut threads: usize = 1;
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--threads" || args[i] == "-t" {
+            if i + 1 < args.len() {
+                if let Ok(n) = args[i + 1].parse::<usize>() {
+                    threads = n.max(1);
+                }
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
 
     let db = Database::open("trinitychain.db")?;
     let mut chain = db.load_blockchain()?;
@@ -79,7 +96,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         transactions,
     );
 
-    new_block = mine_block(new_block)?;
+    if threads > 1 {
+        new_block = mine_block_parallel(new_block)?;
+    } else {
+        new_block = mine_block(new_block)?;
+    }
 
     let new_hash_hex = hex::encode(new_block.hash);
     let new_hash_prefix = &new_hash_hex[..16];

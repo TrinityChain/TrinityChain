@@ -14,3 +14,4 @@ pub mod sync;
 pub mod cache;
 pub mod discovery;
 pub mod fees;
+pub mod hdwallet;
