@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tokio::task::JoinHandle;
 
 use crate::blockchain::{Blockchain, Block};
@@ -82,7 +83,7 @@ pub async fn run_api_server() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
+    let api_routes = Router::new()
         // Blockchain endpoints
         .route("/blockchain/height", get(get_blockchain_height))
         .route("/blockchain/stats", get(get_blockchain_stats))
@@ -110,6 +111,14 @@ pub async fn run_api_server() {
         .route("/network/peers", get(get_peers))
         .route("/network/info", get(get_network_info))
         .with_state(app_state)
+        .layer(cors.clone());
+
+    // Serve static files from dashboard directory
+    let serve_dir = ServeDir::new("dashboard");
+
+    let app = Router::new()
+        .nest("/api", api_routes)
+        .fallback_service(serve_dir)
         .layer(cors);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));

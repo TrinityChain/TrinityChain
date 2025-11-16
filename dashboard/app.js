@@ -17,7 +17,7 @@ function resolveApiBase() {
         // ignore
     }
 
-    // 3) fallback to relative path for deployments behind same domain or GitHub Pages proxy
+    // 3) fallback to /api (relative path for same-server deployments)
     return '/api';
 }
 

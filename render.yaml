@@ -1,9 +1,9 @@
 # Exported from Render on 2025-11-16T08:48:57Z
 version: "1"
 projects:
-- name: My project
+- name: TrinityChain
   environments:
-  - name: Production
+  - name: TrinityChain
     services:
     - type: web
       name: TrinityChain is
@@ -15,5 +15,5 @@ projects:
         sync: false
       region: oregon
       buildCommand: cargo build --release
-      startCommand: cargo run --bin trinity-api
+      startCommand: cargo run --bin trinity-api 
       autoDeployTrigger: commit
