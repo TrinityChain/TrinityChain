@@ -22,6 +22,26 @@ You need to host these files on a publicly accessible HTTPS server. Options incl
 - Netlify
 - Any web hosting service with HTTPS
 
+### Deploy to GitHub Pages (recommended)
+
+This repository includes a GitHub Actions workflow that will publish the `dashboard/` folder to the `gh-pages` branch on each push to `main`.
+
+1. Push your changes to `main`.
+2. The action will publish the `dashboard/` folder to the `gh-pages` branch.
+3. Enable GitHub Pages in repository Settings → Pages, choosing the `gh-pages` branch and the root folder.
+
+Your dashboard will then be available at:
+
+```
+https://<owner>.github.io/<repo>/
+```
+
+For this repo the expected URL (once published) will be:
+
+```
+https://TrinityChain.github.io/TrinityChain/
+```
+
 ### 2. Configure Your Telegram Bot
 
 1. Talk to [@BotFather](https://t.me/botfather) on Telegram
@@ -35,7 +55,9 @@ You need to host these files on a publicly accessible HTTPS server. Options incl
 Edit `app.js` and update the `API_BASE` constant to point to your TrinityChain API server:
 
 ```javascript
-const API_BASE = 'https://your-api-server.com/api';
+// Default resolution supports `?api=` query param, Telegram start_param, or relative `/api`.
+// To override, set query `?api=https://your-api-server.com/api` or configure your bot start_param.
+const API_BASE = '/api';
 ```
 
 ### 4. Add Menu Button to Bot

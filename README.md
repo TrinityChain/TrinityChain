@@ -67,16 +67,8 @@ cargo run --bin trinity-mine-block -- --threads 4 <your_beneficiary_address>
 
 ## Where to help (examples)
 
-- Networking: improve P2P reliability, NAT traversal, and message schemas
-- Mining: optimize parallel mining and integrate thread configuration
-- Mempool & Fees: improve fee estimation and transaction propagation
-- API & UX: build a nicer block explorer or expand the REST API
-- Security: audits, rate limiting, and peer authentication
-- Documentation: step-by-step guides and architecture diagrams
 
-## Contributing guidelines (short)
-
-1. Fork the repo
+ 
 2. Create a branch: `git checkout -b feature/your-name`
 3. Write tests for your changes
 4. Run `cargo test` and ensure all pass

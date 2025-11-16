@@ -1,8 +1,27 @@
 // Telegram Web App initialization
 let tg = window.Telegram?.WebApp;
 
-// API base URL - can be configured via Telegram Bot
-const API_BASE = tg?.initDataUnsafe?.start_param || 'http://localhost:3000/api';
+// API base URL - can be configured via Telegram Bot `start_param`, query param `?api=` or defaults to relative
+function resolveApiBase() {
+    // 1) start_param (bot can set start_param to the API base)
+    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+        return tg.initDataUnsafe.start_param;
+    }
+
+    // 2) query param ?api=
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiParam = urlParams.get('api');
+        if (apiParam) return apiParam;
+    } catch (e) {
+        // ignore
+    }
+
+    // 3) fallback to relative path for deployments behind same domain or GitHub Pages proxy
+    return '/api';
+}
+
+const API_BASE = resolveApiBase();
 
 // Initialize Telegram Web App
 if (tg) {
