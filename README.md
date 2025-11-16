@@ -84,6 +84,4 @@ We accept small, incremental PRs — documentation and tests are especially welc
 
 ---
 
-If you want, I can open some small starter issues (frontend, docs, tests) and label them `good first issue`. Would you like me to do that next? 
-
 Thank you — and welcome to help build TrinityChain!
