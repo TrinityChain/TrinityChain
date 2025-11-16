@@ -11,11 +11,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy dashboard to gh-pages
+      - name: Prepare dashboard files for root deployment
+        run: |
+          # Move dashboard files to repo root so they deploy to Pages root
+          cp dashboard/index.html dashboard/style.css dashboard/app.js ./ || true
+          # Keep README and other root files as-is for reference
+          echo "Dashboard files prepared at root"
+          ls -la *.html *.css *.js 2>/dev/null || true
+
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dashboard
+          publish_dir: ./
           publish_branch: gh-pages
           user_name: 'trinitychain-bot'
           user_email: 'noreply@trinitychain'
+          exclude_assets: '.git,node_modules,src,target,.github,documentation,scripts,assets/architecture.svg'
