@@ -1,0 +1,19 @@
+# Exported from Render on 2025-11-16T08:48:57Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: TrinityChain is
+      runtime: rust
+      repo: https://github.com/TrinityChain/TrinityChain
+      plan: free
+      envVars:
+      - key: TELOXIDE_TOKEN
+        sync: false
+      region: oregon
+      buildCommand: cargo build --release
+      startCommand: cargo run --bin trinity-api
+      autoDeployTrigger: commit
