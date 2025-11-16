@@ -121,9 +121,16 @@ pub async fn run_api_server() {
         .fallback_service(serve_dir)
         .layer(cors);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    // Use PORT env var (for Render.com) or default to 3000
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000);
+
+    // Bind to 0.0.0.0 to accept external connections (required for Render.com)
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await
-        .expect("Failed to bind to 127.0.0.1:3000. Port may already be in use.");
+        .expect("Failed to bind to address. Port may already be in use.");
     println!("API server listening on http://{}", addr);
     axum::serve(listener, app).await
         .expect("API server encountered a fatal error");
