@@ -274,11 +274,13 @@ impl Database {
             eprintln!("⚠️  Warning: Metadata difficulty ({}) doesn't match last block difficulty ({}). Using block data.",
                       metadata_difficulty, actual_difficulty);
             eprintln!("   Updating metadata to match...");
-            // Fix the metadata
-            let _ = self.conn.execute(
+            // Fix the metadata - errors here are non-critical since we're using actual_difficulty anyway
+            if let Err(e) = self.conn.execute(
                 "INSERT OR REPLACE INTO metadata (key, value) VALUES ('difficulty', ?1)",
                 params![actual_difficulty.to_string()],
-            );
+            ) {
+                eprintln!("⚠️  Warning: Failed to update difficulty metadata: {}", e);
+            }
             actual_difficulty
         } else {
             actual_difficulty

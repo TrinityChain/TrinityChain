@@ -366,7 +366,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let wallet_path = temp_dir.join("test_wallet.json");
 
-        // Clean up if exists
+        // Clean up if exists - ignore errors if file doesn't exist
         let _ = fs::remove_file(&wallet_path);
 
         // Create and save

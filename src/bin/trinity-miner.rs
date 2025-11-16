@@ -48,16 +48,37 @@ async fn main() {
         println!("{}", "║                      📖 Usage Guide                      ║".bright_yellow().bold());
         println!("{}", "╠══════════════════════════════════════════════════════════╣".bright_yellow());
         println!("{}", "║  Usage:                                                  ║".bright_yellow());
-        println!("{}", "║    miner <beneficiary_address> [--peer <host:port>]      ║".white());
+        println!("{}", "║    miner <beneficiary_address> [OPTIONS]                 ║".white());
+        println!("{}", "║                                                          ║".bright_yellow());
+        println!("{}", "║  Options:                                                ║".bright_yellow());
+        println!("{}", "║    --peer <host:port>    Connect to a peer               ║".white());
+        println!("{}", "║    --threads <N>         Use N threads for mining        ║".white());
         println!("{}", "║                                                          ║".bright_yellow());
         println!("{}", "║  Example:                                                ║".bright_yellow());
         println!("{}", "║    miner abc123...                                       ║".white());
         println!("{}", "║    miner abc123... --peer 192.168.1.10:8333             ║".white());
+        println!("{}", "║    miner abc123... --threads 4                           ║".white());
         println!("{}", "╚══════════════════════════════════════════════════════════╝".bright_yellow());
         println!();
         return;
     }
     let beneficiary_address = args[1].clone();
+
+    // Parse optional threads flag: --threads N or -t N
+    let mut threads: usize = 1;
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--threads" || args[i] == "-t" {
+            if i + 1 < args.len() {
+                if let Ok(n) = args[i + 1].parse::<usize>() {
+                    threads = n.max(1);
+                }
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
 
     println!("{}", LOGO.bright_yellow());
     println!("{}", "┌─────────────────────────────────────────────────────────────┐".bright_green());
@@ -82,6 +103,7 @@ async fn main() {
     println!("{}", "╠══════════════════════════════════════════════════════════╣".cyan());
     println!("{}", format!("║  👤 Beneficiary: {:<40} ║", beneficiary_display).cyan());
     println!("{}", format!("║  💰 Reward: {:<45} ║", "1000 area").cyan());
+    println!("{}", format!("║  🧵 Threads: {:<44} ║", threads).cyan());
     println!("{}", "╚══════════════════════════════════════════════════════════╝".cyan());
     println!();
 
@@ -153,51 +175,51 @@ async fn main() {
         pb.enable_steady_tick(Duration::from_millis(100));
 
         let mine_start = Instant::now();
-        let mut hash_count = 0u64;
-    // Parse optional threads flag: --threads N
-    let mut threads: usize = 1;
-    let mut i = 1;
-    while i < args.len() {
-        if args[i] == "--threads" || args[i] == "-t" {
-            if i + 1 < args.len() {
-                if let Ok(n) = args[i + 1].parse::<usize>() {
-                    threads = n.max(1);
+
+        // Use parallel or single-threaded mining based on threads setting
+        let mined_block = if threads > 1 {
+            pb.set_message(format!("Mining with {} threads...", threads));
+            match mine_block_parallel(new_block.clone()) {
+                Ok(block) => block,
+                Err(e) => {
+                    eprintln!("{}", format!("❌ Parallel mining failed: {}, falling back to single-threaded", e).red());
+                    mine_block(new_block.clone()).expect("Mining failed")
                 }
             }
-            i += 2;
         } else {
-            i += 1;
-        }
-    }
+            let mut hash_count = 0u64;
+            loop {
+                new_block.hash = new_block.calculate_hash();
+                hash_count += 1;
 
-        loop {
-            new_block.hash = new_block.calculate_hash();
-            hash_count += 1;
+                if hash_count % 10000 == 0 {
+                    let elapsed = mine_start.elapsed().as_secs_f64();
+                    let hashrate = if elapsed > 0.0 { hash_count as f64 / elapsed } else { 0.0 };
+                    pb.set_message(format!("Hashing... {} attempts ({:.0} H/s)", hash_count, hashrate));
+                }
 
-            if hash_count % 10000 == 0 {
-                let elapsed = mine_start.elapsed().as_secs_f64();
-                let hashrate = if elapsed > 0.0 { hash_count as f64 / elapsed } else { 0.0 };
-                pb.set_message(format!("Hashing... {} attempts ({:.0} H/s)", hash_count, hashrate));
+                if new_block.verify_proof_of_work() {
+                    break;
+                }
+                new_block.header.nonce += 1;
             }
+            new_block
+        };
 
-            if new_block.verify_proof_of_work() {
-                pb.finish_and_clear();
-                let mine_duration = mine_start.elapsed();
-                let hash_hex = hex::encode(new_block.hash);
-                let hash_display = format!("{}...{}", &hash_hex[..10], &hash_hex[hash_hex.len()-10..]);
+        pb.finish_and_clear();
+        let mine_duration = mine_start.elapsed();
+        let hash_hex = hex::encode(mined_block.hash);
+        let hash_display = format!("{}...{}", &hash_hex[..10], &hash_hex[hash_hex.len()-10..]);
 
-                println!("{}", "┌─────────────────────────────────────────────────────────────┐".green());
-                println!("{}", format!("│ ✨ BLOCK FOUND! #{:<45} │", new_height).green().bold());
-                println!("{}", "├─────────────────────────────────────────────────────────────┤".green());
-                println!("{}", format!("│ Hash: {:<52} │", hash_display).green());
-                println!("{}", format!("│ Attempts: {:<48} │", hash_count).green());
-                println!("{}", format!("│ Time: {:.2}s{:<47} │", mine_duration.as_secs_f64(), "").green());
-                println!("{}", format!("│ Avg Hashrate: {:.0} H/s{:<36} │", hash_count as f64 / mine_duration.as_secs_f64(), "").green());
-                println!("{}", "└─────────────────────────────────────────────────────────────┘".green());
-                break;
-            }
-            new_block.header.nonce += 1;
-        }
+        println!("{}", "┌─────────────────────────────────────────────────────────────┐".green());
+        println!("{}", format!("│ ✨ BLOCK FOUND! #{:<45} │", new_height).green().bold());
+        println!("{}", "├─────────────────────────────────────────────────────────────┤".green());
+        println!("{}", format!("│ Hash: {:<52} │", hash_display).green());
+        println!("{}", format!("│ Nonce: {:<51} │", mined_block.header.nonce).green());
+        println!("{}", format!("│ Time: {:.2}s{:<47} │", mine_duration.as_secs_f64(), "").green());
+        println!("{}", "└─────────────────────────────────────────────────────────────┘".green());
+
+        new_block = mined_block;
 
         if let Err(e) = chain.apply_block(new_block.clone()) {
             eprintln!("{}", format!("❌ Failed to apply new block: {}", e).red());

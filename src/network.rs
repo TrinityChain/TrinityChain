@@ -111,7 +111,9 @@ impl NetworkNode {
 
         // Register peer with synchronizer
         let remote_height = remote_headers.last().map(|h| h.height).unwrap_or(local_height);
-        let _ = self.synchronizer.register_peer(node.clone(), remote_height).await;
+        if let Err(e) = self.synchronizer.register_peer(node.clone(), remote_height).await {
+            eprintln!("⚠️  Warning: Failed to register peer in synchronizer: {}", e);
+        }
 
         if remote_headers.is_empty() {
             println!("✅ Already up to date");
@@ -160,11 +162,15 @@ impl NetworkNode {
                 for block in blocks {
                     match chain.apply_block(block) {
                         Ok(_) => {
-                            let _ = self.synchronizer.record_block_received(&node.addr()).await;
+                            if let Err(e) = self.synchronizer.record_block_received(&node.addr()).await {
+                                eprintln!("⚠️  Warning: Failed to record block received: {}", e);
+                            }
                         }
                         Err(e) => {
                             eprintln!("❌ Failed to apply block: {}", e);
-                            let _ = self.synchronizer.record_sync_failure(&node.addr()).await;
+                            if let Err(e) = self.synchronizer.record_sync_failure(&node.addr()).await {
+                                eprintln!("⚠️  Warning: Failed to record sync failure: {}", e);
+                            }
                         }
                     }
                 }
@@ -296,8 +302,7 @@ impl NetworkNode {
     }
 
     /// Validates an entire blockchain by checking all blocks
-    #[allow(dead_code)]
-    fn validate_chain(chain: &Blockchain) -> bool {
+    pub fn validate_chain(chain: &Blockchain) -> bool {
         if chain.blocks.is_empty() {
             return false;
         }

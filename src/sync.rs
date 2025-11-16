@@ -89,12 +89,6 @@ pub struct NodeSynchronizer {
     stats: Arc<RwLock<SyncStats>>,
     /// Queue of blocks pending application
     pending_blocks: Arc<RwLock<VecDeque<Block>>>,
-    /// Maximum peers to sync from simultaneously
-    #[allow(dead_code)]
-    max_concurrent_syncs: usize,
-    /// Maximum blocks per batch request
-    #[allow(dead_code)]
-    batch_size: usize,
 }
 
 impl NodeSynchronizer {
@@ -104,8 +98,6 @@ impl NodeSynchronizer {
             sync_state: Arc::new(RwLock::new(SyncState::Idle)),
             stats: Arc::new(RwLock::new(SyncStats::default())),
             pending_blocks: Arc::new(RwLock::new(VecDeque::new())),
-            max_concurrent_syncs: 5,
-            batch_size: 100,
         }
     }
 
@@ -305,8 +297,11 @@ impl NodeSynchronizer {
 
         println!("🔄 Starting sync from peer {} (local: {}, remote: estimated)", peer_addr, local_height);
 
-        // This will be called by the network module which has the actual connection logic
-        // The network module will use this synchronizer to track sync progress
+        // NOTE: This is a state management function only.
+        // The actual block fetching and chain synchronization is performed by the NetworkNode
+        // in network.rs (see NetworkNode::synchronize_with_peer).
+        // This function tracks sync state and coordinates with the network layer.
+        // The NetworkNode calls record_block_received() and record_sync_failure() to update our state.
 
         self.set_peer_syncing(&peer_addr, false).await?;
         self.set_sync_state(SyncState::Synced).await;

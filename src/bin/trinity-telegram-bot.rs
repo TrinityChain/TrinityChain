@@ -201,35 +201,29 @@ async fn answer(
             }
 
             match hex::decode(hex_part) {
-                Ok(bytes) => match Database::open("trinitychain.db") {
-                    Ok(_db) => match _db.load_blockchain() {
-                        Ok(chain) => {
-                            match bincode::deserialize::<trinitychain::transaction::Transaction>(&bytes) {
-                                Ok(tx) => {
-                                    if let Some(node) = node_opt.as_ref() {
-                                        match node.broadcast_transaction(&tx).await {
-                                            Ok(_) => {
-                                                let msg = format!("✅ Broadcasted transaction {} to peers", tx.hash_str());
-                                                bot.send_message(message.chat.id, msg).await?;
-                                            }
-                                            Err(e) => {
-                                                let msg = format!("❌ Failed to broadcast: {}", e);
-                                                bot.send_message(message.chat.id, msg).await?;
-                                            }
-                                        }
-                                    } else {
-                                        bot.send_message(message.chat.id, "❌ Network node not initialized; cannot broadcast.").await?;
+                Ok(bytes) => {
+                    match bincode::deserialize::<trinitychain::transaction::Transaction>(&bytes) {
+                        Ok(tx) => {
+                            if let Some(node) = node_opt.as_ref() {
+                                match node.broadcast_transaction(&tx).await {
+                                    Ok(_) => {
+                                        let msg = format!("✅ Broadcasted transaction {} to peers", tx.hash_str());
+                                        bot.send_message(message.chat.id, msg).await?;
+                                    }
+                                    Err(e) => {
+                                        let msg = format!("❌ Failed to broadcast: {}", e);
+                                        bot.send_message(message.chat.id, msg).await?;
                                     }
                                 }
-                                Err(_) => {
-                                    bot.send_message(message.chat.id, "Invalid transaction bytes; could not deserialize.").await?;
-                                }
+                            } else {
+                                bot.send_message(message.chat.id, "❌ Network node not initialized; cannot broadcast.").await?;
                             }
                         }
-                        Err(_) => { bot.send_message(message.chat.id, "Could not load blockchain data.").await?; }
-                    },
-                    Err(_) => { bot.send_message(message.chat.id, "Could not open blockchain database.").await?; }
-                },
+                        Err(_) => {
+                            bot.send_message(message.chat.id, "Invalid transaction bytes; could not deserialize.").await?;
+                        }
+                    }
+                }
                 Err(_) => { bot.send_message(message.chat.id, "Invalid hex provided.").await?; }
             }
 

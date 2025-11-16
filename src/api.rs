@@ -55,8 +55,10 @@ struct AppState {
 }
 
 pub async fn run_api_server() {
-    let db = Database::open("trinitychain.db").unwrap();
-    let blockchain = db.load_blockchain().unwrap();
+    let db = Database::open("trinitychain.db")
+        .expect("Failed to open database. Ensure trinitychain.db is accessible.");
+    let blockchain = db.load_blockchain()
+        .expect("Failed to load blockchain from database. Database may be corrupted.");
 
     let app_state = AppState {
         blockchain: Arc::new(Mutex::new(blockchain)),
@@ -67,9 +69,11 @@ pub async fn run_api_server() {
 
     // Initialize network state with default values
     {
-        let mut node_id = app_state.network.node_id.lock().unwrap();
+        let mut node_id = app_state.network.node_id.lock()
+            .expect("Failed to acquire lock on node_id");
         *node_id = format!("trinity-node-{}", rand::random::<u32>());
-        let mut port = app_state.network.listening_port.lock().unwrap();
+        let mut port = app_state.network.listening_port.lock()
+            .expect("Failed to acquire lock on listening_port");
         *port = 8333;
     }
 
@@ -109,8 +113,11 @@ pub async fn run_api_server() {
         .layer(cors);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await
+        .expect("Failed to bind to 127.0.0.1:3000. Port may already be in use.");
+    println!("API server listening on http://{}", addr);
+    axum::serve(listener, app).await
+        .expect("API server encountered a fatal error");
 }
 
 async fn get_blockchain_height(State(state): State<AppState>) -> Json<u64> {
