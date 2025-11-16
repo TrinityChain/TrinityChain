@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::blockchain::Blockchain;
 use crate::error::ChainError;
+use crate::sync::NodeSynchronizer;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
@@ -26,6 +27,7 @@ impl Node {
 pub struct NetworkNode {
     blockchain: Arc<RwLock<Blockchain>>,
     peers: Arc<RwLock<Vec<Node>>>,
+    synchronizer: Arc<NodeSynchronizer>,
 }
 
 impl NetworkNode {
@@ -33,7 +35,13 @@ impl NetworkNode {
         NetworkNode {
             blockchain: Arc::new(RwLock::new(blockchain)),
             peers: Arc::new(RwLock::new(Vec::new())),
+            synchronizer: Arc::new(NodeSynchronizer::new()),
         }
+    }
+    
+    /// Get a reference to the synchronizer
+    pub fn synchronizer(&self) -> &Arc<NodeSynchronizer> {
+        &self.synchronizer
     }
     
     pub async fn start_server(&self, port: u16) -> Result<(), ChainError> {
@@ -67,6 +75,8 @@ impl NetworkNode {
         let addr = format!("{}:{}", host, port);
         println!("🔗 Connecting to peer: {}", addr);
 
+        let node = Node::new(host.clone(), port);
+        
         let mut stream = TcpStream::connect(&addr).await
             .map_err(|e| ChainError::NetworkError(format!("Failed to connect: {}", e)))?;
 
@@ -98,6 +108,10 @@ impl NetworkNode {
             NetworkMessage::BlockHeaders(headers) => headers,
             _ => return Err(ChainError::NetworkError("Unexpected response".to_string())),
         };
+
+        // Register peer with synchronizer
+        let remote_height = remote_headers.last().map(|h| h.height).unwrap_or(local_height);
+        let _ = self.synchronizer.register_peer(node.clone(), remote_height).await;
 
         if remote_headers.is_empty() {
             println!("✅ Already up to date");
@@ -144,8 +158,15 @@ impl NetworkNode {
                 println!("📥 Received batch of {} blocks", blocks.len());
 
                 for block in blocks {
-                    chain.apply_block(block)
-                        .map_err(|e| ChainError::NetworkError(format!("Failed to apply block: {}", e)))?;
+                    match chain.apply_block(block) {
+                        Ok(_) => {
+                            let _ = self.synchronizer.record_block_received(&node.addr()).await;
+                        }
+                        Err(e) => {
+                            eprintln!("❌ Failed to apply block: {}", e);
+                            let _ = self.synchronizer.record_sync_failure(&node.addr()).await;
+                        }
+                    }
                 }
 
                 println!("✅ Applied batch successfully");

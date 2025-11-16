@@ -10,3 +10,4 @@ pub mod wallet;
 pub mod addressbook;
 pub mod api;
 pub mod security;
+pub mod sync;
