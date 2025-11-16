@@ -1,278 +1,129 @@
 # TrinityChain
 
-A triangle-based blockchain built on geometric principles with Proof-of-Work consensus.
+A triangle-first blockchain: value is represented as geometric triangles (area = value). Built with Rust and focused on research, performance, and an experimental take on UTXO economics.
 
-## 🔺 What is TrinityChain?
+--
 
-TrinityChain is an innovative blockchain where value is represented as geometric triangles rather than traditional coins. Each unit of value has an area, and the blockchain maintains a UTXO (Unspent Triangle Output) set.
+**Status (Honest):** This repository has been maintained primarily by one human developer with the assistance of AI tooling. The project is functional, includes tests, and compiles — but it needs more human contributors: developers, reviewers, designers, and testers. If you like building novel systems, we'd love your help.
 
-### Key Features
+## Quick overview
 
-- **🔺 Triangle Economy** - Geometric triangles as the fundamental unit of value
-- **⛏️ Proof-of-Work** - SHA-256 mining with Bitcoin-like difficulty adjustment
-- **🔐 Real Cryptography** - ECDSA signatures with secp256k1, UTXO model
-- **📉 Deflationary** - 21M max supply, halving every 210k blocks
-- **🔄 Triangle Subdivision** - Split triangles to transfer value
-- **🌐 P2P Network** - Decentralized node communication
-- **📱 Telegram Bot** - Interact with the blockchain via Telegram
-- **📊 Web Dashboard** - Telegram Mini App for blockchain exploration
+- Triangle-based UTXO model
+- Proof-of-Work (SHA-256) with difficulty adjustments
+- Rust codebase with modular components (network, mining, persistence, API)
+- Developer-friendly: tests, CLI tools, and a web dashboard
 
-## 🚀 Quick Start
+## Architecture (high-level)
 
-### Prerequisites
+Simple ASCII diagram:
 
-- Rust 1.70+ (install via [rustup](https://rustup.rs/))
-- SQLite3
-- Git
+```
+                +-------------------+
+                |  CLI / Dashboard  |
+                +---------+---------+
+                          |
+               HTTP/JSON  |  P2P Messages
+                          |
+                +---------v---------+
+                |   API / Network   |
+                +----+--------+-----+
+                     |        |
+     Persist <-------+        +------> P2P peers
+               SQLite / DB      
+                     |
+                +----v----+
+                | Chain    |
+                | (UTXO)   |
+                +----+----+
+                     |
+                Mining & Txpool
+```
 
-### Installation
+Mermaid/graph (GitHub may render if enabled):
+
+```mermaid
+flowchart LR
+  CLI[CLI / Dashboard] --> API[API / Network]
+  API --> DB[SQLite / Persistence]
+  API --> Peers[P2P Peers]
+  DB --> Chain[Blockchain (UTXO)]
+  Chain --> Miner[Mining / Txpool]
+  Miner --> Chain
+```
+
+## Why we need contributors
+
+This project started as the work of a single developer (with AI assistance). That means:
+
+- Many features are drafts or minimal implementations.
+- Tests exist, but more coverage and stress-testing are needed.
+- The network, UX, and security layers would benefit greatly from review and real-world testing.
+
+If you can code, review, design, test, or write docs — please join. Small PRs, issue triage, or running a local node are all valuable.
+
+## Get started (contribute in small steps)
+
+1. Fork & clone this repo
 
 ```bash
-# Clone the repository
 git clone https://github.com/TrinityChain/TrinityChain.git
-cd trinitychain
+cd TrinityChain
+```
 
-# Build the project
+2. Build and run tests
+
+```bash
 cargo build --release
-```
-
-## 📦 Binaries
-
-TrinityChain includes several command-line tools:
-
-### Wallet Management
-
-```bash
-# Create a new wallet
-cargo run --bin trinity-wallet-new
-
-# Check balance
-cargo run --bin trinity-balance
-
-# View transaction history
-cargo run --bin trinity-history
-
-# Send triangles
-cargo run --bin trinity-send <recipient_address> <amount>
-
-# Backup wallet
-cargo run --bin trinity-wallet-backup
-
-# Restore wallet
-cargo run --bin trinity-wallet-restore
-```
-
-### Mining
-
-```bash
-# Start mining
-cargo run --bin trinity-miner <your_wallet_address>
-
-# Mine a single block
-cargo run --bin trinity-mine-block <beneficiary_address>
-```
-
-### Network Node
-
-```bash
-# Start a node
-cargo run --bin trinity-node <port>
-
-# Start a node and connect to peer
-cargo run --bin trinity-node <port> --peer <peer_host:peer_port>
-```
-
-### API Server
-
-```bash
-# Start the REST API server
-cargo run --bin trinity-api
-# API will be available at http://localhost:3000
-```
-
-### Telegram Bot
-
-```bash
-# Set your bot token
-export TELOXIDE_TOKEN="your_bot_token_here"
-
-# Start the Telegram bot
-cargo run --bin trinity-telegram-bot
-```
-
-## 🌐 API Endpoints
-
-The TrinityChain API provides the following endpoints:
-
-### Blockchain
-- `GET /blockchain/height` - Get current blockchain height
-- `GET /blockchain/stats` - Get blockchain statistics
-- `GET /blockchain/blocks` - Get recent blocks
-- `GET /blockchain/block/:hash` - Get block by hash
-- `GET /blockchain/block/by-height/:height` - Get block by height
-
-### Addresses & Balances
-- `GET /address/:addr/balance` - Get address balance
-- `GET /address/:addr/triangles` - Get address triangles
-- `GET /address/:addr/history` - Get transaction history
-
-### Transactions
-- `POST /transaction` - Submit a transaction
-- `GET /transaction/:hash` - Get transaction status
-- `GET /transactions/pending` - Get pending transactions
-- `GET /transactions/mempool-stats` - Get mempool statistics
-
-### Mining
-- `GET /mining/status` - Get mining status
-- `POST /mining/start` - Start mining
-- `POST /mining/stop` - Stop mining
-
-### Network
-- `GET /network/peers` - Get connected peers
-- `GET /network/info` - Get network information
-
-## 📱 Telegram Bot Commands
-
-- `/start` - Welcome message
-- `/help` - Show all commands
-- `/stats` - View blockchain statistics
-- `/balance <address>` - Check wallet balance
-- `/blocks` - View recent blocks
-- `/genesis` - See genesis block
-- `/triangles` - Count total triangles in UTXO
-- `/difficulty` - Current mining difficulty
-- `/height` - Current blockchain height
-- `/about` - Learn about TrinityChain
-- `/dashboard` - Open blockchain explorer
-
-## 📊 Dashboard
-
-The TrinityChain dashboard is a Telegram Mini App that provides a visual interface for exploring the blockchain.
-
-**Live Dashboard:** [https://dashboard-hlbo27wax-starjamisom-2642s-projects.vercel.app](https://dashboard-hlbo27wax-starjamisom-2642s-projects.vercel.app)
-
-See [dashboard/README.md](dashboard/README.md) for setup instructions.
-
-## 🏗️ Architecture
-
-### Core Components
-
-- **Blockchain** - Main blockchain logic and UTXO state management
-- **Geometry** - Triangle primitives and subdivision logic
-- **Transactions** - Coinbase, Subdivision, and Transfer transactions
-- **Crypto** - ECDSA key generation and signing with secp256k1
-- **Mining** - Proof-of-Work mining implementation
-- **Network** - P2P node communication
-- **Persistence** - SQLite database for blockchain storage
-- **API** - REST API server built with Axum
-- **Security** - Firewall rules and VPN/SOCKS5 proxy support
-
-### Supply & Halving
-
-TrinityChain follows a Bitcoin-like supply model:
-
-- **Max Supply:** 21,000,000 area units
-- **Initial Block Reward:** 1000 area
-- **Halving Interval:** Every 210,000 blocks
-- **Halving Schedule:**
-  - Blocks 0-209,999: 1000 area
-  - Blocks 210,000-419,999: 500 area
-  - Blocks 420,000-629,999: 250 area
-  - And so on...
-
-### Triangle Geometry
-
-Each triangle in the UTXO set has:
-- Three vertices (x, y coordinates)
-- An owner address
-- An optional parent hash (for subdivision tracking)
-
-Triangles can be subdivided into smaller triangles, enabling fractional value transfer.
-
-## 🔒 Security
-
-TrinityChain includes several security features:
-
-- **Firewall Rules** - IP-based access control
-- **VPN Support** - Route traffic through VPN tunnels
-- **SOCKS5 Proxy** - Proxy support for enhanced privacy
-- **Rate Limiting** - Protection against spam and DoS
-- **Authentication** - Optional authentication for API endpoints
-
-Configure via environment variables:
-```bash
-export TRINITY_VPN_INTERFACE="wg0"
-export TRINITY_SOCKS5_PROXY="127.0.0.1:9050"
-export TRINITY_REQUIRE_AUTH="true"
-```
-
-## 🧪 Testing
-
-```bash
-# Run all tests
 cargo test
-
-# Run specific test
-cargo test test_blockchain_creation
-
-# Run with output
-cargo test -- --nocapture
 ```
 
-## 📝 Development
+3. Run a local node (quick):
 
-### Project Structure
-
-```
-trinitychain/
-├── src/
-│   ├── bin/           # Binary executables
-│   ├── lib.rs         # Library entry point
-│   ├── blockchain.rs  # Core blockchain logic
-│   ├── geometry.rs    # Triangle primitives
-│   ├── transaction.rs # Transaction types
-│   ├── crypto.rs      # Cryptography utilities
-│   ├── mining.rs      # Mining implementation
-│   ├── network.rs     # P2P networking
-│   ├── persistence.rs # Database layer
-│   ├── api.rs         # REST API
-│   ├── wallet.rs      # Wallet utilities
-│   ├── addressbook.rs # Address book management
-│   └── security.rs    # Security features
-├── dashboard/         # Web dashboard (Telegram Mini App)
-├── Cargo.toml         # Rust dependencies
-└── README.md          # This file
+```bash
+# Start a node on port 3030 (example)
+cargo run --bin trinity-node -- 3030
 ```
 
-### Contributing
+4. Try the miner CLI (fast single-block mine):
 
-Contributions are welcome! Please:
+```bash
+cargo run --bin trinity-mine-block -- <your_beneficiary_address>
+# or use parallel mining
+cargo run --bin trinity-mine-block -- --threads 4 <your_beneficiary_address>
+```
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+5. Create a small PR
 
-## 📄 License
+- Look for `good first issue` label (or open one describing a small task)
+- Submit changes to a branch and open a PR. We review quickly.
 
-This project is open source. See the repository for license details.
+## Where to help (examples)
 
-## 🔗 Links
+- Networking: improve P2P reliability, NAT traversal, and message schemas
+- Mining: optimize parallel mining and integrate thread configuration
+- Mempool & Fees: improve fee estimation and transaction propagation
+- API & UX: build a nicer block explorer or expand the REST API
+- Security: audits, rate limiting, and peer authentication
+- Documentation: step-by-step guides and architecture diagrams
 
-- **GitHub:** [https://github.com/TrinityChain/TrinityChain](https://github.com/TrinityChain/TrinityChain)
-- **Dashboard:** [https://dashboard-hlbo27wax-starjamisom-2642s-projects.vercel.app](https://dashboard-hlbo27wax-starjamisom-2642s-projects.vercel.app)
-- **Telegram Bot:** Contact @TrinityChainBot (when configured)
+## Contributing guidelines (short)
 
-## 🙏 Acknowledgments
+1. Fork the repo
+2. Create a branch: `git checkout -b feature/your-name`
+3. Write tests for your changes
+4. Run `cargo test` and ensure all pass
+5. Commit, push, and open a PR with a short description
 
-Built with:
-- [Rust](https://www.rust-lang.org/)
-- [secp256k1](https://github.com/rust-bitcoin/rust-secp256k1) - Elliptic curve cryptography
-- [Axum](https://github.com/tokio-rs/axum) - Web framework
-- [SQLite](https://www.sqlite.org/) - Embedded database
-- [Teloxide](https://github.com/teloxide/teloxide) - Telegram bot framework
+We accept small, incremental PRs — documentation and tests are especially welcome.
+
+## Quick Links
+
+- Repo: https://github.com/TrinityChain/TrinityChain
+- Issues: https://github.com/TrinityChain/TrinityChain/issues
+- Dashboard: `dashboard/` (see `dashboard/README.md`)
 
 ---
 
-**🔺 TrinityChain - Where Geometry Meets Blockchain**
+If you want, I can open some small starter issues (frontend, docs, tests) and label them `good first issue`. Would you like me to do that next? 
+
+Thank you — and welcome to help build TrinityChain!
