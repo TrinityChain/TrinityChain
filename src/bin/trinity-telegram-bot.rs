@@ -111,7 +111,7 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
 
                         let mut msg = format!("📦 Recent {} Blocks:\n\n", num_blocks);
                         for block in recent_blocks.iter().rev() {
-                            let timestamp = chrono::NaiveDateTime::from_timestamp_opt(block.header.timestamp, 0)
+                            let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(block.header.timestamp, 0)
                                 .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
                                 .unwrap_or_else(|| "Invalid".to_string());
                             let hash_hex = hex::encode(block.hash);
@@ -140,7 +140,7 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
                     Ok(chain) => {
                         if let Some(genesis_block) = chain.blocks.get(0) {
                             let header = &genesis_block.header;
-                            let timestamp = chrono::NaiveDateTime::from_timestamp_opt(header.timestamp, 0)
+                            let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(header.timestamp, 0)
                                 .map(|t| t.to_string())
                                 .unwrap_or_else(|| "Invalid timestamp".to_string());
                             let headline = header.headline.as_deref().unwrap_or("N/A");

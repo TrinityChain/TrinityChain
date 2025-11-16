@@ -279,6 +279,15 @@ impl TransferTx {
             return Err(ChainError::InvalidTransaction("Transfer not signed".to_string()));
         }
 
+        // Validate addresses are not empty
+        if self.sender.is_empty() {
+            return Err(ChainError::InvalidTransaction("Sender address cannot be empty".to_string()));
+        }
+        
+        if self.new_owner.is_empty() {
+            return Err(ChainError::InvalidTransaction("New owner address cannot be empty".to_string()));
+        }
+
         // Validate memo length to prevent DoS attacks
         if let Some(ref memo) = self.memo {
             if memo.len() > Self::MAX_MEMO_LENGTH {

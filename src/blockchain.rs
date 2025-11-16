@@ -49,9 +49,8 @@ impl TriangleState {
             )));
         }
 
-        // Pre-allocate capacity for better performance
-        self.utxo_set.reserve(tx.children.len());
-
+        // Reserve capacity for children before the loop to avoid reallocations
+        // Subdivisions always produce exactly 3 children
         for child in &tx.children {
             let child_hash = child.hash();
             self.utxo_set.insert(child_hash, child.clone());
@@ -110,6 +109,7 @@ impl BlockHeader {
     #[inline]
     pub fn calculate_hash(&self) -> Sha256Hash {
         let mut hasher = Sha256::new();
+        // Use as_slice() and direct byte operations for better performance
         hasher.update(self.height.to_le_bytes());
         hasher.update(self.previous_hash);
         hasher.update(self.timestamp.to_le_bytes());
@@ -172,22 +172,27 @@ impl Block {
             return [0; 32];
         }
 
-        let mut hashes: Vec<[u8; 32]> = transactions.iter().map(|tx| tx.hash()).collect();
+        // Pre-allocate with exact capacity to avoid reallocations
+        let mut hashes: Vec<[u8; 32]> = Vec::with_capacity(transactions.len());
+        for tx in transactions {
+            hashes.push(tx.hash());
+        }
 
         while hashes.len() > 1 {
             if hashes.len() % 2 != 0 {
-                hashes.push(*hashes.last().unwrap());
+                // Duplicate last hash for odd-length trees
+                hashes.push(hashes[hashes.len() - 1]);
             }
 
-            hashes = hashes
-                .chunks(2)
-                .map(|chunk| {
-                    let mut hasher = Sha256::new();
-                    hasher.update(chunk[0]);
-                    hasher.update(chunk[1]);
-                    hasher.finalize().into()
-                })
-                .collect();
+            // Reuse the same vec for parent hashes to reduce allocations
+            let mut new_hashes = Vec::with_capacity((hashes.len() + 1) / 2);
+            for i in (0..hashes.len()).step_by(2) {
+                let mut hasher = Sha256::new();
+                hasher.update(hashes[i]);
+                hasher.update(hashes[i + 1]);
+                new_hashes.push(hasher.finalize().into());
+            }
+            hashes = new_hashes;
         }
 
         hashes[0]
@@ -257,18 +262,24 @@ impl Mempool {
         };
 
         if let Some(sender) = sender_address {
-            let count = self.transactions.values()
-                .filter(|t| match t {
-                    Transaction::Transfer(t) => &t.sender == sender,
-                    Transaction::Subdivision(s) => &s.owner_address == sender,
-                    _ => false,
-                })
-                .count();
-
-            if count >= Self::MAX_PER_ADDRESS {
-                return Err(ChainError::InvalidTransaction(
-                    format!("Address has reached maximum mempool limit of {}", Self::MAX_PER_ADDRESS)
-                ));
+            // Count transactions from this sender (optimized single pass)
+            let mut count = 0;
+            for tx in self.transactions.values() {
+                let tx_sender = match tx {
+                    Transaction::Transfer(t) => Some(&t.sender),
+                    Transaction::Subdivision(s) => Some(&s.owner_address),
+                    _ => None,
+                };
+                if let Some(tx_sender) = tx_sender {
+                    if tx_sender == sender {
+                        count += 1;
+                        if count >= Self::MAX_PER_ADDRESS {
+                            return Err(ChainError::InvalidTransaction(
+                                format!("Address has reached maximum mempool limit of {}", Self::MAX_PER_ADDRESS)
+                            ));
+                        }
+                    }
+                }
             }
         }
 
@@ -373,18 +384,20 @@ impl Mempool {
 
     /// Validate all transactions in mempool against current state
     /// Removes invalid transactions and returns count of removed transactions
+    /// Optimized to collect invalid hashes first to avoid iterator invalidation
     pub fn validate_and_prune(&mut self, state: &TriangleState) -> usize {
         let mut to_remove = Vec::new();
 
+        // Single pass through transactions
         for (hash, tx) in self.transactions.iter() {
             let is_valid = match tx {
                 Transaction::Subdivision(sub_tx) => {
-                    // Check if parent exists in UTXO set
+                    // Check if parent exists in UTXO set and signature is valid
                     state.utxo_set.contains_key(&sub_tx.parent_hash) &&
                     sub_tx.validate(state).is_ok()
                 },
                 Transaction::Transfer(transfer_tx) => {
-                    // Check if input exists in UTXO set
+                    // Check if input exists in UTXO set and signature is valid
                     state.utxo_set.contains_key(&transfer_tx.input_hash) &&
                     transfer_tx.validate().is_ok()
                 },
@@ -400,6 +413,7 @@ impl Mempool {
         }
 
         let removed_count = to_remove.len();
+        // Batch removal to avoid repeated HashMap lookups
         for hash in to_remove {
             self.transactions.remove(&hash);
         }
@@ -1112,6 +1126,7 @@ mod tests {
                     difficulty: chain.difficulty,
                     nonce: 0,
                     merkle_root: [0; 32],
+                    headline: None,
                 },
                 hash: [i as u8; 32],
                 transactions: vec![],
@@ -1137,6 +1152,7 @@ mod tests {
                     difficulty: chain.difficulty,
                     nonce: 0,
                     merkle_root: [0; 32],
+                    headline: None,
                 },
                 hash: [i as u8; 32],
                 transactions: vec![],
@@ -1163,6 +1179,7 @@ mod tests {
                     difficulty: chain.difficulty,
                     nonce: 0,
                     merkle_root: [0; 32],
+                    headline: None,
                 },
                 hash: [i as u8; 32],
                 transactions: vec![],

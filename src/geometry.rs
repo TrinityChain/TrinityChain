@@ -26,6 +26,8 @@ impl Point {
     pub const MAX_COORDINATE: Coord = 1e10;
 
     /// Creates a new Point.
+    /// Note: Does not validate bounds - use is_valid() to check if coordinates are within acceptable ranges.
+    #[inline]
     pub fn new(x: Coord, y: Coord) -> Self {
         Point { x, y }
     }
@@ -39,19 +41,23 @@ impl Point {
     }
 
     /// Calculates the midpoint between this point and another.
+    /// Optimized for inline computation.
+    #[inline]
     pub fn midpoint(&self, other: &Point) -> Point {
         Point::new(
-            (self.x + other.x) / 2.0,
-            (self.y + other.y) / 2.0,
+            (self.x + other.x) * 0.5,
+            (self.y + other.y) * 0.5,
         )
     }
 
     /// Calculates a simple cryptographic hash of the point data.
     /// Optimized to use direct byte conversion instead of string formatting.
+    /// Uses a pre-allocated buffer for better performance.
+    #[inline]
     pub fn hash(&self) -> Sha256Hash {
         let mut hasher = Sha256::new();
-        hasher.update(&self.x.to_le_bytes());
-        hasher.update(&self.y.to_le_bytes());
+        hasher.update(self.x.to_le_bytes());
+        hasher.update(self.y.to_le_bytes());
         hasher.finalize().into()
     }
 

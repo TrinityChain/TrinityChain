@@ -69,6 +69,19 @@ pub fn verify_signature(
     message: &[u8],
     signature_bytes: &[u8],
 ) -> Result<bool, ChainError> {
+    // Input validation
+    if public_key_bytes.is_empty() {
+        return Err(ChainError::CryptoError("Public key cannot be empty".to_string()));
+    }
+    
+    if message.is_empty() {
+        return Err(ChainError::CryptoError("Message cannot be empty".to_string()));
+    }
+    
+    if signature_bytes.is_empty() {
+        return Err(ChainError::CryptoError("Signature cannot be empty".to_string()));
+    }
+
     let secp = Secp256k1::new();
     
     let public_key = PublicKey::from_slice(public_key_bytes)
