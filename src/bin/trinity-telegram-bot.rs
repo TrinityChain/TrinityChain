@@ -1,6 +1,11 @@
 use teloxide::{prelude::*, utils::command::BotCommands};
-use log::info;
+use log::{info, warn};
 use trinitychain::persistence::Database;
+use std::sync::Arc;
+use std::collections::HashMap;
+use tokio::sync::Mutex;
+
+type RateLimiter = Arc<Mutex<HashMap<i64, std::time::Instant>>>;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
@@ -35,7 +40,14 @@ enum Command {
     Broadcast(String),
 }
 
-async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<()> {
+async fn answer(
+    bot: Bot,
+    message: Message,
+    command: Command,
+    node_opt: Option<Arc<trinitychain::network::NetworkNode>>,
+    admin_token: Option<String>,
+    rate_limiter: RateLimiter,
+) -> ResponseResult<()> {
     match command {
         Command::Start => {
             let welcome_msg = "🔺 Welcome to TrinityChain Bot! 🔺\n\n\
@@ -93,45 +105,85 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
             info!("Handled /mempool command for user: {:?}", message.from());
         }
         Command::Node => {
-            // Try to open chain and create a NetworkNode to get peer count
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let node = trinitychain::network::NetworkNode::new(chain, "trinitychain.db".to_string());
-                        let peers_count = node.peers_count().await;
-                        format!("🌐 Connected peers: {}", peers_count)
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
+            if let Some(node) = node_opt.as_ref() {
+                let peers_count = node.peers_count().await;
+                let response = format!("🌐 Connected peers: {}", peers_count);
+                bot.send_message(message.chat.id, response).await?;
+            } else {
+                bot.send_message(message.chat.id, "🌐 Network node not initialized on this bot.").await?;
+            }
             info!("Handled /node command for user: {:?}", message.from());
         }
         Command::Broadcast(txhex) => {
-            let response = match hex::decode(&txhex) {
+            // Rate limiting: allow one broadcast per 60s per user
+            if let Some(from) = message.from() {
+                let uid = from.id.0 as i64;
+                let mut rl = rate_limiter.lock().await;
+                if let Some(last) = rl.get(&uid) {
+                    if last.elapsed() < std::time::Duration::from_secs(60) {
+                        bot.send_message(message.chat.id, "⏳ Rate limit: please wait before broadcasting again.").await?;
+                        return Ok(());
+                    }
+                }
+                // update last seen now
+                rl.insert(uid, std::time::Instant::now());
+            }
+
+            // Support sending admin token as prefix: TOKEN:HEX
+            let mut provided_token: Option<&str> = None;
+            let mut hex_part = txhex.as_str();
+            if let Some(pos) = txhex.find(':') {
+                provided_token = Some(&txhex[..pos]);
+                hex_part = &txhex[pos+1..];
+            }
+
+            // If admin token is configured, require it matches provided token
+            if let Some(cfg_token) = admin_token.as_ref() {
+                match provided_token {
+                    Some(t) if t == cfg_token => {
+                        // ok
+                    }
+                    _ => {
+                        warn!("Unauthorized broadcast attempt from {:?}", message.from());
+                        bot.send_message(message.chat.id, "❌ Unauthorized: missing or invalid admin token for /broadcast").await?;
+                        return Ok(());
+                    }
+                }
+            }
+
+            match hex::decode(hex_part) {
                 Ok(bytes) => match Database::open("trinitychain.db") {
-                    Ok(db) => match db.load_blockchain() {
-                        Ok(mut chain) => {
-                            // try to deserialize transaction from bytes
+                    Ok(_db) => match _db.load_blockchain() {
+                        Ok(chain) => {
                             match bincode::deserialize::<trinitychain::transaction::Transaction>(&bytes) {
                                 Ok(tx) => {
-                                    let node = trinitychain::network::NetworkNode::new(chain.clone(), "trinitychain.db".to_string());
-                                    match node.broadcast_transaction(&tx).await {
-                                        Ok(_) => format!("✅ Broadcasted transaction {} to peers", tx.hash_str()),
-                                        Err(e) => format!("❌ Failed to broadcast: {}", e),
+                                    if let Some(node) = node_opt.as_ref() {
+                                        match node.broadcast_transaction(&tx).await {
+                                            Ok(_) => {
+                                                let msg = format!("✅ Broadcasted transaction {} to peers", tx.hash_str());
+                                                bot.send_message(message.chat.id, msg).await?;
+                                            }
+                                            Err(e) => {
+                                                let msg = format!("❌ Failed to broadcast: {}", e);
+                                                bot.send_message(message.chat.id, msg).await?;
+                                            }
+                                        }
+                                    } else {
+                                        bot.send_message(message.chat.id, "❌ Network node not initialized; cannot broadcast.").await?;
                                     }
                                 }
-                                Err(_) => "Invalid transaction bytes; could not deserialize.".to_string(),
+                                Err(_) => {
+                                    bot.send_message(message.chat.id, "Invalid transaction bytes; could not deserialize.").await?;
+                                }
                             }
                         }
-                        Err(_) => "Could not load blockchain data.".to_string(),
+                        Err(_) => { bot.send_message(message.chat.id, "Could not load blockchain data.").await?; }
                     },
-                    Err(_) => "Could not open blockchain database.".to_string(),
+                    Err(_) => { bot.send_message(message.chat.id, "Could not open blockchain database.").await?; }
                 },
-                Err(_) => "Invalid hex provided.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
+                Err(_) => { bot.send_message(message.chat.id, "Invalid hex provided.").await?; }
+            }
+
             info!("Handled /broadcast command for user: {:?}", message.from());
         }
         Command::Balance(address) => {
@@ -301,9 +353,35 @@ async fn main() {
     pretty_env_logger::init();
     info!("Starting TrinityChain Telegram Bot...");
 
+    // Initialize bot and dependencies
     let bot = Bot::from_env();
 
+    // Load admin token from env (optional)
+    let admin_token = std::env::var("BOT_ADMIN_TOKEN").ok();
+
+    // Initialize rate limiter (in-memory)
+    let rate_limiter: RateLimiter = Arc::new(Mutex::new(HashMap::new()));
+
+    // Try to initialize a persistent NetworkNode if DB is available
+    let node_opt: Option<Arc<trinitychain::network::NetworkNode>> = match Database::open("trinitychain.db") {
+        Ok(db) => match db.load_blockchain() {
+            Ok(chain) => {
+                let node = trinitychain::network::NetworkNode::new(chain, "trinitychain.db".to_string());
+                Some(Arc::new(node))
+            }
+            Err(e) => {
+                warn!("Could not load blockchain for NetworkNode: {}", e);
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Could not open database for NetworkNode: {}", e);
+            None
+        }
+    };
+
     Dispatcher::builder(bot, Update::filter_message().filter_command::<Command>().endpoint(answer))
+        .dependencies(dptree::deps![node_opt, admin_token, rate_limiter])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
