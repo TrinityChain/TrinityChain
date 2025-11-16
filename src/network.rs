@@ -283,6 +283,18 @@ impl NetworkNode {
         chain.blocks.last().map(|b| b.header.height).unwrap_or(0)
     }
 
+    /// Return the current number of peers
+    pub async fn peers_count(&self) -> usize {
+        let peers = self.peers.read().await;
+        peers.len()
+    }
+
+    /// Return a cloned list of peers
+    pub async fn list_peers(&self) -> Vec<Node> {
+        let peers = self.peers.read().await;
+        peers.clone()
+    }
+
     /// Validates an entire blockchain by checking all blocks
     #[allow(dead_code)]
     fn validate_chain(chain: &Blockchain) -> bool {

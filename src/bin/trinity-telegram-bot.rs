@@ -27,6 +27,12 @@ enum Command {
     About,
     #[command(description = "open the blockchain explorer dashboard")]
     Dashboard,
+    #[command(description = "show mempool statistics")]
+    Mempool,
+    #[command(description = "show connected peer count")]
+    Node,
+    #[command(description = "broadcast raw tx hex to peers")]
+    Broadcast(String),
 }
 
 async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<()> {
@@ -69,6 +75,64 @@ async fn answer(bot: Bot, message: Message, command: Command) -> ResponseResult<
             };
             bot.send_message(message.chat.id, response).await?;
             info!("Handled /stats command for user: {:?}", message.from());
+        }
+        Command::Mempool => {
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let pool_size = chain.mempool.len();
+                        let txs = chain.mempool.get_all_transactions();
+                        let top_fees: Vec<_> = txs.iter().take(5).map(|tx| tx.fee()).collect();
+                        format!("📥 Mempool: {} transactions\nTop fees (sample): {:?}", pool_size, top_fees)
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
+            info!("Handled /mempool command for user: {:?}", message.from());
+        }
+        Command::Node => {
+            // Try to open chain and create a NetworkNode to get peer count
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let node = trinitychain::network::NetworkNode::new(chain, "trinitychain.db".to_string());
+                        let peers_count = node.peers_count().await;
+                        format!("🌐 Connected peers: {}", peers_count)
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
+            info!("Handled /node command for user: {:?}", message.from());
+        }
+        Command::Broadcast(txhex) => {
+            let response = match hex::decode(&txhex) {
+                Ok(bytes) => match Database::open("trinitychain.db") {
+                    Ok(db) => match db.load_blockchain() {
+                        Ok(mut chain) => {
+                            // try to deserialize transaction from bytes
+                            match bincode::deserialize::<trinitychain::transaction::Transaction>(&bytes) {
+                                Ok(tx) => {
+                                    let node = trinitychain::network::NetworkNode::new(chain.clone(), "trinitychain.db".to_string());
+                                    match node.broadcast_transaction(&tx).await {
+                                        Ok(_) => format!("✅ Broadcasted transaction {} to peers", tx.hash_str()),
+                                        Err(e) => format!("❌ Failed to broadcast: {}", e),
+                                    }
+                                }
+                                Err(_) => "Invalid transaction bytes; could not deserialize.".to_string(),
+                            }
+                        }
+                        Err(_) => "Could not load blockchain data.".to_string(),
+                    },
+                    Err(_) => "Could not open blockchain database.".to_string(),
+                },
+                Err(_) => "Invalid hex provided.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
+            info!("Handled /broadcast command for user: {:?}", message.from());
         }
         Command::Balance(address) => {
             let response = match Database::open("trinitychain.db") {
