@@ -36,6 +36,10 @@ enum Command {
     Mempool,
     #[command(description = "show connected peer count")]
     Node,
+    #[command(description = "show network peer list")]
+    Peers,
+    #[command(description = "show node status and stats")]
+    Status,
     #[command(description = "broadcast raw tx hex to peers")]
     Broadcast(String),
 }
@@ -113,6 +117,51 @@ async fn answer(
                 bot.send_message(message.chat.id, "🌐 Network node not initialized on this bot.").await?;
             }
             info!("Handled /node command for user: {:?}", message.from());
+        }
+        Command::Peers => {
+            if let Some(node) = node_opt.as_ref() {
+                let peers = node.list_peers().await;
+                if peers.is_empty() {
+                    bot.send_message(message.chat.id, "📋 No connected peers yet.").await?;
+                } else {
+                    let peer_list = peers.iter().map(|p| format!("• {}", p.addr())).collect::<Vec<_>>().join("\n");
+                    let response = format!("📋 Connected Peers ({})\n\n{}", peers.len(), peer_list);
+                    bot.send_message(message.chat.id, response).await?;
+                }
+            } else {
+                bot.send_message(message.chat.id, "📋 Network node not initialized on this bot.").await?;
+            }
+            info!("Handled /peers command for user: {:?}", message.from());
+        }
+        Command::Status => {
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
+                        let peers_count = if let Some(node) = node_opt.as_ref() {
+                            node.peers_count().await
+                        } else {
+                            0
+                        };
+                        let mempool_size = chain.mempool.len();
+                        let utxo_count = chain.state.count();
+                        
+                        format!(
+                            "📊 Node Status:\n\n\
+                            🏔️ Height: {}\n\
+                            🌐 Peers: {}\n\
+                            📥 Mempool: {} txs\n\
+                            🔺 UTXO Count: {}\n\
+                            ⚡ Difficulty: {}",
+                            height, peers_count, mempool_size, utxo_count, chain.difficulty
+                        )
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
+            info!("Handled /status command for user: {:?}", message.from());
         }
         Command::Broadcast(txhex) => {
             // Rate limiting: allow one broadcast per 60s per user
