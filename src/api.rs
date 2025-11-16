@@ -662,12 +662,23 @@ mod tests {
     #[tokio::test]
     async fn test_get_block_by_hash() {
         let server = TestServer::new(test_app()).unwrap();
-        let genesis_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+        
+        // First, get stats to find the genesis block
+        let stats_response = server.get("/blockchain/stats").await;
+        assert_eq!(stats_response.status_code(), StatusCode::OK);
+        let stats: StatsResponse = stats_response.json();
+        
+        // The genesis block should be in recent_blocks (last one, since it's height 0)
+        let genesis_block_info = stats.recent_blocks.last().expect("Should have genesis block");
+        let genesis_hash = &genesis_block_info.hash;
+        
+        // Get the genesis block using its actual hash
         let response = server.get(&format!("/blockchain/block/{}", genesis_hash)).await;
         assert_eq!(response.status_code(), StatusCode::OK);
         let block: Option<Block> = response.json();
         assert!(block.is_some());
-        assert_eq!(block.unwrap().hash, [0; 32]);
+        let block = block.unwrap();
+        assert_eq!(block.header.height, 0);
     }
 
     use crate::transaction::SubdivisionTx;

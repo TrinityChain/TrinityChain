@@ -464,11 +464,11 @@ impl Blockchain {
         let genesis_hash = genesis.hash();
         state.utxo_set.insert(genesis_hash, genesis);
 
-        let genesis_block = Block {
+        let mut genesis_block = Block {
             header: BlockHeader {
                 height: 0,
                 previous_hash: [0; 32],
-                timestamp: Utc::now().timestamp(), // Use current time for genesis
+                timestamp: Utc::now().timestamp() - 1, // Genesis block is in the past
                 difficulty: 2,
                 nonce: 0,
                 merkle_root: [0; 32],
@@ -477,6 +477,9 @@ impl Blockchain {
             hash: [0; 32], // Will be calculated based on header content
             transactions: vec![],
         };
+
+        // Calculate the actual genesis block hash
+        genesis_block.hash = genesis_block.calculate_hash();
 
         let mut block_index = HashMap::new();
         block_index.insert(genesis_block.hash, genesis_block.clone());
@@ -540,8 +543,8 @@ impl Blockchain {
             return Err(ChainError::InvalidBlockLinkage);
         }
 
-        // Validate timestamp is greater than parent's timestamp
-        if block.header.timestamp <= parent_block.header.timestamp {
+        // Validate timestamp is greater than parent's timestamp (skip for genesis block)
+        if block.header.height > 0 && block.header.timestamp <= parent_block.header.timestamp {
             return Err(ChainError::InvalidTransaction(
                 "Block timestamp must be greater than parent timestamp".to_string()
             ));

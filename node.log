@@ -1,0 +1,12 @@
+nohup: ignoring input
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running `target/debug/trinity-node 8333`
+🔺 trinity-node v0.1.0
+   Starting on port 8333...
+
+📊 Current height: 0
+💾 UTXO count: 1
+
+🌐 Ready to accept connections!
+
+🌐 Node listening on 0.0.0.0:8333
