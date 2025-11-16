@@ -11,3 +11,6 @@ pub mod addressbook;
 pub mod api;
 pub mod security;
 pub mod sync;
+pub mod cache;
+pub mod discovery;
+pub mod fees;
