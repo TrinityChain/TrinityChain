@@ -1,3 +1,5 @@
+
+    let miner_address = req.miner_address;
 use axum::{
     extract::{Path, State},
     routing::{get, post},
@@ -394,6 +396,13 @@ pub struct WalletResponse {
     pub private_key: String,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct StartMiningRequest {
+    pub miner_address: String,
+}
+
+
+
 async fn create_wallet() -> Result<Json<WalletResponse>, Response> {
     match KeyPair::generate() {
         Ok(keypair) => {
@@ -482,7 +491,7 @@ async fn get_mining_status(State(state): State<AppState>) -> impl IntoResponse {
     }).into_response()
 }
 
-async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
+async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMiningRequest>) -> impl IntoResponse {
     // Check if already mining
     if state.mining.is_mining.load(Ordering::Relaxed) {
         return (StatusCode::BAD_REQUEST, "Mining already in progress").into_response();
@@ -790,6 +799,7 @@ mod tests {
 
         Router::new()
             .route("/blockchain/height", get(get_blockchain_height))
+            .route("/blockchain/stats", get(get_blockchain_stats)) // Added missing route
             .route("/blockchain/block/:hash", get(get_block_by_hash))
             .route("/address/:addr/balance", get(get_address_balance))
             .route("/transaction", post(submit_transaction))
