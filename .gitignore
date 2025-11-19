@@ -4,3 +4,7 @@
 
 .gemini/
 gha-creds-*.json
+
+# Ignore API log files
+api-server.log
+api-server.err
