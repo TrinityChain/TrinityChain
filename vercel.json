@@ -16,6 +16,5 @@
     }
   ],
   "installCommand": "source $HOME/.cargo/env && rustup override set stable && cargo install --path .",
-  "buildCommand": "source $HOME/.cargo/env && cargo build --release --bin trinity-api",
-  "startCommand": "source $HOME/.cargo/env && ./target/release/trinity-api"
+  "buildCommand": "source $HOME/.cargo/env && cargo build --release --bin trinity-api"
 }
