@@ -402,14 +402,6 @@ pub struct StartMiningRequest {
 
 
 
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub struct StartMiningRequest {
-    pub miner_address: String,
-}
-
-
-
 async fn create_wallet() -> Result<Json<WalletResponse>, Response> {
     match KeyPair::generate() {
         Ok(keypair) => {
