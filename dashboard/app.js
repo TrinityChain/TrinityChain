@@ -131,6 +131,143 @@ async function fetchRecentBlocks() {
                 console.error('[fetchRecentBlocks] Error fetching block:', e);
                 return null;
             }
+    // --- Mining Control Logic ---
+
+    const minerAddressInput = document.getElementById('minerAddressInput');
+    const loadWalletButton = document.getElementById('loadWalletButton');
+    const startMiningButton = document.getElementById('startMiningButton');
+    const stopMiningButton = document.getElementById('stopMiningButton');
+    const minerAddressDisplay = document.getElementById('minerAddress');
+    const miningStatusDisplay = document.getElementById('miningStatus');
+    const blocksMinedDisplay = document.getElementById('blocksMined');
+    const hashRateDisplay = document.getElementById('hashRate');
+
+    // Inject CLI wallet address from Python kernel to make it available in JS
+    let cliMinerAddress = '7339ba1f28a194fe5d099a9d7551e1aa78a633e85f3c846b4e046d7cbe43f434';
+
+    function updateMiningStatusDisplay(status) {
+        miningStatusDisplay.innerText = status.is_mining ? 'Active' : 'Inactive';
+        blocksMinedDisplay.innerText = status.blocks_mined;
+        hashRateDisplay.innerText = `${status.hashrate.toFixed(2)} H/s`;
+        miningStatusDisplay.style.color = status.is_mining ? '#00ff88' : '#ff0044';
+        
+        // Update button states based on mining status
+        startMiningButton.disabled = status.is_mining;
+        stopMiningButton.disabled = !status.is_mining;
+        loadWalletButton.disabled = status.is_mining;
+        minerAddressInput.disabled = status.is_mining;
+    }
+
+    async function fetchMiningStatus() {
+        try {
+            const response = await fetch(`${apiBase}/mining/status`);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            }
+            const status = await response.json();
+            updateMiningStatusDisplay(status);
+        } catch (error) {
+            console.error('Error fetching mining status:', error);
+            miningStatusDisplay.innerText = 'Error';
+            miningStatusDisplay.style.color = '#ff0044';
+            startMiningButton.disabled = false;
+            stopMiningButton.disabled = true;
+            loadWalletButton.disabled = false;
+            minerAddressInput.disabled = false;
+        }
+    }
+
+    async function startMining() {
+        const address = minerAddressInput.value.trim();
+        if (!address) {
+            alert('Please enter a miner address.');
+            return;
+        }
+        try {
+            startMiningButton.disabled = true;
+            stopMiningButton.disabled = true; // Disable until status is confirmed
+            loadWalletButton.disabled = true;
+            minerAddressInput.disabled = true;
+
+            const response = await fetch(`${apiBase}/mining/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ miner_address: address })
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            }
+            const result = await response.text(); // Assuming response is text, not JSON, based on previous API calls
+            console.log('Mining started:', result);
+            // Refresh status immediately
+            fetchMiningStatus();
+        } catch (error) {
+            console.error('Error starting mining:', error);
+            alert(`Failed to start mining: ${error.message}`);
+            fetchMiningStatus(); // Fetch status to reflect actual state and re-enable buttons correctly
+        }
+    }
+
+    async function stopMining() {
+        try {
+            stopMiningButton.disabled = true;
+            startMiningButton.disabled = true; // Disable until status is confirmed
+            loadWalletButton.disabled = true;
+            minerAddressInput.disabled = true;
+
+            const response = await fetch(`${apiBase}/mining/stop`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+            }
+            const result = await response.text(); // Assuming response is text, not JSON
+            console.log('Mining stopped:', result);
+            // Refresh status immediately
+            fetchMiningStatus();
+        } catch (error) {
+            console.error('Error stopping mining:', error);
+            alert(`Failed to stop mining: ${error.message}`);
+            fetchMiningStatus(); // Fetch status to reflect actual state and re-enable buttons correctly
+        }
+    }
+
+    // Function to handle loading CLI wallet address
+    function loadCliWalletAddress() {
+        if (cliMinerAddress && cliMinerAddress !== '') {
+            minerAddressInput.value = cliMinerAddress;
+            minerAddressDisplay.innerText = cliMinerAddress;
+            alert('CLI wallet address loaded successfully!');
+        } else {
+            alert('CLI wallet address not available or empty. Please ensure it was created via CLI and try again, or enter it manually.');
+        }
+    }
+
+    // Set up mining controls if elements exist
+    if (minerAddressInput && loadWalletButton && startMiningButton && stopMiningButton) {
+        loadWalletButton.addEventListener('click', loadCliWalletAddress);
+        startMiningButton.addEventListener('click', startMining);
+        stopMiningButton.addEventListener('click', stopMining);
+
+        // Pre-fill miner address if available (e.g., from Python injection)
+        if (cliMinerAddress && cliMinerAddress !== '') {
+            minerAddressInput.value = cliMinerAddress;
+            minerAddressDisplay.innerText = cliMinerAddress;
+        } else {
+            minerAddressInput.value = 'Paste miner address here'; // Placeholder instruction
+            minerAddressDisplay.innerText = 'Not Set';
+        }
+
+        // Fetch initial mining status and then poll
+        fetchMiningStatus();
+        setInterval(fetchMiningStatus, 5000); // Poll every 5 seconds
+    }
+    // --- End Mining Control Logic --- 
+
         });
 
         const blocks = (await Promise.all(blockPromises)).filter(b => b !== null);
