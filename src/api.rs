@@ -1,5 +1,3 @@
-
-    let miner_address = req.miner_address;
 use axum::{
     extract::{Path, State},
     routing::{get, post},
@@ -396,6 +394,15 @@ pub struct WalletResponse {
     pub private_key: String,
 }
 
+
+#[derive(Serialize, Deserialize)]
+pub struct StartMiningRequest {
+    pub miner_address: String,
+}
+
+
+
+
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct StartMiningRequest {
     pub miner_address: String,
@@ -496,25 +503,7 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
     if state.mining.is_mining.load(Ordering::Relaxed) {
         return (StatusCode::BAD_REQUEST, "Mining already in progress").into_response();
     }
-
-    // Get a wallet address for mining rewards
-    let wallet_path = std::env::var("HOME").unwrap_or_else(|_| ".".to_string()) + "/.trinitychain/wallet.json";
-    let wallet_data = match std::fs::read_to_string(&wallet_path) {
-        Ok(data) => data,
-        Err(_) => return (StatusCode::BAD_REQUEST, "No wallet found. Create a wallet first using trinity-wallet-new").into_response(),
-    };
-
-    let wallet: serde_json::Value = match serde_json::from_str(&wallet_data) {
-        Ok(w) => w,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid wallet format: {}", e)).into_response(),
-    };
-
-    let miner_address = match wallet.get("address").and_then(|a| a.as_str()) {
-        Some(addr) => addr.to_string(),
-        None => return (StatusCode::INTERNAL_SERVER_ERROR, "Wallet missing address").into_response(),
-    };
-
-    // Set mining flag
+    let miner_address = req.miner_address;
     state.mining.is_mining.store(true, Ordering::Relaxed);
 
     // Spawn mining task
