@@ -12,10 +12,25 @@ fn main() {
     }
     
     let wallet_name = &args[1];
-    let wallet_dir = std::env::var("HOME").unwrap() + "/.trinitychain";
-    fs::create_dir_all(&wallet_dir).expect("Failed to create wallet directory");
+    let wallet_dir = match std::env::var("HOME") {
+        Ok(val) => val + "/.trinitychain",
+        Err(_) => {
+            eprintln!("Error: HOME environment variable not set.");
+            return;
+        }
+    };
+    if let Err(e) = fs::create_dir_all(&wallet_dir) {
+        eprintln!("Error: Failed to create wallet directory '{}': {}", wallet_dir, e);
+        return;
+    }
     
-    let keypair = KeyPair::generate().expect("Failed to generate keypair");
+    let keypair = match KeyPair::generate() {
+        Ok(kp) => kp,
+        Err(e) => {
+            eprintln!("Error: Failed to generate keypair: {}", e);
+            return;
+        }
+    };
     let address = keypair.address();
     
     let wallet_file = format!("{}/wallet_{}.json", wallet_dir, wallet_name);
@@ -33,8 +48,18 @@ fn main() {
         "created": chrono::Utc::now().to_rfc3339(),
     });
     
-    fs::write(&wallet_file, serde_json::to_string_pretty(&wallet_data).unwrap())
-        .expect("Failed to write wallet file");
+    let wallet_json = match serde_json::to_string_pretty(&wallet_data) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("Error: Failed to serialize wallet data: {}", e);
+            return;
+        }
+    };
+    
+    if let Err(e) = fs::write(&wallet_file, wallet_json) {
+        eprintln!("Error: Failed to write wallet file '{}': {}", wallet_file, e);
+        return;
+    }
     
     println!("🔑 New wallet '{}' created!", wallet_name);
     println!("   Address: {}", address);

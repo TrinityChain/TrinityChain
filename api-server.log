@@ -1,0 +1,4 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.32s
+     Running `target/debug/trinity-api`
+Starting the TrinityChain API server...
+API server listening on http://127.0.0.1:3000

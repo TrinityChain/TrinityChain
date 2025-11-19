@@ -114,7 +114,13 @@ async fn main() {
         let parts: Vec<&str> = peer_addr.split(':').collect();
         if parts.len() == 2 {
             let peer_host = parts[0].to_string();
-            let peer_port: u16 = parts[1].parse().expect("Invalid peer port");
+            let peer_port: u16 = match parts[1].parse() {
+                Ok(port) => port,
+                Err(_) => {
+                    eprintln!("{}", format!("❌ Invalid peer port format: {}", parts[1]).red());
+                    return; // Exit if the port is invalid
+                }
+            };
 
             println!("{}", format!("🔗 Connecting to peer {}:{}...", peer_host, peer_port).bright_blue());
             if let Err(e) = network_node.connect_peer(peer_host, peer_port).await {
@@ -123,6 +129,9 @@ async fn main() {
                 println!("{}", "✅ Connected to peer successfully!".green());
             }
             println!();
+        } else {
+            eprintln!("{}", format!("❌ Invalid peer address format: {}. Expected 'host:port'.", peer_addr).red());
+            return; // Exit if the peer address format is invalid
         }
     }
 
@@ -142,7 +151,14 @@ async fn main() {
             chain
         });
 
-        let last_block = chain.blocks.last().unwrap();
+        let last_block = match chain.blocks.last() {
+            Some(block) => block,
+            None => {
+                eprintln!("{}", "❌ Blockchain is empty. This should not happen (genesis block missing).".red());
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
         let new_height = last_block.header.height + 1;
         let difficulty = chain.difficulty;
 
@@ -183,7 +199,14 @@ async fn main() {
                 Ok(block) => block,
                 Err(e) => {
                     eprintln!("{}", format!("❌ Parallel mining failed: {}, falling back to single-threaded", e).red());
-                    mine_block(new_block.clone()).expect("Mining failed")
+                    match mine_block(new_block.clone()) {
+                        Ok(block) => block,
+                        Err(e) => {
+                            eprintln!("{}", format!("❌ Single-threaded mining also failed: {}", e).red());
+                            sleep(Duration::from_secs(10)).await;
+                            continue;
+                        }
+                    }
                 }
             }
         } else {
@@ -228,8 +251,9 @@ async fn main() {
         }
 
         // Use atomic save to ensure database consistency
-        db.save_blockchain_state(&new_block, &chain.state, chain.difficulty)
-            .expect("Failed to save blockchain state");
+        if let Err(e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty) {
+            eprintln!("{}", format!("❌ Failed to save blockchain state: {}", e).red());
+        }
 
         if let Err(e) = network_node.broadcast_block(&new_block).await {
             eprintln!("{}", format!("⚠️  Failed to broadcast block: {}", e).yellow());
@@ -242,7 +266,14 @@ async fn main() {
         let avg_block_time = elapsed.as_secs_f64() / blocks_mined as f64;
 
         // Calculate supply statistics
-        let current_height = chain.blocks.last().unwrap().header.height;
+        let current_height = match chain.blocks.last() {
+            Some(block) => block.header.height,
+            None => {
+                eprintln!("{}", "❌ Cannot calculate statistics: Blockchain is empty.".red());
+                sleep(Duration::from_secs(5)).await;
+                continue; // Skip statistics for this iteration
+            }
+        };
         let current_supply = Blockchain::calculate_current_supply(current_height);
         let supply_pct = (current_supply as f64 / trinitychain::blockchain::MAX_SUPPLY as f64) * 100.0;
         let current_reward = Blockchain::calculate_block_reward(current_height);

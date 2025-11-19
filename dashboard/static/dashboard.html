@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- TrinityChain dashboard - deployed to GitHub Pages -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TrinityChain - Blockchain Explorer</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <svg width="50" height="50" viewBox="0 0 100 100">
+                    <polygon points="50,10 90,80 10,80" fill="none" stroke="#00ff88" stroke-width="3"/>
+                    <polygon points="50,45 70,80 30,80" fill="none" stroke="#00ff88" stroke-width="2"/>
+                    <polygon points="50,45 30,80 10,80" fill="none" stroke="#00ff88" stroke-width="2"/>
+                    <polygon points="50,45 90,80 70,80" fill="none" stroke="#00ff88" stroke-width="2"/>
+                </svg>
+                <h1>TrinityChain</h1>
+            </div>
+            <p class="tagline">Triangle-Based Blockchain Explorer</p>
+        </header>
+
+        <div class="genesis-block">
+            <h2>Genesis Block</h2>
+            <div class="headline">
+                <span class="quote-mark">"</span>
+                <p>Stock market closes mixed to cap volatile week as Fed cut in doubt</p>
+                <span class="quote-mark">"</span>
+            </div>
+            <p class="source">— Yahoo Finance, November 15, 2025</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Block Height</h3>
+                <p class="stat-value" id="blockHeight">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Total Triangles</h3>
+                <p class="stat-value" id="totalTriangles">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Difficulty</h3>
+                <p class="stat-value" id="difficulty">Loading...</p>
+            </div>
+            <div class="stat-card">
+                <h3>Total Area</h3>
+                <p class="stat-value" id="totalArea">Loading...</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Recent Blocks</h2>
+            <div id="recentBlocks" class="blocks-list">
+                <p class="loading">Loading blocks...</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>About TrinityChain</h2>
+            <div class="features">
+                <div class="feature">
+                    <h3>🔺 Triangle Economy</h3>
+                    <p>Geometric triangles as the fundamental unit of value</p>
+                </div>
+                <div class="feature">
+                    <h3>⛏️ Proof-of-Work</h3>
+                    <p>SHA-256 mining with Bitcoin-like difficulty adjustment</p>
+                </div>
+                <div class="feature">
+                    <h3>🔐 Real Cryptography</h3>
+                    <p>ECDSA signatures with secp256k1, UTXO model</p>
+                </div>
+                <div class="feature">
+                    <h3>📉 Deflationary</h3>
+                    <p>21M max supply, halving every 210k blocks</p>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>TrinityChain Explorer • Open Source Blockchain</p>
+            <p><a href="https://github.com/TrinityChain/TrinityChain" target="_blank">GitHub</a></p>
+        </footer>
+
+        <div style="margin-top: 40px; padding: 20px; background: #1a1f3a; border-radius: 8px; font-size: 0.85rem; color: #888; border: 1px solid #00ff88; display: none;" id="debugPanel">
+            <h3 style="color: #00ff88; margin-top: 0;">🔧 Debug Console</h3>
+            <p><strong>API Base:</strong> <span id="debugApiBase">loading...</span></p>
+            <p><strong>Status:</strong> <span id="debugStatus">initializing...</span></p>
+            <p><strong>Last Error:</strong> <span id="debugError">none</span></p>
+            <p><button onclick="toggleDebugPanel()" style="padding: 8px 16px; background: #00ff88; color: #000; border: none; border-radius: 4px; cursor: pointer;">Hide Debug</button></p>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="toggleDebugPanel()" style="padding: 8px 16px; background: #00ff88; color: #000; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">Show Debug Info</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

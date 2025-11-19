@@ -56,10 +56,20 @@ struct AppState {
 }
 
 pub async fn run_api_server() {
-    let db = Database::open("trinitychain.db")
-        .expect("Failed to open database. Ensure trinitychain.db is accessible.");
-    let blockchain = db.load_blockchain()
-        .expect("Failed to load blockchain from database. Database may be corrupted.");
+    let db = match Database::open("trinitychain.db") {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("Failed to open database: {}. Ensure trinitychain.db is accessible.", e);
+            std::process::exit(1);
+        }
+    };
+    let blockchain = match db.load_blockchain() {
+        Ok(bc) => bc,
+        Err(e) => {
+            eprintln!("Failed to load blockchain from database: {}. Database may be corrupted.", e);
+            std::process::exit(1);
+        }
+    };
 
     let app_state = AppState {
         blockchain: Arc::new(Mutex::new(blockchain)),
@@ -70,11 +80,21 @@ pub async fn run_api_server() {
 
     // Initialize network state with default values
     {
-        let mut node_id = app_state.network.node_id.lock()
-            .expect("Failed to acquire lock on node_id");
+        let mut node_id = match app_state.network.node_id.lock() {
+            Ok(lock) => lock,
+            Err(e) => {
+                eprintln!("FATAL: node_id lock is poisoned: {}", e);
+                std::process::exit(1);
+            }
+        };
         *node_id = format!("trinity-node-{}", rand::random::<u32>());
-        let mut port = app_state.network.listening_port.lock()
-            .expect("Failed to acquire lock on listening_port");
+        let mut port = match app_state.network.listening_port.lock() {
+            Ok(lock) => lock,
+            Err(e) => {
+                eprintln!("FATAL: listening_port lock is poisoned: {}", e);
+                std::process::exit(1);
+            }
+        };
         *port = 8333;
     }
 
@@ -129,20 +149,32 @@ pub async fn run_api_server() {
 
     // Bind to 0.0.0.0 to accept external connections (required for Render.com)
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let listener = tokio::net::TcpListener::bind(addr).await
-        .expect("Failed to bind to address. Port may already be in use.");
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!("Failed to bind to address {}: {}. Port may already be in use.", addr, e);
+            std::process::exit(1);
+        }
+    };
     println!("API server listening on http://{}", addr);
-    axum::serve(listener, app).await
-        .expect("API server encountered a fatal error");
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("API server encountered a fatal error: {}", e);
+    }
 }
 
-async fn get_blockchain_height(State(state): State<AppState>) -> Json<u64> {
-    let blockchain = state.blockchain.lock().unwrap();
-    Json(blockchain.blocks.len() as u64)
+async fn get_blockchain_height(State(state): State<AppState>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
+    Json(blockchain.blocks.len() as u64).into_response()
 }
 
 async fn get_block_by_hash(State(state): State<AppState>, Path(hash): Path<String>) -> Result<Json<Option<Block>>, Response> {
-    let blockchain = state.blockchain.lock().unwrap();
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response()),
+    };
     let hash_bytes = match hex::decode(hash) {
         Ok(bytes) => bytes,
         Err(_) => return Err((StatusCode::BAD_REQUEST, "Invalid hash format").into_response()),
@@ -177,8 +209,11 @@ pub struct StatsResponse {
     pub recent_blocks: Vec<RecentBlock>,
 }
 
-async fn get_blockchain_stats(State(state): State<AppState>) -> Json<StatsResponse> {
-    let blockchain = state.blockchain.lock().unwrap();
+async fn get_blockchain_stats(State(state): State<AppState>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
     let recent_blocks = blockchain.blocks.iter().rev().take(6).map(|b| RecentBlock {
         height: b.header.height,
         hash: hex::encode(b.hash),
@@ -190,11 +225,14 @@ async fn get_blockchain_stats(State(state): State<AppState>) -> Json<StatsRespon
         utxo_count: blockchain.state.utxo_set.len(),
         mempool_size: blockchain.mempool.len(),
         recent_blocks,
-    })
+    }).into_response()
 }
 
-async fn get_address_balance(State(state): State<AppState>, Path(addr): Path<String>) -> Json<BalanceResponse> {
-    let blockchain = state.blockchain.lock().unwrap();
+async fn get_address_balance(State(state): State<AppState>, Path(addr): Path<String>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
     let mut triangles = Vec::new();
     let mut total_area = 0.0;
 
@@ -208,18 +246,26 @@ async fn get_address_balance(State(state): State<AppState>, Path(addr): Path<Str
     Json(BalanceResponse {
         triangles,
         total_area,
-    })
+    }).into_response()
 }
 
-async fn submit_transaction(State(state): State<AppState>, Json(tx): Json<Transaction>) -> Json<String> {
-    let mut blockchain = state.blockchain.lock().unwrap();
+async fn submit_transaction(State(state): State<AppState>, Json(tx): Json<Transaction>) -> impl IntoResponse {
+    let mut blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
     let tx_hash = tx.hash_str();
-    blockchain.mempool.add_transaction(tx).unwrap();
-    Json(tx_hash)
+    match blockchain.mempool.add_transaction(tx) {
+        Ok(_) => Json(tx_hash).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, format!("Failed to add transaction: {}", e)).into_response(),
+    }
 }
 
 async fn get_transaction_status(State(state): State<AppState>, Path(hash): Path<String>) -> Result<Json<Option<Transaction>>, Response> {
-    let blockchain = state.blockchain.lock().unwrap();
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response()),
+    };
     let hash_bytes = match hex::decode(hash) {
         Ok(bytes) => bytes,
         Err(_) => return Err((StatusCode::BAD_REQUEST, "Invalid hash format").into_response()),
@@ -244,17 +290,23 @@ async fn get_transaction_status(State(state): State<AppState>, Path(hash): Path<
 
 // New endpoints
 
-async fn get_recent_blocks(State(state): State<AppState>) -> Json<Vec<RecentBlock>> {
-    let blockchain = state.blockchain.lock().unwrap();
-    let blocks = blockchain.blocks.iter().rev().take(20).map(|b| RecentBlock {
+async fn get_recent_blocks(State(state): State<AppState>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
+    let blocks: Vec<RecentBlock> = blockchain.blocks.iter().rev().take(20).map(|b| RecentBlock {
         height: b.header.height,
         hash: hex::encode(b.hash),
     }).collect();
-    Json(blocks)
+    Json(blocks).into_response()
 }
 
 async fn get_block_by_height(State(state): State<AppState>, Path(height): Path<u64>) -> Result<Json<Option<Block>>, Response> {
-    let blockchain = state.blockchain.lock().unwrap();
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response()),
+    };
     let block = blockchain.blocks.iter().find(|b| b.header.height == height).cloned();
     Ok(Json(block))
 }
@@ -266,8 +318,11 @@ pub struct TriangleInfo {
     pub vertices: Vec<(f64, f64)>,
 }
 
-async fn get_address_triangles(State(state): State<AppState>, Path(addr): Path<String>) -> Json<Vec<TriangleInfo>> {
-    let blockchain = state.blockchain.lock().unwrap();
+async fn get_address_triangles(State(state): State<AppState>, Path(addr): Path<String>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
     let triangles: Vec<TriangleInfo> = blockchain.state.utxo_set.iter()
         .filter(|(_, triangle)| triangle.owner == addr)
         .map(|(hash, triangle)| TriangleInfo {
@@ -280,7 +335,7 @@ async fn get_address_triangles(State(state): State<AppState>, Path(addr): Path<S
             ],
         })
         .collect();
-    Json(triangles)
+    Json(triangles).into_response()
 }
 
 #[derive(Serialize, Deserialize)]
@@ -291,8 +346,11 @@ pub struct TransactionHistory {
     pub tx_type: String,
 }
 
-async fn get_address_history(State(state): State<AppState>, Path(addr): Path<String>) -> Json<Vec<TransactionHistory>> {
-    let blockchain = state.blockchain.lock().unwrap();
+async fn get_address_history(State(state): State<AppState>, Path(addr): Path<String>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
     let mut history = Vec::new();
 
     for block in &blockchain.blocks {
@@ -318,12 +376,15 @@ async fn get_address_history(State(state): State<AppState>, Path(addr): Path<Str
         }
     }
 
-    Json(history)
+    Json(history).into_response()
 }
 
-async fn get_pending_transactions(State(state): State<AppState>) -> Json<Vec<Transaction>> {
-    let blockchain = state.blockchain.lock().unwrap();
-    Json(blockchain.mempool.get_all_transactions())
+async fn get_pending_transactions(State(state): State<AppState>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
+    Json(blockchain.mempool.get_all_transactions()).into_response()
 }
 
 #[derive(Serialize, Deserialize)]
@@ -383,18 +444,24 @@ pub struct MiningStatus {
     pub hashrate: f64,
 }
 
-async fn get_mining_status(State(state): State<AppState>) -> Json<MiningStatus> {
+async fn get_mining_status(State(state): State<AppState>) -> impl IntoResponse {
     let is_mining = state.mining.is_mining.load(Ordering::Relaxed);
     let blocks_mined = state.mining.blocks_mined.load(Ordering::Relaxed);
 
     // Calculate approximate hashrate based on last block time
     let hashrate = if is_mining {
-        let last_time = state.mining.last_block_time.lock().unwrap();
+        let last_time = match state.mining.last_block_time.lock() {
+            Ok(lock) => lock,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get mining state lock").into_response(),
+        };
         if let Some(instant) = *last_time {
             let elapsed = instant.elapsed().as_secs_f64();
             if elapsed > 0.0 {
                 // Estimate based on difficulty and time
-                let blockchain = state.blockchain.lock().unwrap();
+                let blockchain = match state.blockchain.lock() {
+                    Ok(lock) => lock,
+                    Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+                };
                 let difficulty = blockchain.difficulty;
                 let expected_hashes = 16_u64.pow(difficulty as u32) as f64;
                 expected_hashes / elapsed
@@ -412,7 +479,7 @@ async fn get_mining_status(State(state): State<AppState>) -> Json<MiningStatus> 
         is_mining,
         blocks_mined,
         hashrate,
-    })
+    }).into_response()
 }
 
 async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
@@ -430,7 +497,7 @@ async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
 
     let wallet: serde_json::Value = match serde_json::from_str(&wallet_data) {
         Ok(w) => w,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Invalid wallet format").into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid wallet format: {}", e)).into_response(),
     };
 
     let miner_address = match wallet.get("address").and_then(|a| a.as_str()) {
@@ -455,7 +522,14 @@ async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
 
             // Get pending transactions
             let block = {
-                let blockchain = blockchain_clone.lock().unwrap();
+                let blockchain = match blockchain_clone.lock() {
+                    Ok(lock) => lock,
+                    Err(e) => {
+                        eprintln!("Failed to acquire blockchain lock in mining task: {}", e);
+                        mining_state.is_mining.store(false, Ordering::Relaxed); // Stop mining
+                        break;
+                    }
+                };
                 let transactions = blockchain.mempool.get_all_transactions();
 
                 // Create coinbase transaction
@@ -469,7 +543,7 @@ async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
                 all_txs.extend(transactions);
 
                 let height = blockchain.blocks.len() as u64;
-                let previous_hash = blockchain.blocks.last().unwrap().hash;
+                let previous_hash = blockchain.blocks.last().expect("Blockchain should have at least a genesis block").hash;
                 let difficulty = blockchain.difficulty;
 
                 Block::new(height, previous_hash, difficulty, all_txs)
@@ -481,20 +555,41 @@ async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
                 Ok(mined_block) => {
                     // Update last block time
                     {
-                        let mut last_time = mining_state.last_block_time.lock().unwrap();
+                        let mut last_time = match mining_state.last_block_time.lock() {
+                            Ok(lock) => lock,
+                            Err(e) => {
+                                eprintln!("Failed to acquire mining state lock for last_block_time: {}", e);
+                                mining_state.is_mining.store(false, Ordering::Relaxed); // Stop mining
+                                break;
+                            }
+                        };
                         *last_time = Some(start);
                     }
 
                     // Add block to blockchain
                     {
-                        let mut blockchain = blockchain_clone.lock().unwrap();
+                        let mut blockchain = match blockchain_clone.lock() {
+                            Ok(lock) => lock,
+                            Err(e) => {
+                                eprintln!("Failed to acquire blockchain lock for applying block: {}", e);
+                                mining_state.is_mining.store(false, Ordering::Relaxed); // Stop mining
+                                break;
+                            }
+                        };
                         if let Err(e) = blockchain.apply_block(mined_block.clone()) {
                             eprintln!("Failed to apply mined block: {}", e);
                             continue;
                         }
 
                         // Save to database
-                        let db = db_clone.lock().unwrap();
+                        let db = match db_clone.lock() {
+                            Ok(lock) => lock,
+                            Err(e) => {
+                                eprintln!("Failed to acquire database lock for saving block: {}", e);
+                                mining_state.is_mining.store(false, Ordering::Relaxed); // Stop mining
+                                break;
+                            }
+                        };
                         if let Err(e) = db.save_block(&mined_block) {
                             eprintln!("Failed to save block: {}", e);
                         }
@@ -510,6 +605,7 @@ async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
                 }
                 Err(e) => {
                     eprintln!("Mining error: {}", e);
+                    mining_state.is_mining.store(false, Ordering::Relaxed); // Stop mining on mining error
                     break;
                 }
             }
@@ -520,7 +616,10 @@ async fn start_mining(State(state): State<AppState>) -> impl IntoResponse {
 
     // Store the task handle
     {
-        let mut task_handle = state.mining.mining_task.lock().unwrap();
+        let mut task_handle = match state.mining.mining_task.lock() {
+            Ok(lock) => lock,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to acquire mining task lock: {}", e)).into_response(),
+        };
         *task_handle = Some(task);
     }
 
@@ -537,7 +636,10 @@ async fn stop_mining(State(state): State<AppState>) -> impl IntoResponse {
     state.mining.is_mining.store(false, Ordering::Relaxed);
 
     // Wait for the task to complete (with timeout)
-    let task_handle = state.mining.mining_task.lock().unwrap().take();
+    let task_handle = match state.mining.mining_task.lock() {
+        Ok(mut lock) => lock.take(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to acquire mining task lock: {}", e)).into_response(),
+    };
     if let Some(handle) = task_handle {
         // Wait up to 5 seconds for the task to finish
         match tokio::time::timeout(Duration::from_secs(5), handle).await {
@@ -557,13 +659,16 @@ pub struct PeerInfo {
     pub last_seen: i64,
 }
 
-async fn get_peers(State(state): State<AppState>) -> Json<Vec<PeerInfo>> {
-    let peers = state.network.peers.lock().unwrap();
+async fn get_peers(State(state): State<AppState>) -> impl IntoResponse {
+    let peers = match state.network.peers.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get network peers lock").into_response(),
+    };
     let peer_info: Vec<PeerInfo> = peers.iter().map(|peer| PeerInfo {
         address: peer.addr(),
         last_seen: chrono::Utc::now().timestamp(), // In a real implementation, track actual last seen time
     }).collect();
-    Json(peer_info)
+    Json(peer_info).into_response()
 }
 
 #[derive(Serialize, Deserialize)]
@@ -573,16 +678,25 @@ pub struct NetworkInfo {
     pub listening_port: u16,
 }
 
-async fn get_network_info(State(state): State<AppState>) -> Json<NetworkInfo> {
-    let peers = state.network.peers.lock().unwrap();
-    let node_id = state.network.node_id.lock().unwrap();
-    let listening_port = state.network.listening_port.lock().unwrap();
+async fn get_network_info(State(state): State<AppState>) -> impl IntoResponse {
+    let peers = match state.network.peers.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get network peers lock").into_response(),
+    };
+    let node_id = match state.network.node_id.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get node ID lock").into_response(),
+    };
+    let listening_port = match state.network.listening_port.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get listening port lock").into_response(),
+    };
 
     Json(NetworkInfo {
         peers_count: peers.len(),
         node_id: node_id.clone(),
         listening_port: *listening_port,
-    })
+    }).into_response()
 }
 
 // New endpoints for enhanced block explorer functionality
@@ -596,8 +710,11 @@ struct MempoolStatsResponse {
     lowest_fee: u64,
 }
 
-async fn get_mempool_stats(State(state): State<AppState>) -> Json<MempoolStatsResponse> {
-    let blockchain = state.blockchain.lock().unwrap();
+async fn get_mempool_stats(State(state): State<AppState>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
     let txs = blockchain.mempool.get_all_transactions();
 
     let fees: Vec<u64> = txs.iter().map(|tx| tx.fee()).collect();
@@ -616,7 +733,7 @@ async fn get_mempool_stats(State(state): State<AppState>) -> Json<MempoolStatsRe
         avg_fee,
         highest_fee,
         lowest_fee,
-    })
+    }).into_response()
 }
 
 #[derive(Serialize)]
@@ -628,8 +745,11 @@ struct RewardInfoResponse {
     reward_after_halving: u64,
 }
 
-async fn get_block_reward_info(State(state): State<AppState>, Path(height): Path<u64>) -> Json<RewardInfoResponse> {
-    let blockchain = state.blockchain.lock().unwrap();
+async fn get_block_reward_info(State(state): State<AppState>, Path(height): Path<u64>) -> impl IntoResponse {
+    let blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
     let current_height = blockchain.blocks.len() as u64;
     let query_height = if height == 0 { current_height } else { height };
 
@@ -645,7 +765,7 @@ async fn get_block_reward_info(State(state): State<AppState>, Path(height): Path
         next_halving_height,
         blocks_until_halving,
         reward_after_halving,
-    })
+    }).into_response()
 }
 
 #[cfg(test)]
@@ -656,7 +776,10 @@ mod tests {
 
     fn test_app() -> Router {
         let blockchain = Blockchain::new();
-        let db = Database::open(":memory:").unwrap();
+        let db = match Database::open(":memory:") {
+            Ok(db) => db,
+            Err(e) => panic!("Failed to open in-memory database for test: {}", e),
+        };
 
         let app_state = AppState {
             blockchain: Arc::new(Mutex::new(blockchain)),
@@ -676,7 +799,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_blockchain_height() {
-        let server = TestServer::new(test_app()).unwrap();
+        let server = TestServer::new(test_app()).expect("Test server setup failed");
         let response = server.get("/blockchain/height").await;
         assert_eq!(response.status_code(), StatusCode::OK);
         assert_eq!(response.json::<u64>(), 1);
@@ -684,7 +807,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_block_by_hash() {
-        let server = TestServer::new(test_app()).unwrap();
+        let server = TestServer::new(test_app()).expect("Test server setup failed");
         
         // First, get stats to find the genesis block
         let stats_response = server.get("/blockchain/stats").await;
@@ -700,7 +823,7 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::OK);
         let block: Option<Block> = response.json();
         assert!(block.is_some());
-        let block = block.unwrap();
+        let block = block.expect("Block should be present");
         assert_eq!(block.header.height, 0);
     }
 
@@ -709,7 +832,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_address_balance() {
-        let server = TestServer::new(test_app()).unwrap();
+        let server = TestServer::new(test_app()).expect("Test server setup failed");
         let genesis_owner = "genesis_owner";
         let response = server.get(&format!("/address/{}/balance", genesis_owner)).await;
         assert_eq!(response.status_code(), StatusCode::OK);
@@ -720,16 +843,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_and_get_transaction() {
-        let server = TestServer::new(test_app()).unwrap();
+        let server = TestServer::new(test_app()).expect("Test server setup failed");
         let blockchain = Blockchain::new();
         let _genesis = blockchain.blocks[0].clone();
-        let keypair = KeyPair::generate().unwrap();
+        let keypair = KeyPair::generate().expect("Keypair generation should succeed in test");
         let address = keypair.address();
-        let parent_hash = *blockchain.state.utxo_set.keys().next().unwrap();
-        let children = blockchain.state.utxo_set.values().next().unwrap().subdivide();
+        let parent_hash = *blockchain.state.utxo_set.keys().next().expect("UTXO set should not be empty in test");
+        let children = blockchain.state.utxo_set.values().next().expect("UTXO set should not be empty in test").subdivide();
         let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, 0, 1);
         let message = tx.signable_message();
-        let signature = keypair.sign(&message).unwrap();
+        let signature = keypair.sign(&message).expect("Signing message should succeed in test");
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature, public_key);
         let transaction = Transaction::Subdivision(tx);
