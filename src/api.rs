@@ -510,7 +510,11 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 break;
             }
 
-            // Get pending transactions
+            
+            tokio::time::sleep(Duration::from_secs(1)).await; // Add a 1-second delay to prevent timestamp issues
+
+            // Ensure Duration is imported if not already
+            use std::time::Duration; // Add this if not already present, though it likely is.// Get pending transactions
             let block = {
                 let blockchain = match blockchain_clone.lock() {
                     Ok(lock) => lock,
