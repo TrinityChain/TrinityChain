@@ -1,450 +1,796 @@
-// Telegram Web App initialization
-let tg = window.Telegram?.WebApp;
 
-// API base URL - can be configured via Telegram Bot `start_param`, query param `?api=` or defaults to relative
-function resolveApiBase() {
-    // 1) start_param (bot can set start_param to the API base)
-    if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
-        return tg.initDataUnsafe.start_param;
-    }
+import React, { useState, useEffect, useCallback } from 'react';
+import { Activity, Boxes, Clock, TrendingUp, Award, Coins, Layers, Zap, Database, Target, Search, ChevronDown, ChevronUp, Network, Cpu, BarChart3, Terminal, RefreshCw, Settings, Play, Pause } from 'lucide-react';
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-    // 2) query param ?api=
-    try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const apiParam = urlParams.get('api');
-        if (apiParam) return apiParam;
-    } catch (e) {
-        // ignore
-    }
+const TrinityChainDashboard = () => {
+    const [stats, setStats] = useState(null);
+    const [blocks, setBlocks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [nodeUrl, setNodeUrl] = useState('http://localhost:3000');
+    const [activeTab, setActiveTab] = useState('dashboard');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedBlock, setSelectedBlock] = useState(null);
+    const [autoRefresh, setAutoRefresh] = useState(true);
+    const [refreshInterval, setRefreshInterval] = useState(3000);
+    const [chartData, setChartData] = useState([]);
+    const [networkData, setNetworkData] = useState([]);
+    const [showSettings, setShowSettings] = useState(false);
+    const [expandedBlocks, setExpandedBlocks] = useState(new Set());
 
-    // 3) fallback to /api (relative path for same-server deployments)
-    return '/api';
-}
+    useEffect(() => {
+        fetchData();
+        if (autoRefresh) {
+            const interval = setInterval(fetchData, refreshInterval);
+            return () => clearInterval(interval);
+        }
+    }, [nodeUrl, autoRefresh, refreshInterval]);
 
-const API_BASE = resolveApiBase();
+    const fetchData = async () => {
+        try {
+            const [statsRes, blocksRes] = await Promise.all([
+                fetch(`${nodeUrl}/api/stats`),
+                fetch(`${nodeUrl}/api/blocks?limit=50`)
+            ]);
 
-// Debug logging
-console.log('🔺 TrinityChain Dashboard Debug Info:');
-console.log('API_BASE:', API_BASE);
-console.log('URL:', window.location.href);
-console.log('Telegram Web App:', tg ? 'Available' : 'Not available');
-if (tg && tg.initDataUnsafe) {
-    console.log('User:', tg.initDataUnsafe.user?.username || tg.initDataUnsafe.user?.first_name || 'Unknown');
-}
+            if (!statsRes.ok || !blocksRes.ok) {
+                throw new Error('Failed to fetch data from node');
+            }
 
-// Initialize Telegram Web App
-if (tg) {
-    tg.ready();
-    tg.expand();
+            const statsData = await statsRes.json();
+            const blocksData = await blocksRes.json();
 
-    // Apply Telegram theme colors
-    document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#0a0e27');
-    document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#e0e0e0');
-    document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || '#888');
-    document.documentElement.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color || '#00ff88');
-    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#00ff88');
-    document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color || '#ffffff');
-    document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color || '#1a1f3a');
-}
+            setStats(statsData);
+            setBlocks(blocksData.blocks || []);
+      
+            // Build chart data from recent blocks
+            const recentBlocks = (blocksData.blocks || []).slice(0, 20).reverse();
+            const newChartData = recentBlocks.map((block, idx) => ({
+                block: block.index,
+                difficulty: block.difficulty,
+                transactions: block.transactions?.length || 0,
+                reward: block.reward || 0,
+                time: idx
+            }));
+            setChartData(newChartData);
 
-// Format timestamp
-function formatTime(timestamp) {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleString();
-}
+            // Build network performance data
+            if (recentBlocks.length > 1) {
+                const networkPerf = recentBlocks.slice(0, 10).map((block, idx) => {
+                    const prevBlock = recentBlocks[idx + 1];
+                    const blockTime = prevBlock ? 
+                        (new Date(block.timestamp) - new Date(prevBlock.timestamp)) / 1000 : 0;
+                    return {
+                        block: block.index,
+                        blockTime: Math.max(0, blockTime),
+                        hashrate: block.difficulty * 1000 / Math.max(blockTime, 0.1)
+                    };
+                }).reverse();
+                setNetworkData(networkPerf);
+            }
 
-// Format hash (show first 8 and last 8 characters)
-function formatHash(hash) {
-    if (hash.length > 16) {
-        return `${hash.substring(0, 8)}...${hash.substring(hash.length - 8)}`;
-    }
-    return hash;
-}
+            setError(null);
+            setLoading(false);
+        } catch (err) {
+            setError(err.message);
+            setLoading(false);
+        }
+    };
 
-// Fetch and update dashboard data
-async function updateDashboardData() {
-    const statsUrl = `${API_BASE}/blockchain/stats`;
-    console.log(`[updateDashboardData] Fetching from: ${statsUrl}`);
-    try {
-        const response = await fetch(statsUrl);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const statsData = await response.json();
+    const formatNumber = (num) => {
+        if (num >= 1000000) return `${(num / 1000000).toFixed(2)}M`;
+        if (num >= 1000) return `${(num / 1000).toFixed(2)}K`;
+        return new Intl.NumberFormat('en-US').format(num);
+    };
 
-        // Update stats
-        document.getElementById('blockHeight').textContent = statsData.height || '0';
-        document.getElementById('totalTriangles').textContent = statsData.utxo_count || '0';
-        document.getElementById('difficulty').textContent = statsData.difficulty || '2';
-        document.getElementById('totalArea').textContent = (statsData.utxo_count * 100).toFixed(2);
+    const formatFullNumber = (num) => {
+        return new Intl.NumberFormat('en-US').format(num);
+    };
 
-        // Update recent blocks
-        const blocksContainer = document.getElementById('recentBlocks');
-        if (!statsData.recent_blocks || statsData.recent_blocks.length === 0) {
-            blocksContainer.innerHTML = '<p class="loading">No blocks yet.</p>';
+    const formatTime = (seconds) => {
+        if (seconds < 60) return `${seconds}s`;
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        if (mins < 60) return `${mins}m ${secs}s`;
+        const hours = Math.floor(mins / 60);
+        const remainMins = mins % 60;
+        return `${hours}h ${remainMins}m`;
+    };
+
+    const formatHash = (hash) => {
+        if (!hash) return 'N/A';
+        return `${hash.slice(0, 12)}...${hash.slice(-10)}`;
+    };
+
+    const calculatePercentage = (current, total) => {
+        return ((current / total) * 100).toFixed(3);
+    };
+
+    const calculateHashrate = () => {
+        if (!stats || !stats.difficulty || !stats.avgBlockTime) return 0;
+        return (stats.difficulty * 1000 / Math.max(stats.avgBlockTime, 0.1)).toFixed(2);
+    };
+
+    const toggleBlockExpansion = (blockIndex) => {
+        const newExpanded = new Set(expandedBlocks);
+        if (newExpanded.has(blockIndex)) {
+            newExpanded.delete(blockIndex);
         } else {
-            const blockPromises = statsData.recent_blocks.slice(0, 5).map(async (blockInfo) => {
-                try {
-                    const blockResponse = await fetch(`${API_BASE}/blockchain/block/by-height/${blockInfo.height}`);
-                    return await blockResponse.json();
-                } catch (e) {
-                    return null;
-                }
-            });
-            const blocks = (await Promise.all(blockPromises)).filter(b => b !== null);
-            blocksContainer.innerHTML = blocks.map((block, index) => {
-                const blockInfo = statsData.recent_blocks[index];
-                return `
-                    <div class="block-item" onclick="fetchBlockDetails(${block.header.height})">
-                        <div class="block-header">
-                            <span class="block-height">Block #${block.header.height}</span>
-                            <span class="block-time">${formatTime(block.header.timestamp)}</span>
-                        </div>
-                        <div class="block-hash">Hash: ${formatHash(blockInfo.hash)}</div>
-                        <div style="margin-top: 10px; color: #888; font-size: 0.9rem;">
-                            ${block.transactions.length} tx(s) • Difficulty: ${block.header.difficulty}
-                        </div>
-                    </div>`;
-            }).join('');
+            newExpanded.add(blockIndex);
         }
-        if (tg) tg.HapticFeedback.impactOccurred('light');
-    } catch (error) {
-        console.error('[updateDashboardData] Error:', error);
-        ['blockHeight', 'totalTriangles', 'totalArea', 'difficulty'].forEach(id => {
-            document.getElementById(id).textContent = 'Offline';
-        });
-        document.getElementById('recentBlocks').innerHTML = '<p class="loading">API server offline.</p>';
-        if (tg) tg.showAlert('Unable to connect to the blockchain API.');
-    }
-}
+        setExpandedBlocks(newExpanded);
+    };
 
-// --- Mining Control Logic ---
+    const filteredBlocks = blocks.filter(block => 
+        searchQuery === '' || 
+        block.hash?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        block.index?.toString().includes(searchQuery) ||
+        block.previousHash?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
-const minerAddressInput = document.getElementById('minerAddressInput');
-const loadCliWalletButton = document.getElementById('loadCliWalletButton');
-const startMiningButton = document.getElementById('startMiningButton');
-const stopMiningButton = document.getElementById('stopMiningButton');
-const minerAddressDisplay = document.getElementById('minerAddress');
-const miningStatusDisplay = document.getElementById('miningStatus');
-const blocksMinedDisplay = document.getElementById('blocksMined');
-const hashRateDisplay = document.getElementById('hashRate');
-
-// Inject CLI wallet address from Python kernel to make it available in JS
-let cliMinerAddress = '7339ba1f28a194fe5d099a9d7551e1aa78a633e85f3c846b4e046d7cbe43f434';
-
-function updateMiningStatusDisplay(status) {
-    miningStatusDisplay.innerText = status.is_mining ? 'Active' : 'Inactive';
-    blocksMinedDisplay.innerText = status.blocks_mined;
-    hashRateDisplay.innerText = `${status.hashrate.toFixed(2)} H/s`;
-    miningStatusDisplay.style.color = status.is_mining ? '#00ff88' : '#ff0044';
-
-    // Update button states based on mining status
-    startMiningButton.disabled = status.is_mining;
-    stopMiningButton.disabled = !status.is_mining;
-    loadCliWalletButton.disabled = status.is_mining;
-    minerAddressInput.disabled = status.is_mining;
-}
-
-async function fetchMiningStatus() {
-    try {
-        const response = await fetch(`${API_BASE}/mining/status`);
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-        }
-        const status = await response.json();
-        updateMiningStatusDisplay(status);
-    } catch (error) {
-        console.error('Error fetching mining status:', error);
-        miningStatusDisplay.innerText = 'Error';
-        miningStatusDisplay.style.color = '#ff0044';
-        startMiningButton.disabled = false;
-        stopMiningButton.disabled = true;
-        loadCliWalletButton.disabled = false;
-        minerAddressInput.disabled = false;
-    }
-}
-
-async function startMining() {
-    const address = minerAddressInput.value.trim();
-    if (!address) {
-        alert('Please enter a miner address.');
-        return;
-    }
-    try {
-        startMiningButton.disabled = true;
-        stopMiningButton.disabled = true; // Disable until status is confirmed
-        loadCliWalletButton.disabled = true;
-        minerAddressInput.disabled = true;
-
-        const response = await fetch(`${API_BASE}/mining/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ miner_address: address })
-        });
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-        }
-        await response.text();
-        fetchMiningStatus();
-    } catch (error) {
-        console.error('Error starting mining:', error);
-        alert(`Failed to start mining: ${error.message}`);
-        fetchMiningStatus();
-    }
-}
-
-async function stopMining() {
-    try {
-        stopMiningButton.disabled = true;
-        startMiningButton.disabled = true; // Disable until status is confirmed
-        loadCliWalletButton.disabled = true;
-        minerAddressInput.disabled = true;
-
-        const response = await fetch(`${API_BASE}/mining/stop`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-        }
-        await response.text();
-        fetchMiningStatus();
-    } catch (error) {
-        console.error('Error stopping mining:', error);
-        alert(`Failed to stop mining: ${error.message}`);
-        fetchMiningStatus();
-    }
-}
-
-function loadCliWalletAddress() {
-    if (cliMinerAddress) {
-        minerAddressInput.value = cliMinerAddress;
-        minerAddressDisplay.innerText = formatHash(cliMinerAddress);
-        if(tg) tg.showAlert('CLI wallet address loaded!');
-    } else {
-        if(tg) tg.showAlert('CLI wallet address not available.');
-    }
-}
-
-function setupMiningControls() {
-    if (minerAddressInput && loadCliWalletButton && startMiningButton && stopMiningButton) {
-        loadCliWalletButton.addEventListener('click', loadCliWalletAddress);
-        startMiningButton.addEventListener('click', startMining);
-        stopMiningButton.addEventListener('click', stopMining);
-
-        if (cliMinerAddress) {
-            minerAddressInput.value = cliMinerAddress;
-            minerAddressDisplay.innerText = formatHash(cliMinerAddress);
-        } else {
-            minerAddressDisplay.innerText = 'Not Set';
-        }
-
-        fetchMiningStatus();
-        setInterval(fetchMiningStatus, 5000);
-    }
-}
-// --- End Mining Control Logic ---
-
-// Fetch and display block details in the modal
-async function fetchBlockDetails(blockHeight) {
-    const modal = document.getElementById('blockDetailsModal');
-    const content = document.getElementById('blockDetailsContent');
-    content.innerHTML = '<p class="loading">Loading block details...</p>';
-    modal.style.display = 'block';
-
-    try {
-        const response = await fetch(`${API_BASE}/blockchain/block/by-height/${blockHeight}`);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        const block = await response.json();
-
-        let transactionsHtml = '<h4>Transactions</h4>';
-        if (block.transactions.length === 0) {
-            transactionsHtml += '<p>No transactions in this block.</p>';
-        } else {
-            transactionsHtml += block.transactions.map(tx => `
-                <div class="transaction-item">
-                    <p><strong>Hash:</strong> ${formatHash(tx.hash)}</p>
-                    <p><strong>Timestamp:</strong> ${formatTime(tx.timestamp)}</p>
-                </div>
-            `).join('');
-        }
-
-        content.innerHTML = `
-            <h3>Block #${block.header.height}</h3>
-            <p><strong>Hash:</strong> ${formatHash(block.header.hash)}</p>
-            <p><strong>Previous Hash:</strong> ${formatHash(block.header.previous_hash)}</p>
-            <p><strong>Timestamp:</strong> ${formatTime(block.header.timestamp)}</p>
-            <p><strong>Difficulty:</strong> ${block.header.difficulty}</p>
-            <p><strong>Nonce:</strong> ${block.header.nonce}</p>
-            <hr>
-            ${transactionsHtml}
-        `;
-    } catch (error) {
-        console.error('[fetchBlockDetails] Error:', error);
-        content.innerHTML = '<p class="loading">Unable to fetch block details.</p>';
-    }
-}
-
-// Update data periodically
-function startAutoUpdate() {
-    updateDashboardData();
-    setInterval(updateDashboardData, 10000);
-}
-
-// Start when page loads
-document.addEventListener('DOMContentLoaded', () => {
-    // Update debug panel
-    document.getElementById('debugApiBase').textContent = API_BASE;
-    document.getElementById('debugStatus').textContent = 'Fetching data...';
-    
-    startAutoUpdate();
-    setupMiningControls();
-
-    // Log Telegram user info if available
-    if (tg && tg.initDataUnsafe.user) {
-        console.log('Telegram User:', tg.initDataUnsafe.user.username || tg.initDataUnsafe.user.first_name);
-    }
-
-    // Modal close logic
-    const modal = document.getElementById('blockDetailsModal');
-    const closeButton = document.querySelector('.close-button');
-
-    closeButton.onclick = function() {
-        modal.style.display = 'none';
-    }
-
-    window.onclick = function(event) {
-        if (event.target == modal) {
-            modal.style.display = 'none';
-        }
-    }
-
-    // Search logic
-    const searchButton = document.getElementById('searchButton');
-    searchButton.addEventListener('click', search);
-
-    // Wallet controls
-    const createWalletButton = document.getElementById('createWalletButton');
-    const loadWalletButton = document.getElementById('loadWalletButton');
-    const sendButton = document.getElementById('sendButton');
-    const walletFileInput = document.getElementById('walletFileInput');
-
-    createWalletButton.addEventListener('click', createWallet);
-    loadWalletButton.addEventListener('click', () => walletFileInput.click());
-    walletFileInput.addEventListener('change', (event) => loadWallet(event.target.files[0]));
-    sendButton.addEventListener('click', sendTransaction);
-
-    initPriceChart();
-});
-
-// Toggle debug panel visibility
-function toggleDebugPanel() {
-    const panel = document.getElementById('debugPanel');
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-}
-
-// Search for a block by height or hash
-async function search() {
-    const searchInput = document.getElementById('searchInput');
-    const query = searchInput.value.trim();
-    if (!query) {
-        return;
-    }
-
-    const searchResults = document.getElementById('searchResults');
-    searchResults.innerHTML = '<p class="loading">Searching...</p>';
-
-    try {
-        let response;
-        if (isNaN(query)) {
-            // Search by hash
-            response = await fetch(`${API_BASE}/blockchain/block/by-hash/${query}`);
-        } else {
-            // Search by height
-            response = await fetch(`${API_BASE}/blockchain/block/by-height/${query}`);
-        }
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const block = await response.json();
-        searchResults.innerHTML = `
-            <div class="block-item" onclick="fetchBlockDetails(${block.header.height})">
-                <div class="block-header">
-                    <span class="block-height">Block #${block.header.height}</span>
-                    <span class="block-time">${formatTime(block.header.timestamp)}</span>
-                </div>
-                <div class="block-hash">
-                    Hash: ${formatHash(block.header.hash)}
-                </div>
-                <div style="margin-top: 10px; color: #888; font-size: 0.9rem;">
-                    ${block.transactions.length} transaction(s) • Difficulty: ${block.header.difficulty}
+    if (loading && !stats) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="relative w-24 h-24 mx-auto mb-6">
+                        <div className="absolute inset-0 border-4 border-purple-500/30 rounded-full"></div>
+                        <div className="absolute inset-0 border-4 border-transparent border-t-purple-500 rounded-full animate-spin"></div>
+                        <Layers className="absolute inset-0 m-auto text-purple-400" size={40} />
+                    </div>
+                    <p className="text-purple-200 text-xl font-semibold">Connecting to TrinityChain Node...</p>
+                    <p className="text-purple-400 text-sm mt-2">{nodeUrl}</p>
                 </div>
             </div>
-        `;
-    } catch (error) {
-        console.error('[search] Error:', error);
-        searchResults.innerHTML = '<p class="loading">Block not found.</p>';
+        );
     }
-}
 
-// Fetch price data from CoinGecko
-async function fetchPriceData() {
-    try {
-        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        const data = await response.json();
-        return data.bitcoin.usd;
-    } catch (error) {
-        console.error('[fetchPriceData] Error:', error);
-        return null;
-    }
-}
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white">
+            {/* Top Navigation Bar */}
+            <div className="bg-slate-900/80 backdrop-blur-xl border-b border-purple-500/20 sticky top-0 z-50">
+                <div className="max-w-7xl mx-auto px-6 py-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3">
+                                <div className="relative">
+                                    <Layers className="text-purple-400" size={36} />
+                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">
+                                        TrinityChain
+                                    </h1>
+                                    <p className="text-xs text-purple-300">Mining Dashboard v2.0</p>
+                                </div>
+                            </div>
+                        </div>
 
-// Initialize and update the price chart
-async function initPriceChart() {
-    const ctx = document.getElementById('priceChart').getContext('2d');
-    const priceChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Price (USD)',
-                data: [],
-                borderColor: 'rgba(0, 255, 136, 1)',
-                backgroundColor: 'rgba(0, 255, 136, 0.2)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            scales: {
-                x: {
-                    type: 'time',
-                    time: {
-                        unit: 'second'
-                    }
-                },
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    });
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setAutoRefresh(!autoRefresh)}
+                                className={`p-2 rounded-lg transition-all ${autoRefresh ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+                                title={autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+                            >
+                                {autoRefresh ? <Play size={18} /> : <Pause size={18} />}
+                            </button>
+                            <button
+                                onClick={fetchData}
+                                className="p-2 rounded-lg bg-purple-600 hover:bg-purple-700 transition-all"
+                                title="Manual Refresh"
+                            >
+                                <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                            </button>
+                            <button
+                                onClick={() => setShowSettings(!showSettings)}
+                                className="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition-all"
+                                title="Settings"
+                            >
+                                <Settings size={18} />
+                            </button>
+                            <div className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg">
+                                <div className={`w-2 h-2 rounded-full ${error ? 'bg-red-500' : 'bg-green-500'} animate-pulse`}></div>
+                                <span className="text-xs text-purple-200">{error ? 'Offline' : 'Live'}</span>
+                            </div>
+                        </div>
+                    </div>
 
-    // Fetch and update price data every 60 seconds
-    setInterval(async () => {
-        const price = await fetchPriceData();
-        if (price) {
-            const now = new Date();
-            priceChart.data.labels.push(now);
-            priceChart.data.datasets[0].data.push(price);
-            priceChart.update();
-        }
-    }, 60000);
-}
+                    {/* Settings Panel */}
+                    {showSettings && (
+                        <div className="mt-4 p-4 bg-slate-800/50 rounded-lg border border-purple-500/20">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm text-purple-200 mb-2 block">Node URL</label>
+                                    <input
+                                        type="text"
+                                        value={nodeUrl}
+                                        onChange={(e) => setNodeUrl(e.target.value)}
+                                        className="w-full bg-slate-900/50 border border-purple-500/30 rounded px-4 py-2 text-white focus:outline-none focus:border-purple-400"
+                                        placeholder="http://localhost:3000"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm text-purple-200 mb-2 block">Refresh Interval (ms)</label>
+                                    <input
+                                        type="number"
+                                        value={refreshInterval}
+                                        onChange={(e) => setRefreshInterval(parseInt(e.target.value) || 3000)}
+                                        className="w-full bg-slate-900/50 border border-purple-500/30 rounded px-4 py-2 text-white focus:outline-none focus:border-purple-400"
+                                        min="1000"
+                                        step="1000"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto p-6">
+                {error && (
+                    <div className="bg-red-900/30 border-l-4 border-red-500 rounded-lg p-4 mb-6 backdrop-blur-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-red-500/20 rounded-full p-2">
+                                <Activity className="text-red-400" size={20} />
+                            </div>
+                            <div>
+                                <p className="text-red-200 font-semibold">Connection Error</p>
+                                <p className="text-red-300 text-sm">{error} - Ensure TrinityChain node is running on {nodeUrl}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Tabs */}
+                <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+                    {[
+                        { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+                        { id: 'analytics', label: 'Analytics', icon: Activity },
+                        { id: 'explorer', label: 'Block Explorer', icon: Boxes },
+                        { id: 'network', label: 'Network', icon: Network }
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all whitespace-nowrap ${
+                                activeTab === tab.id
+                                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50'
+                                    : 'bg-slate-800/50 text-purple-200 hover:bg-slate-800 border border-purple-500/20'
+                            }`}
+                        >
+                            <tab.icon size={18} />
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                {activeTab === 'dashboard' && stats && (
+                    <>
+                        {/* Hero Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <HeroStatCard
+                                icon={<Boxes className="text-purple-400" size={28} />}
+                                label="Chain Height"
+                                value={formatFullNumber(stats.chainHeight || 0)}
+                                subtext={`${formatNumber(stats.blocksMined || 0)} mined`}
+                                gradient="from-purple-600 to-purple-800"
+                            />
+                            <HeroStatCard
+                                icon={<Zap className="text-yellow-400" size={28} />}
+                                label="Hashrate"
+                                value={`${calculateHashrate()} H/s`}
+                                subtext={`Difficulty: ${stats.difficulty || 0}`}
+                                gradient="from-yellow-600 to-orange-600"
+                            />
+                            <HeroStatCard
+                                icon={<Coins className="text-green-400" size={28} />}
+                                label="Total Earned"
+                                value={formatNumber(stats.totalEarned || 0)}
+                                subtext={`${formatNumber(stats.currentReward || 0)} per block`}
+                                gradient="from-green-600 to-emerald-600"
+                            />
+                            <HeroStatCard
+                                icon={<Clock className="text-blue-400" size={28} />}
+                                label="Block Time"
+                                value={`${(stats.avgBlockTime || 0).toFixed(2)}s`}
+                                subtext={`Uptime: ${formatTime(stats.uptime || 0)}`}
+                                gradient="from-blue-600 to-cyan-600"
+                            />
+                        </div>
+
+                        {/* Supply and Halving */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-purple-600/20 rounded-lg p-3">
+                                            <Database className="text-purple-400" size={24} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-bold">Token Supply</h3>
+                                            <p className="text-purple-300 text-sm">Distribution Progress</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-end">
+                                        <div>
+                                            <p className="text-purple-300 text-sm">Current Supply</p>
+                                            <p className="text-3xl font-bold">{formatNumber(stats.totalSupply || 0)}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-purple-300 text-sm">Max Supply</p>
+                                            <p className="text-2xl font-bold">{formatNumber(stats.maxSupply || 420000000)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <div className="w-full bg-slate-800 rounded-full h-6 overflow-hidden">
+                                            <div
+                                                className="h-6 rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 transition-all duration-1000 flex items-center justify-end pr-3"
+                                                style={{ width: `${Math.min(100, calculatePercentage(stats.totalSupply || 0, stats.maxSupply || 420000000))}%` }}
+                                            >
+                                                <span className="text-xs font-bold text-white drop-shadow-lg">
+                                                    {calculatePercentage(stats.totalSupply || 0, stats.maxSupply || 420000000)}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-3 pt-2">
+                                        <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                            <p className="text-purple-300 text-xs mb-1">Remaining</p>
+                                            <p className="font-bold text-sm">{formatNumber((stats.maxSupply || 420000000) - (stats.totalSupply || 0))}</p>
+                                        </div>
+                                        <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                            <p className="text-purple-300 text-xs mb-1">Circulating</p>
+                                            <p className="font-bold text-sm">{formatNumber(stats.totalSupply || 0)}</p>
+                                        </div>
+                                        <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                            <p className="text-purple-300 text-xs mb-1">Burned</p>
+                                            <p className="font-bold text-sm">0</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-pink-500/20 shadow-xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-pink-600/20 rounded-lg p-3">
+                                            <Award className="text-pink-400" size={24} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-bold">Halving Schedule</h3>
+                                            <p className="text-pink-300 text-sm">Reward Reduction</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-end">
+                                        <div>
+                                            <p className="text-pink-300 text-sm">Current Era</p>
+                                            <p className="text-5xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+                                                {stats.halvingEra || 0}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-pink-300 text-sm">Current Reward</p>
+                                            <p className="text-3xl font-bold text-green-400">{formatNumber(stats.currentReward || 0)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="relative">
+                                        <div className="w-full bg-slate-800 rounded-full h-6 overflow-hidden">
+                                            <div
+                                                className="h-6 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-pink-500 transition-all duration-1000 flex items-center justify-end pr-3"
+                                                style={{
+                                                    width: `${Math.min(100, Math.max(0, 100 - ((stats.blocksToHalving || 0) / 210000 * 100)))}%`
+                                                }}
+                                            >
+                                                <span className="text-xs font-bold text-white drop-shadow-lg">
+                                                    {Math.max(0, 100 - ((stats.blocksToHalving || 0) / 210000 * 100)).toFixed(1)}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-3 pt-2">
+                                        <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                            <p className="text-pink-300 text-xs mb-1">Blocks Left</p>
+                                            <p className="font-bold text-sm">{formatNumber(stats.blocksToHalving || 0)}</p>
+                                        </div>
+                                        <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                            <p className="text-pink-300 text-xs mb-1">Next Block</p>
+                                            <p className="font-bold text-sm">{formatNumber((stats.chainHeight || 0) + (stats.blocksToHalving || 0))}</p>
+                                        </div>
+                                        <div className="bg-slate-800/50 rounded-lg p-3 text-center">
+                                            <p className="text-pink-300 text-xs mb-1">Next Reward</p>
+                                            <p className="font-bold text-sm">{formatNumber((stats.currentReward || 1000) / 2)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Recent Blocks */}
+                        <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-purple-600/20 rounded-lg p-3">
+                                        <Boxes className="text-purple-400" size={24} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-bold">Latest Blocks</h3>
+                                        <p className="text-purple-300 text-sm">Most recent mining activity</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                {blocks.slice(0, 10).map((block, idx) => (
+                                    <div
+                                        key={idx}
+                                        className="bg-slate-800/50 rounded-lg p-4 hover:bg-slate-800/70 transition-all border border-purple-500/10 hover:border-purple-500/30"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="bg-purple-600/20 rounded-lg px-3 py-2">
+                                                    <span className="text-purple-400 font-mono font-bold text-lg">#{block.index}</span>
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm text-purple-200 font-mono">{formatHash(block.hash)}</p>
+                                                    <p className="text-xs text-purple-400 mt-1">{new Date(block.timestamp).toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-6">
+                                                <div className="text-right">
+                                                    <p className="text-xs text-purple-300">Transactions</p>
+                                                    <p className="font-bold">{block.transactions?.length || 0}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs text-purple-300">Difficulty</p>
+                                                    <p className="font-bold">{block.difficulty}</p>
+                                                </div>
+                                                <div className="bg-green-600/20 rounded-lg px-3 py-2">
+                                                    <p className="text-green-400 font-bold">+{formatNumber(block.reward || 0)}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {activeTab === 'analytics' && (
+                    <>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+                                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                    <TrendingUp className="text-purple-400" />
+                                    Difficulty Trend
+                                </h3>
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <AreaChart data={chartData}>
+                                        <defs>
+                                            <linearGradient id="difficultyGradient" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#a855f7" stopOpacity={0.8}/>
+                                                <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                        <XAxis dataKey="block" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                        <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                        <Tooltip 
+                                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #6366f1', borderRadius: '8px' }}
+                                            labelStyle={{ color: '#e2e8f0' }}
+                                        />
+                                        <Area type="monotone" dataKey="difficulty" stroke="#a855f7" fillOpacity={1} fill="url(#difficultyGradient)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+
+                            <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+                                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                    <Activity className="text-green-400" />
+                                    Transaction Activity
+                                </h3>
+                                <ResponsiveContainer width="100%" height={250}>
+                                    <BarChart data={chartData}>
+                                        <defs>
+                                            <linearGradient id="txGradient" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                                                <stop offset="95%" stopColor="#10b981" stopOpacity={0.3}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                        <XAxis dataKey="block" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                        <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                        <Tooltip 
+                                            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #10b981', borderRadius: '8px' }}
+                                            labelStyle={{ color: '#e2e8f0' }}
+                                        />
+                                        <Bar dataKey="transactions" fill="url(#txGradient)" radius={[8, 8, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <Award className="text-yellow-400" />
+                                Block Rewards
+                            </h3>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <LineChart data={chartData}>
+                                    <defs>
+                                        <linearGradient id="rewardGradient" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#eab308" stopOpacity={0.8}/>
+                                            <stop offset="95%" stopColor="#eab308" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                    <XAxis dataKey="block" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                    <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                    <Tooltip 
+                                        contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #eab308', borderRadius: '8px' }}
+                                        labelStyle={{ color: '#e2e8f0' }}
+                                    />
+                                    <Line type="monotone" dataKey="reward" stroke="#eab308" strokeWidth={3} dot={{ fill: '#eab308', r: 4 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </>
+                )}
+
+                {activeTab === 'network' && (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                            <StatCard
+                                icon={<Cpu className="text-cyan-400" />}
+                                label="Network Hashrate"
+                                value={`${calculateHashrate()} H/s`}
+                                trend="+12.5%"
+                                color="cyan"
+                            />
+                            <StatCard
+                                icon={<Network className="text-blue-400" />}
+                                label="Active Nodes"
+                                value="1"
+                                trend="Stable"
+                                color="blue"
+                            />
+                            <StatCard
+                                icon={<Target className="text-red-400" />}
+                                label="Network Difficulty"
+                                value={formatNumber(stats?.difficulty || 0)}
+                                trend={`Target: ${stats?.difficulty || 0}`}
+                                color="red"
+                            />
+                        </div>
+
+                        <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl mb-6">
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <Activity className="text-purple-400" />
+                                Network Performance
+                            </h3>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <LineChart data={networkData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                    <XAxis dataKey="block" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                    <YAxis yAxisId="left" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                    <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" tick={{ fill: '#94a3b8' }} />
+                                    <Tooltip 
+                                        contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #6366f1', borderRadius: '8px' }}
+                                        labelStyle={{ color: '#e2e8f0' }}
+                                    />
+                                    <Legend />
+                                    <Line yAxisId="left" type="monotone" dataKey="blockTime" stroke="#10b981" strokeWidth={2} name="Block Time (s)" />
+                                    <Line yAxisId="right" type="monotone" dataKey="hashrate" stroke="#a855f7" strokeWidth={2} name="Hashrate" />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                        <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <Terminal className="text-green-400" />
+                                Node Information
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <InfoRow label="Node URL" value={nodeUrl} />
+                                <InfoRow label="Protocol Version" value="1.0.0" />
+                                <InfoRow label="Network ID" value="TrinityChain" />
+                                <InfoRow label="Sync Status" value="Synchronized" />
+                                <InfoRow label="Peer Count" value="1" />
+                                <InfoRow label="Latest Block" value={`#${stats?.chainHeight || 0}`} />
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {activeTab === 'explorer' && (
+                    <>
+                        <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl mb-6">
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="flex-1 relative">
+                                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-purple-400" size={20} />
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Search by block height, hash, or previous hash..."
+                                        className="w-full bg-slate-800/50 border border-purple-500/30 rounded-lg pl-10 pr-4 py-3 text-white placeholder-purple-300/50 focus:outline-none focus:border-purple-400"
+                                    />
+                                </div>
+                                <div className="bg-slate-800/50 border border-purple-500/20 rounded-lg px-4 py-3">
+                                    <span className="text-purple-200 text-sm">
+                                        {filteredBlocks.length} blocks
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            {filteredBlocks.map((block, idx) => (
+                                <div
+                                    key={idx}
+                                    className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-purple-500/20 shadow-xl overflow-hidden hover:border-purple-500/40 transition-all"
+                                >
+                                    <div 
+                                        className="p-6 cursor-pointer"
+                                        onClick={() => toggleBlockExpansion(block.index)}
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className="bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl px-4 py-3 shadow-lg">
+                                                    <span className="text-white font-mono font-bold text-xl">#{block.index}</span>
+                                                </div>
+                                                <div>
+                                                    <p className="text-purple-200 font-mono text-sm mb-1">{formatHash(block.hash)}</p>
+                                                    <p className="text-purple-400 text-xs">{new Date(block.timestamp).toLocaleString()}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-6">
+                                                <div className="text-center">
+                                                    <p className="text-purple-300 text-xs mb-1">Difficulty</p>
+                                                    <p className="font-bold text-lg">{block.difficulty}</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-purple-300 text-xs mb-1">Nonce</p>
+                                                    <p className="font-bold text-lg">{block.nonce}</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-purple-300 text-xs mb-1">Transactions</p>
+                                                    <p className="font-bold text-lg">{block.transactions?.length || 0}</p>
+                                                </div>
+                                                <div className="bg-green-600/20 rounded-lg px-4 py-2 border border-green-500/30">
+                                                    <p className="text-green-400 font-bold text-lg">+{formatNumber(block.reward || 0)}</p>
+                                                </div>
+                                                <button className="text-purple-400 hover:text-purple-300 transition-colors">
+                                                    {expandedBlocks.has(block.index) ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {expandedBlocks.has(block.index) && (
+                                        <div className="border-t border-purple-500/20 bg-slate-950/50 p-6">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div>
+                                                    <h4 className="text-purple-300 text-sm font-semibold mb-3 flex items-center gap-2">
+                                                        <Database size={16} />
+                                                        Block Details
+                                                    </h4>
+                                                    <div className="space-y-3">
+                                                        <DetailRow label="Block Height" value={`#${block.index}`} />
+                                                        <DetailRow label="Timestamp" value={new Date(block.timestamp).toISOString()} />
+                                                        <DetailRow label="Difficulty" value={block.difficulty} />
+                                                        <DetailRow label="Nonce" value={block.nonce} />
+                                                        <DetailRow label="Reward" value={`${formatFullNumber(block.reward || 0)} TRC`} />
+                                                        <DetailRow label="Size" value={`${JSON.stringify(block).length} bytes`} />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-purple-300 text-sm font-semibold mb-3 flex items-center gap-2">
+                                                        <Boxes size={16} />
+                                                        Hash Information
+                                                    </h4>
+                                                    <div className="space-y-3">
+                                                        <div>
+                                                            <p className="text-purple-400 text-xs mb-1">Block Hash</p>
+                                                            <p className="font-mono text-xs bg-slate-900/50 p-2 rounded break-all border border-purple-500/20">
+                                                                {block.hash}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-purple-400 text-xs mb-1">Previous Hash</p>
+                                                            <p className="font-mono text-xs bg-slate-900/50 p-2 rounded break-all border border-purple-500/20">
+                                                                {block.previousHash}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {block.transactions && block.transactions.length > 0 && (
+                                                <div className="mt-6">
+                                                    <h4 className="text-purple-300 text-sm font-semibold mb-3 flex items-center gap-2">
+                                                        <Activity size={16} />
+                                                        Transactions ({block.transactions.length})
+                                                    </h4>
+                                                    <div className="space-y-2">
+                                                        {block.transactions.map((tx, txIdx) => (
+                                                            <div key={txIdx} className="bg-slate-900/50 rounded-lg p-3 border border-purple-500/10">
+                                                                <div className="flex items-center justify-between">
+                                                                    <p className="font-mono text-sm text-purple-200">
+                                                                        {tx.hash ? formatHash(tx.hash) : `Transaction #${txIdx + 1}`}
+                                                                    </p>
+                                                                    <div className="flex items-center gap-4 text-xs">
+                                                                        {tx.from && <span className="text-purple-400">From: {formatHash(tx.from)}</span>}
+                                                                        {tx.to && <span className="text-purple-400">To: {formatHash(tx.to)}</span>}
+                                                                        {tx.amount && <span className="text-green-400 font-bold">+{tx.amount}</span>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const HeroStatCard = ({ icon, label, value, subtext, gradient }) => (
+    <div className={`bg-gradient-to-br ${gradient} rounded-2xl p-6 shadow-xl border border-white/10 transform hover:scale-105 transition-all`}>
+        <div className="flex items-start justify-between mb-3">
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
+                {icon}
+            </div>
+        </div>
+        <p className="text-white/80 text-sm mb-1">{label}</p>
+        <p className="text-3xl font-bold text-white mb-1">{value}</p>
+        <p className="text-white/60 text-xs">{subtext}</p>
+    </div>
+);
+
+const StatCard = ({ icon, label, value, trend, color }) => {
+    const colorClasses = {
+        cyan: 'border-cyan-500/20 hover:border-cyan-500/40',
+        blue: 'border-blue-500/20 hover:border-blue-500/40',
+        red: 'border-red-500/20 hover:border-red-500/40'
+    };
+
+    return (
+        <div className={`bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border ${colorClasses[color]} shadow-xl transition-all hover:scale-105`}>
+            <div className="flex items-center gap-3 mb-4">
+                <div className={`bg-${color}-600/20 rounded-lg p-3`}>
+                    {icon}
+                </div>
+                <span className="text-purple-200 text-sm font-medium">{label}</span>
+            </div>
+            <div className="text-4xl font-bold mb-2">{value}</div>
+            <div className="text-sm text-purple-400">{trend}</div>
+        </div>
+    );
+};
+
+const InfoRow = ({ label, value }) => (
+    <div className="bg-slate-800/50 rounded-lg p-3 border border-purple-500/10">
+        <p className="text-purple-400 text-xs mb-1">{label}</p>
+        <p className="font-mono text-sm text-white">{value}</p>
+    </div>
+);
+
+const DetailRow = ({ label, value }) => (
+    <div className="flex justify-between items-center">
+        <span className="text-purple-400 text-sm">{label}</span>
+        <span className="font-mono text-sm text-white">{value}</span>
+    </div>
+);
+
+export default TrinityChainDashboard;
