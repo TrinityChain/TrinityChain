@@ -457,6 +457,15 @@ const MAX_HALVINGS: u64 = 64;
 /// = 1000 * 210,000 * 2 = 420,000,000 area units
 pub const MAX_SUPPLY: u64 = INITIAL_MINING_REWARD * REWARD_HALVING_INTERVAL * 2;
 
+/// Calculate block reward based on height (with halving)
+pub fn calculate_block_reward(height: BlockHeight) -> u64 {
+    let halvings = height / REWARD_HALVING_INTERVAL;
+    if halvings >= MAX_HALVINGS {
+        return 0;
+    }
+    INITIAL_MINING_REWARD >> halvings
+}
+
 impl Blockchain {
     pub fn new() -> Self {
         let mut state = TriangleState::new();

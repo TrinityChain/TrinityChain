@@ -393,7 +393,8 @@ async fn get_pending_transactions(State(state): State<AppState>) -> impl IntoRes
 pub struct WalletResponse {
     pub address: String,
     pub public_key: String,
-    pub private_key: String,
+    // SECURITY: Private key removed from API response to prevent exposure
+    // Private keys should only be shown once in terminal or downloaded as encrypted wallet file
 }
 
 
@@ -409,12 +410,12 @@ async fn create_wallet() -> Result<Json<WalletResponse>, Response> {
         Ok(keypair) => {
             let address = keypair.address();
             let public_key = hex::encode(keypair.public_key.serialize());
-            let private_key = hex::encode(keypair.secret_key.secret_bytes());
+            // SECURITY: Private key NOT included in response for security
+            // Users should use CLI wallet tools to generate and securely store keys
 
             Ok(Json(WalletResponse {
                 address,
                 public_key,
-                private_key,
             }))
         }
         Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate keypair: {}", e)).into_response()),
@@ -436,11 +437,11 @@ async fn import_wallet(Json(req): Json<ImportWalletRequest>) -> Result<Json<Wall
         Ok(keypair) => {
             let address = keypair.address();
             let public_key = hex::encode(keypair.public_key.serialize());
+            // SECURITY: Private key NOT echoed back in response
 
             Ok(Json(WalletResponse {
                 address,
                 public_key,
-                private_key: req.private_key,
             }))
         }
         Err(e) => Err((StatusCode::BAD_REQUEST, format!("Invalid private key: {}", e)).into_response()),
@@ -517,7 +518,9 @@ async fn get_mining_status(State(state): State<AppState>) -> impl IntoResponse {
                     Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
                 };
                 let difficulty = blockchain.difficulty;
-                let expected_hashes = 16_u64.pow(difficulty as u32) as f64;
+                // SECURITY FIX: Prevent integer overflow by capping difficulty and using f64 directly
+                let capped_difficulty = difficulty.min(20);
+                let expected_hashes = (16_f64).powi(capped_difficulty as i32);
                 expected_hashes / elapsed
             } else {
                 0.0

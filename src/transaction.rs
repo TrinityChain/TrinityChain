@@ -7,6 +7,9 @@ use crate::error::ChainError;
 
 pub type Address = String;
 
+/// Maximum transaction size in bytes (100KB) to prevent DoS
+pub const MAX_TRANSACTION_SIZE: usize = 100_000;
+
 /// A transaction that can occur in a block
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Transaction {
@@ -18,6 +21,19 @@ pub enum Transaction {
 impl Transaction {
     pub fn hash_str(&self) -> String {
         hex::encode(self.hash())
+    }
+
+    /// Validate transaction size to prevent DoS attacks
+    pub fn validate_size(&self) -> Result<(), ChainError> {
+        let serialized = bincode::serialize(self)
+            .map_err(|e| ChainError::InvalidTransaction(format!("Serialization failed: {}", e)))?;
+
+        if serialized.len() > MAX_TRANSACTION_SIZE {
+            return Err(ChainError::InvalidTransaction(
+                format!("Transaction too large: {} bytes (max: {})", serialized.len(), MAX_TRANSACTION_SIZE)
+            ));
+        }
+        Ok(())
     }
 
     /// Get the fee for this transaction
