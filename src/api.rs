@@ -18,6 +18,7 @@ use crate::transaction::Transaction;
 use crate::crypto::KeyPair;
 use crate::miner;
 use crate::network::Node;
+use secp256k1::ecdsa::Signature;
 
 /// Mining state that tracks the current mining operation
 #[derive(Clone)]
@@ -122,6 +123,7 @@ pub async fn run_api_server() {
         .route("/transactions/mempool-stats", get(get_mempool_stats))
         // Wallet
         .route("/wallet/create", post(create_wallet))
+        .route("/wallet/send", post(send_transaction))
         .route("/wallet/import", post(import_wallet))
         // Mining
         .route("/mining/status", get(get_mining_status))
@@ -442,6 +444,50 @@ async fn import_wallet(Json(req): Json<ImportWalletRequest>) -> Result<Json<Wall
             }))
         }
         Err(e) => Err((StatusCode::BAD_REQUEST, format!("Invalid private key: {}", e)).into_response()),
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SendTransactionRequest {
+    pub transaction: Transaction,
+    pub signature: String,
+}
+
+async fn send_transaction(State(state): State<AppState>, Json(req): Json<SendTransactionRequest>) -> impl IntoResponse {
+    let mut blockchain = match state.blockchain.lock() {
+        Ok(lock) => lock,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
+    };
+
+    // Verify the signature
+    let signature_bytes = match hex::decode(&req.signature) {
+        Ok(bytes) => bytes,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid signature format").into_response(),
+    };
+    let signature = match Signature::from_der(&signature_bytes) {
+        Ok(sig) => sig,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid signature").into_response(),
+    };
+
+    let tx_hash = req.transaction.hash();
+    let message = secp256k1::Message::from_digest_slice(&tx_hash).unwrap();
+    let public_key = match &req.transaction {
+        Transaction::Transfer(tx) => {
+            let key_bytes = hex::decode(&tx.sender).unwrap();
+            secp256k1::PublicKey::from_slice(&key_bytes).unwrap()
+        }
+        _ => return (StatusCode::BAD_REQUEST, "Only transfer transactions are supported").into_response(),
+    };
+
+    let secp = secp256k1::Secp256k1::new();
+    if !secp.verify_ecdsa(&message, &signature, &public_key).is_ok() {
+        return (StatusCode::BAD_REQUEST, "Invalid signature").into_response();
+    }
+
+    let tx_hash_str = req.transaction.hash_str();
+    match blockchain.mempool.add_transaction(req.transaction) {
+        Ok(_) => Json(tx_hash_str).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, format!("Failed to add transaction: {}", e)).into_response(),
     }
 }
 
