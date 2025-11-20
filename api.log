@@ -1,7 +1,0 @@
-nohup: ignoring input
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.40s
-     Running `target/debug/trinity-api`
-Starting the TrinityChain API server...
