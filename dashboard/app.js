@@ -61,252 +61,237 @@ function formatHash(hash) {
     return hash;
 }
 
-// Fetch blockchain stats
-async function fetchStats() {
+// Fetch and update dashboard data
+async function updateDashboardData() {
     const statsUrl = `${API_BASE}/blockchain/stats`;
-    console.log(`[fetchStats] Fetching from: ${statsUrl}`);
+    console.log(`[updateDashboardData] Fetching from: ${statsUrl}`);
     try {
         const response = await fetch(statsUrl);
-        console.log(`[fetchStats] Response status: ${response.status}`);
-        if (!response.ok) {
-            console.error(`[fetchStats] HTTP error: ${response.status} ${response.statusText}`);
-            throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const statsData = await response.json();
+
+        // Update stats
+        document.getElementById('blockHeight').textContent = statsData.height || '0';
+        document.getElementById('totalTriangles').textContent = statsData.utxo_count || '0';
+        document.getElementById('difficulty').textContent = statsData.difficulty || '2';
+        document.getElementById('totalArea').textContent = (statsData.utxo_count * 100).toFixed(2);
+
+        // Update recent blocks
+        const blocksContainer = document.getElementById('recentBlocks');
+        if (!statsData.recent_blocks || statsData.recent_blocks.length === 0) {
+            blocksContainer.innerHTML = '<p class="loading">No blocks yet.</p>';
+        } else {
+            const blockPromises = statsData.recent_blocks.slice(0, 5).map(async (blockInfo) => {
+                try {
+                    const blockResponse = await fetch(`${API_BASE}/blockchain/block/by-height/${blockInfo.height}`);
+                    return await blockResponse.json();
+                } catch (e) {
+                    return null;
+                }
+            });
+            const blocks = (await Promise.all(blockPromises)).filter(b => b !== null);
+            blocksContainer.innerHTML = blocks.map((block, index) => {
+                const blockInfo = statsData.recent_blocks[index];
+                return `
+                    <div class="block-item" onclick="fetchBlockDetails(${block.header.height})">
+                        <div class="block-header">
+                            <span class="block-height">Block #${block.header.height}</span>
+                            <span class="block-time">${formatTime(block.header.timestamp)}</span>
+                        </div>
+                        <div class="block-hash">Hash: ${formatHash(blockInfo.hash)}</div>
+                        <div style="margin-top: 10px; color: #888; font-size: 0.9rem;">
+                            ${block.transactions.length} tx(s) • Difficulty: ${block.header.difficulty}
+                        </div>
+                    </div>`;
+            }).join('');
         }
-        const data = await response.json();
-        console.log('[fetchStats] Data received:', data);
-
-        document.getElementById('blockHeight').textContent = data.height || '0';
-        document.getElementById('totalTriangles').textContent = data.utxo_count || '0';
-        document.getElementById('difficulty').textContent = data.difficulty || '2';
-
-        // Calculate total area from UTXO set (approximate)
-        document.getElementById('totalArea').textContent = (data.utxo_count * 100).toFixed(2);
-
-        // Provide haptic feedback on successful data load
-        if (tg) {
-            tg.HapticFeedback.impactOccurred('light');
-        }
+        if (tg) tg.HapticFeedback.impactOccurred('light');
     } catch (error) {
-        console.error('[fetchStats] Error:', error);
-        document.getElementById('blockHeight').textContent = 'Offline';
-        document.getElementById('totalTriangles').textContent = 'Offline';
-        document.getElementById('totalArea').textContent = 'Offline';
-        document.getElementById('difficulty').textContent = 'Offline';
-
-        // Notify user of error in Telegram
-        if (tg) {
-            tg.showAlert('Unable to connect to blockchain API. Please check your connection.');
-        }
+        console.error('[updateDashboardData] Error:', error);
+        ['blockHeight', 'totalTriangles', 'totalArea', 'difficulty'].forEach(id => {
+            document.getElementById(id).textContent = 'Offline';
+        });
+        document.getElementById('recentBlocks').innerHTML = '<p class="loading">API server offline.</p>';
+        if (tg) tg.showAlert('Unable to connect to the blockchain API.');
     }
 }
 
-// Fetch recent blocks
-async function fetchRecentBlocks() {
-    const statsUrl = `${API_BASE}/blockchain/stats`;
-    console.log(`[fetchRecentBlocks] Fetching from: ${statsUrl}`);
+// --- Mining Control Logic ---
+
+const minerAddressInput = document.getElementById('minerAddressInput');
+const loadCliWalletButton = document.getElementById('loadCliWalletButton');
+const startMiningButton = document.getElementById('startMiningButton');
+const stopMiningButton = document.getElementById('stopMiningButton');
+const minerAddressDisplay = document.getElementById('minerAddress');
+const miningStatusDisplay = document.getElementById('miningStatus');
+const blocksMinedDisplay = document.getElementById('blocksMined');
+const hashRateDisplay = document.getElementById('hashRate');
+
+// Inject CLI wallet address from Python kernel to make it available in JS
+let cliMinerAddress = '7339ba1f28a194fe5d099a9d7551e1aa78a633e85f3c846b4e046d7cbe43f434';
+
+function updateMiningStatusDisplay(status) {
+    miningStatusDisplay.innerText = status.is_mining ? 'Active' : 'Inactive';
+    blocksMinedDisplay.innerText = status.blocks_mined;
+    hashRateDisplay.innerText = `${status.hashrate.toFixed(2)} H/s`;
+    miningStatusDisplay.style.color = status.is_mining ? '#00ff88' : '#ff0044';
+
+    // Update button states based on mining status
+    startMiningButton.disabled = status.is_mining;
+    stopMiningButton.disabled = !status.is_mining;
+    loadCliWalletButton.disabled = status.is_mining;
+    minerAddressInput.disabled = status.is_mining;
+}
+
+async function fetchMiningStatus() {
     try {
-        const statsResponse = await fetch(statsUrl);
-        console.log(`[fetchRecentBlocks] Response status: ${statsResponse.status}`);
-        if (!statsResponse.ok) {
-            throw new Error(`HTTP ${statsResponse.status}`);
+        const response = await fetch(`${API_BASE}/mining/status`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
-        const statsData = await statsResponse.json();
-        console.log('[fetchRecentBlocks] Stats data:', statsData);
-
-        const blocksContainer = document.getElementById('recentBlocks');
-
-        if (!statsData.recent_blocks || statsData.recent_blocks.length === 0) {
-            blocksContainer.innerHTML = '<p class="loading">No blocks yet. Start mining!</p>';
-            return;
-        }
-
-        // Fetch full block details for each recent block
-        const blockPromises = statsData.recent_blocks.slice(0, 5).map(async (blockInfo) => {
-            try {
-                const blockUrl = `${API_BASE}/blockchain/block/by-height/${blockInfo.height}`;
-                console.log(`[fetchRecentBlocks] Fetching block from: ${blockUrl}`);
-                const blockResponse = await fetch(blockUrl);
-                return await blockResponse.json();
-            } catch (e) {
-                console.error('[fetchRecentBlocks] Error fetching block:', e);
-                return null;
-            }
-    // --- Mining Control Logic ---
-
-    const minerAddressInput = document.getElementById('minerAddressInput');
-    const loadWalletButton = document.getElementById('loadWalletButton');
-    const startMiningButton = document.getElementById('startMiningButton');
-    const stopMiningButton = document.getElementById('stopMiningButton');
-    const minerAddressDisplay = document.getElementById('minerAddress');
-    const miningStatusDisplay = document.getElementById('miningStatus');
-    const blocksMinedDisplay = document.getElementById('blocksMined');
-    const hashRateDisplay = document.getElementById('hashRate');
-
-    // Inject CLI wallet address from Python kernel to make it available in JS
-    let cliMinerAddress = '7339ba1f28a194fe5d099a9d7551e1aa78a633e85f3c846b4e046d7cbe43f434';
-
-    function updateMiningStatusDisplay(status) {
-        miningStatusDisplay.innerText = status.is_mining ? 'Active' : 'Inactive';
-        blocksMinedDisplay.innerText = status.blocks_mined;
-        hashRateDisplay.innerText = `${status.hashrate.toFixed(2)} H/s`;
-        miningStatusDisplay.style.color = status.is_mining ? '#00ff88' : '#ff0044';
-        
-        // Update button states based on mining status
-        startMiningButton.disabled = status.is_mining;
-        stopMiningButton.disabled = !status.is_mining;
-        loadWalletButton.disabled = status.is_mining;
-        minerAddressInput.disabled = status.is_mining;
+        const status = await response.json();
+        updateMiningStatusDisplay(status);
+    } catch (error) {
+        console.error('Error fetching mining status:', error);
+        miningStatusDisplay.innerText = 'Error';
+        miningStatusDisplay.style.color = '#ff0044';
+        startMiningButton.disabled = false;
+        stopMiningButton.disabled = true;
+        loadCliWalletButton.disabled = false;
+        minerAddressInput.disabled = false;
     }
+}
 
-    async function fetchMiningStatus() {
-        try {
-            const response = await fetch(`${apiBase}/mining/status`);
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-            }
-            const status = await response.json();
-            updateMiningStatusDisplay(status);
-        } catch (error) {
-            console.error('Error fetching mining status:', error);
-            miningStatusDisplay.innerText = 'Error';
-            miningStatusDisplay.style.color = '#ff0044';
-            startMiningButton.disabled = false;
-            stopMiningButton.disabled = true;
-            loadWalletButton.disabled = false;
-            minerAddressInput.disabled = false;
-        }
+async function startMining() {
+    const address = minerAddressInput.value.trim();
+    if (!address) {
+        alert('Please enter a miner address.');
+        return;
     }
+    try {
+        startMiningButton.disabled = true;
+        stopMiningButton.disabled = true; // Disable until status is confirmed
+        loadCliWalletButton.disabled = true;
+        minerAddressInput.disabled = true;
 
-    async function startMining() {
-        const address = minerAddressInput.value.trim();
-        if (!address) {
-            alert('Please enter a miner address.');
-            return;
+        const response = await fetch(`${API_BASE}/mining/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ miner_address: address })
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
-        try {
-            startMiningButton.disabled = true;
-            stopMiningButton.disabled = true; // Disable until status is confirmed
-            loadWalletButton.disabled = true;
-            minerAddressInput.disabled = true;
-
-            const response = await fetch(`${apiBase}/mining/start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ miner_address: address })
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-            }
-            const result = await response.text(); // Assuming response is text, not JSON, based on previous API calls
-            console.log('Mining started:', result);
-            // Refresh status immediately
-            fetchMiningStatus();
-        } catch (error) {
-            console.error('Error starting mining:', error);
-            alert(`Failed to start mining: ${error.message}`);
-            fetchMiningStatus(); // Fetch status to reflect actual state and re-enable buttons correctly
-        }
+        await response.text();
+        fetchMiningStatus();
+    } catch (error) {
+        console.error('Error starting mining:', error);
+        alert(`Failed to start mining: ${error.message}`);
+        fetchMiningStatus();
     }
+}
 
-    async function stopMining() {
-        try {
-            stopMiningButton.disabled = true;
-            startMiningButton.disabled = true; // Disable until status is confirmed
-            loadWalletButton.disabled = true;
-            minerAddressInput.disabled = true;
+async function stopMining() {
+    try {
+        stopMiningButton.disabled = true;
+        startMiningButton.disabled = true; // Disable until status is confirmed
+        loadCliWalletButton.disabled = true;
+        minerAddressInput.disabled = true;
 
-            const response = await fetch(`${apiBase}/mining/stop`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-            }
-            const result = await response.text(); // Assuming response is text, not JSON
-            console.log('Mining stopped:', result);
-            // Refresh status immediately
-            fetchMiningStatus();
-        } catch (error) {
-            console.error('Error stopping mining:', error);
-            alert(`Failed to stop mining: ${error.message}`);
-            fetchMiningStatus(); // Fetch status to reflect actual state and re-enable buttons correctly
+        const response = await fetch(`${API_BASE}/mining/stop`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
+        await response.text();
+        fetchMiningStatus();
+    } catch (error) {
+        console.error('Error stopping mining:', error);
+        alert(`Failed to stop mining: ${error.message}`);
+        fetchMiningStatus();
     }
+}
 
-    // Function to handle loading CLI wallet address
-    function loadCliWalletAddress() {
-        if (cliMinerAddress && cliMinerAddress !== '') {
-            minerAddressInput.value = cliMinerAddress;
-            minerAddressDisplay.innerText = cliMinerAddress;
-            alert('CLI wallet address loaded successfully!');
-        } else {
-            alert('CLI wallet address not available or empty. Please ensure it was created via CLI and try again, or enter it manually.');
-        }
+function loadCliWalletAddress() {
+    if (cliMinerAddress) {
+        minerAddressInput.value = cliMinerAddress;
+        minerAddressDisplay.innerText = formatHash(cliMinerAddress);
+        if(tg) tg.showAlert('CLI wallet address loaded!');
+    } else {
+        if(tg) tg.showAlert('CLI wallet address not available.');
     }
+}
 
-    // Set up mining controls if elements exist
-    if (minerAddressInput && loadWalletButton && startMiningButton && stopMiningButton) {
-        loadWalletButton.addEventListener('click', loadCliWalletAddress);
+function setupMiningControls() {
+    if (minerAddressInput && loadCliWalletButton && startMiningButton && stopMiningButton) {
+        loadCliWalletButton.addEventListener('click', loadCliWalletAddress);
         startMiningButton.addEventListener('click', startMining);
         stopMiningButton.addEventListener('click', stopMining);
 
-        // Pre-fill miner address if available (e.g., from Python injection)
-        if (cliMinerAddress && cliMinerAddress !== '') {
+        if (cliMinerAddress) {
             minerAddressInput.value = cliMinerAddress;
-            minerAddressDisplay.innerText = cliMinerAddress;
+            minerAddressDisplay.innerText = formatHash(cliMinerAddress);
         } else {
-            minerAddressInput.value = 'Paste miner address here'; // Placeholder instruction
             minerAddressDisplay.innerText = 'Not Set';
         }
 
-        // Fetch initial mining status and then poll
         fetchMiningStatus();
-        setInterval(fetchMiningStatus, 5000); // Poll every 5 seconds
+        setInterval(fetchMiningStatus, 5000);
     }
-    // --- End Mining Control Logic --- 
+}
+// --- End Mining Control Logic ---
 
-        });
+// Fetch and display block details in the modal
+async function fetchBlockDetails(blockHeight) {
+    const modal = document.getElementById('blockDetailsModal');
+    const content = document.getElementById('blockDetailsContent');
+    content.innerHTML = '<p class="loading">Loading block details...</p>';
+    modal.style.display = 'block';
 
-        const blocks = (await Promise.all(blockPromises)).filter(b => b !== null);
-        console.log('[fetchRecentBlocks] Blocks loaded:', blocks.length);
+    try {
+        const response = await fetch(`${API_BASE}/blockchain/block/by-height/${blockHeight}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const block = await response.json();
 
-        blocksContainer.innerHTML = blocks.map((block, index) => {
-            const blockInfo = statsData.recent_blocks[index];
-            return `
-                <div class="block-item">
-                    <div class="block-header">
-                        <span class="block-height">Block #${block.header.height}</span>
-                        <span class="block-time">${formatTime(block.header.timestamp)}</span>
-                    </div>
-                    <div class="block-hash">
-                        Hash: ${formatHash(blockInfo.hash)}
-                    </div>
-                    <div style="margin-top: 10px; color: #888; font-size: 0.9rem;">
-                        ${block.transactions.length} transaction(s) • Difficulty: ${block.header.difficulty}
-                    </div>
+        let transactionsHtml = '<h4>Transactions</h4>';
+        if (block.transactions.length === 0) {
+            transactionsHtml += '<p>No transactions in this block.</p>';
+        } else {
+            transactionsHtml += block.transactions.map(tx => `
+                <div class="transaction-item">
+                    <p><strong>Hash:</strong> ${formatHash(tx.hash)}</p>
+                    <p><strong>Timestamp:</strong> ${formatTime(tx.timestamp)}</p>
                 </div>
-            `;
-        }).join('');
+            `).join('');
+        }
+
+        content.innerHTML = `
+            <h3>Block #${block.header.height}</h3>
+            <p><strong>Hash:</strong> ${formatHash(block.header.hash)}</p>
+            <p><strong>Previous Hash:</strong> ${formatHash(block.header.previous_hash)}</p>
+            <p><strong>Timestamp:</strong> ${formatTime(block.header.timestamp)}</p>
+            <p><strong>Difficulty:</strong> ${block.header.difficulty}</p>
+            <p><strong>Nonce:</strong> ${block.header.nonce}</p>
+            <hr>
+            ${transactionsHtml}
+        `;
     } catch (error) {
-        console.error('[fetchRecentBlocks] Error:', error);
-        document.getElementById('recentBlocks').innerHTML =
-            '<p class="loading">Unable to fetch blocks. Is the API server running?</p>';
+        console.error('[fetchBlockDetails] Error:', error);
+        content.innerHTML = '<p class="loading">Unable to fetch block details.</p>';
     }
 }
 
 // Update data periodically
 function startAutoUpdate() {
-    fetchStats();
-    fetchRecentBlocks();
-
-    // Update every 10 seconds
-    setInterval(() => {
-        fetchStats();
-        fetchRecentBlocks();
-    }, 10000);
+    updateDashboardData();
+    setInterval(updateDashboardData, 10000);
 }
 
 // Start when page loads
@@ -316,15 +301,150 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('debugStatus').textContent = 'Fetching data...';
     
     startAutoUpdate();
+    setupMiningControls();
 
     // Log Telegram user info if available
     if (tg && tg.initDataUnsafe.user) {
         console.log('Telegram User:', tg.initDataUnsafe.user.username || tg.initDataUnsafe.user.first_name);
     }
+
+    // Modal close logic
+    const modal = document.getElementById('blockDetailsModal');
+    const closeButton = document.querySelector('.close-button');
+
+    closeButton.onclick = function() {
+        modal.style.display = 'none';
+    }
+
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    // Search logic
+    const searchButton = document.getElementById('searchButton');
+    searchButton.addEventListener('click', search);
+
+    // Wallet controls
+    const createWalletButton = document.getElementById('createWalletButton');
+    const loadWalletButton = document.getElementById('loadWalletButton');
+    const sendButton = document.getElementById('sendButton');
+    const walletFileInput = document.getElementById('walletFileInput');
+
+    createWalletButton.addEventListener('click', createWallet);
+    loadWalletButton.addEventListener('click', () => walletFileInput.click());
+    walletFileInput.addEventListener('change', (event) => loadWallet(event.target.files[0]));
+    sendButton.addEventListener('click', sendTransaction);
+
+    initPriceChart();
 });
 
 // Toggle debug panel visibility
 function toggleDebugPanel() {
     const panel = document.getElementById('debugPanel');
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+// Search for a block by height or hash
+async function search() {
+    const searchInput = document.getElementById('searchInput');
+    const query = searchInput.value.trim();
+    if (!query) {
+        return;
+    }
+
+    const searchResults = document.getElementById('searchResults');
+    searchResults.innerHTML = '<p class="loading">Searching...</p>';
+
+    try {
+        let response;
+        if (isNaN(query)) {
+            // Search by hash
+            response = await fetch(`${API_BASE}/blockchain/block/by-hash/${query}`);
+        } else {
+            // Search by height
+            response = await fetch(`${API_BASE}/blockchain/block/by-height/${query}`);
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const block = await response.json();
+        searchResults.innerHTML = `
+            <div class="block-item" onclick="fetchBlockDetails(${block.header.height})">
+                <div class="block-header">
+                    <span class="block-height">Block #${block.header.height}</span>
+                    <span class="block-time">${formatTime(block.header.timestamp)}</span>
+                </div>
+                <div class="block-hash">
+                    Hash: ${formatHash(block.header.hash)}
+                </div>
+                <div style="margin-top: 10px; color: #888; font-size: 0.9rem;">
+                    ${block.transactions.length} transaction(s) • Difficulty: ${block.header.difficulty}
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        console.error('[search] Error:', error);
+        searchResults.innerHTML = '<p class="loading">Block not found.</p>';
+    }
+}
+
+// Fetch price data from CoinGecko
+async function fetchPriceData() {
+    try {
+        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        return data.bitcoin.usd;
+    } catch (error) {
+        console.error('[fetchPriceData] Error:', error);
+        return null;
+    }
+}
+
+// Initialize and update the price chart
+async function initPriceChart() {
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    const priceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Price (USD)',
+                data: [],
+                borderColor: 'rgba(0, 255, 136, 1)',
+                backgroundColor: 'rgba(0, 255, 136, 0.2)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'second'
+                    }
+                },
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // Fetch and update price data every 60 seconds
+    setInterval(async () => {
+        const price = await fetchPriceData();
+        if (price) {
+            const now = new Date();
+            priceChart.data.labels.push(now);
+            priceChart.data.datasets[0].data.push(price);
+            priceChart.update();
+        }
+    }, 60000);
 }
