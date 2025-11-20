@@ -372,19 +372,57 @@ async fn answer(
             info!("Handled /about command for user: {:?}", message.from());
         }
         Command::Dashboard => {
-            let dashboard_msg = "🔺 TrinityChain Dashboard 🔺\n\n\
-                The blockchain explorer dashboard is available as a Telegram Mini App!\n\n\
-                To set it up:\n\
-                1. Host the dashboard files from the /dashboard folder on HTTPS\n\
-                2. Configure the Web App URL with @BotFather\n\
-                3. Access it via the bot menu button\n\n\
-                The dashboard shows:\n\
-                • Real-time blockchain statistics\n\
-                • Recent blocks\n\
-                • Genesis block info\n\
-                • And more!\n\n\
-                For setup instructions, see dashboard/README.md in the repository.";
-            bot.send_message(message.chat.id, dashboard_msg).await?;
+            // Fetch live dashboard data from the blockchain
+            let response = match Database::open("trinitychain.db") {
+                Ok(db) => match db.load_blockchain() {
+                    Ok(chain) => {
+                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
+                        let total_supply = trinitychain::blockchain::Blockchain::calculate_current_supply(height);
+                        let current_reward = trinitychain::blockchain::Blockchain::calculate_block_reward(height);
+                        let triangles = chain.state.count();
+                        let mempool_size = chain.mempool.len();
+                        let peers_count = if let Some(node) = node_opt.as_ref() {
+                            node.peers_count().await
+                        } else {
+                            0
+                        };
+
+                        // Get recent blocks info
+                        let num_blocks = chain.blocks.len().min(3);
+                        let recent_blocks = &chain.blocks[chain.blocks.len().saturating_sub(num_blocks)..];
+                        let mut blocks_info = String::new();
+                        for block in recent_blocks.iter().rev() {
+                            let hash_hex = hex::encode(block.hash);
+                            let hash_display = format!("{}...{}", &hash_hex[..6], &hash_hex[hash_hex.len()-6..]);
+                            blocks_info.push_str(&format!(
+                                "  • Block #{}: {} ({} txs)\n",
+                                block.header.height,
+                                hash_display,
+                                block.transactions.len()
+                            ));
+                        }
+
+                        format!(
+                            "🔺 TrinityChain Dashboard 🔺\n\n\
+                            📊 Live Statistics:\n\n\
+                            🏔️ Height: {}\n\
+                            💰 Total Supply: {:.2} area\n\
+                            🎁 Block Reward: {:.2} area\n\
+                            🔺 Active Triangles: {}\n\
+                            ⚡ Difficulty: {}\n\
+                            🌐 Peers: {}\n\
+                            📥 Mempool: {} txs\n\n\
+                            📦 Recent Blocks:\n{}\n\
+                            💡 Tip: Access the full Web Dashboard via the menu button!",
+                            height, total_supply, current_reward, triangles,
+                            chain.difficulty, peers_count, mempool_size, blocks_info
+                        )
+                    }
+                    Err(_) => "Could not load blockchain data.".to_string(),
+                },
+                Err(_) => "Could not open blockchain database.".to_string(),
+            };
+            bot.send_message(message.chat.id, response).await?;
             info!("Handled /dashboard command for user: {:?}", message.from());
         }
     }

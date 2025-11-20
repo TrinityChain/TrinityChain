@@ -112,17 +112,18 @@ h1 {
 }
 
 .stat-card {
-    background: var(--tg-theme-secondary-bg-color);
-    border: 1px solid var(--tg-theme-button-color);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(0, 255, 136, 0.3);
     border-radius: 10px;
-    padding: 20px;
+    padding: 15px;
     text-align: center;
-    transition: all 0.3s;
+    transition: all 0.2s;
 }
 
-.stat-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+.stat-card:active {
+    border-color: var(--tg-theme-link-color);
+    background: rgba(0, 255, 136, 0.1);
+    transform: scale(0.98);
 }
 
 .stat-card h3 {
@@ -148,10 +149,10 @@ h1 {
 
 .section h2 {
     color: var(--tg-theme-link-color);
-    font-size: 1.8rem;
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid var(--tg-theme-button-color);
+    font-size: 1.5rem;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid rgba(0, 255, 136, 0.3);
 }
 
 .blocks-list {
@@ -266,79 +267,4 @@ footer a:hover {
     .stats-grid {
         grid-template-columns: 1fr;
     }
-}
-
-.modal {
-    display: none;
-    position: fixed;
-    z-index: 1;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto;
-    background-color: rgba(0,0,0,0.4);
-}
-
-.modal-content {
-    background-color: var(--tg-theme-secondary-bg-color);
-    margin: 15% auto;
-    padding: 20px;
-    border: 1px solid var(--tg-theme-button-color);
-    width: 80%;
-    border-radius: 8px;
-}
-
-.close-button {
-    color: var(--tg-theme-hint-color);
-    float: right;
-    font-size: 28px;
-    font-weight: bold;
-}
-
-.close-button:hover,
-.close-button:focus {
-    color: var(--tg-theme-text-color);
-    text-decoration: none;
-    cursor: pointer;
-}
-
-.search-container {
-    display: flex;
-    margin-bottom: 20px;
-}
-
-#searchInput {
-    flex-grow: 1;
-    padding: 10px;
-    border: 1px solid var(--tg-theme-button-color);
-    border-radius: 4px 0 0 4px;
-    background-color: var(--tg-theme-secondary-bg-color);
-    color: var(--tg-theme-text-color);
-}
-
-#searchButton {
-    padding: 10px 15px;
-    border: 1px solid var(--tg-theme-button-color);
-    border-left: none;
-    background-color: var(--tg-theme-button-color);
-    color: var(--tg-theme-button-text-color);
-    cursor: pointer;
-    border-radius: 0 4px 4px 0;
-}
-
-#walletControls button, #miningControls button {
-    padding: 10px 15px;
-    background: var(--tg-theme-button-color);
-    color: var(--tg-theme-button-text-color);
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    margin-right: 10px;
-    transition: all 0.3s;
-}
-
-#walletControls button:hover, #miningControls button:hover {
-    opacity: 0.8;
 }

@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/main.rs",
+      "use": "@vercel/static-build",
+      "config": {
+        "maxLambdaSize": "15mb"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/"
+    }
+  ],
+  "installCommand": "source $HOME/.cargo/env && rustup override set stable && cargo install --path .",
+  "buildCommand": "source $HOME/.cargo/env && cargo build --release --bin trinity-api"
+}

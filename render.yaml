@@ -1,16 +1,33 @@
-# Exported from Render on 2025-11-16T08:48:57Z
-version: "1"
-projects:
-- name: TrinityChain
-  environments:
-  - name: TrinityChain
-    services:
-    - type: web
-      name: TrinityChain-API
-      runtime: rust
-      repo: https://github.com/TrinityChain/TrinityChain
-      plan: free
-      region: oregon
-      buildCommand: cargo build --release --bin trinity-api
-      startCommand: ./target/release/trinity-api
-      autoDeployTrigger: commit
+
+services:
+  - type: web
+    name: trinity-node
+    env: rust
+    buildCommand: "cargo build --release --bin trinity-node"
+    startCommand: "./target/release/trinity-node"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trinity-db
+          property: connectionString
+  - type: web
+    name: trinity-api
+    env: rust
+    buildCommand: "cargo build --release --bin trinity-api"
+    startCommand: "./target/release/trinity-api"
+    envVars:
+      - key: PORT
+        value: 8080
+  - type: worker
+    name: trinity-telegram-bot
+    env: rust
+    buildCommand: "cargo build --release --bin trinity-telegram-bot"
+    startCommand: "./target/release/trinity-telegram-bot"
+    envVars:
+      - key: TELOXIDE_TOKEN
+        sync: false
+
+databases:
+  - name: trinity-db
+    databaseName: trinity
+    user: trinity
