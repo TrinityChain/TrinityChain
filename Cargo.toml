@@ -30,6 +30,8 @@ tower-http = { version = "0.5", features = ["cors", "fs"] }
 indicatif = "0.17"
 console = "0.15"
 comfy-table = "7.1"
+ratatui = "0.26"
+crossterm = "0.27"
 humantime = "2.1"
 parking_lot = "0.12"
 ipnetwork = "0.20"
@@ -92,6 +94,10 @@ path = "src/bin/trinity-api.rs"
 [[bin]]
 name = "trinity-telegram-bot"
 path = "src/bin/trinity-telegram-bot.rs"
+
+[[bin]]
+name = "trinity-server"
+path = "src/bin/trinity-server.rs"
 
 [dev-dependencies]
 axum-test = "14.1.1"
