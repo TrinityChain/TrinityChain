@@ -25,13 +25,51 @@ pub fn genesis_triangle() -> Triangle {
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TriangleState {
     pub utxo_set: HashMap<Sha256Hash, Triangle>,
+    /// Address index: maps owner address to list of triangle hashes they own
+    /// This makes balance queries O(1) instead of O(n)
+    #[serde(skip)]
+    pub address_index: HashMap<String, Vec<Sha256Hash>>,
 }
 
 impl TriangleState {
     pub fn new() -> Self {
         TriangleState {
             utxo_set: HashMap::new(),
+            address_index: HashMap::new(),
         }
+    }
+
+    /// Rebuild the address index from the UTXO set
+    /// Should be called after loading from database
+    pub fn rebuild_address_index(&mut self) {
+        self.address_index.clear();
+        for (hash, triangle) in &self.utxo_set {
+            self.address_index
+                .entry(triangle.owner.clone())
+                .or_insert_with(Vec::new)
+                .push(*hash);
+        }
+    }
+
+    /// Get all triangles owned by an address (O(1) lookup)
+    pub fn get_triangles_by_owner(&self, owner: &str) -> Vec<&Triangle> {
+        self.address_index
+            .get(owner)
+            .map(|hashes| {
+                hashes
+                    .iter()
+                    .filter_map(|hash| self.utxo_set.get(hash))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Calculate total area owned by an address (O(1) lookup + O(k) sum where k = # triangles owned)
+    pub fn get_balance(&self, owner: &str) -> f64 {
+        self.get_triangles_by_owner(owner)
+            .iter()
+            .map(|t| t.area())
+            .sum()
     }
 
     pub fn count(&self) -> usize {
@@ -41,19 +79,32 @@ impl TriangleState {
     /// Apply a subdivision transaction to the state
     /// Optimized to minimize hash calculations and clones
     pub fn apply_subdivision(&mut self, tx: &SubdivisionTx) -> Result<(), ChainError> {
-        // Use entry API to avoid double lookup
-        if self.utxo_set.remove(&tx.parent_hash).is_none() {
-            return Err(ChainError::TriangleNotFound(format!(
+        // Remove parent from UTXO set and address index
+        let parent = self.utxo_set.remove(&tx.parent_hash).ok_or_else(|| {
+            ChainError::TriangleNotFound(format!(
                 "Parent triangle {} not found",
                 hex::encode(tx.parent_hash)
-            )));
+            ))
+        })?;
+
+        // Update address index: remove parent hash
+        if let Some(hashes) = self.address_index.get_mut(&parent.owner) {
+            hashes.retain(|h| h != &tx.parent_hash);
+            if hashes.is_empty() {
+                self.address_index.remove(&parent.owner);
+            }
         }
 
-        // Reserve capacity for children before the loop to avoid reallocations
-        // Subdivisions always produce exactly 3 children
+        // Add children to UTXO set and address index
         for child in &tx.children {
             let child_hash = child.hash();
             self.utxo_set.insert(child_hash, child.clone());
+
+            // Update address index: add child hash
+            self.address_index
+                .entry(child.owner.clone())
+                .or_insert_with(Vec::new)
+                .push(child_hash);
         }
 
         Ok(())
@@ -86,7 +137,13 @@ impl TriangleState {
         );
 
         let hash = new_triangle.hash();
-        self.utxo_set.insert(hash, new_triangle);
+        self.utxo_set.insert(hash, new_triangle.clone());
+
+        // Update address index
+        self.address_index
+            .entry(tx.beneficiary_address.clone())
+            .or_insert_with(Vec::new)
+            .push(hash);
 
         Ok(())
     }
@@ -191,14 +248,8 @@ impl Block {
 
     #[inline]
     pub fn calculate_hash(&self) -> Sha256Hash {
-        let mut hasher = Sha256::new();
-        hasher.update(self.header.height.to_le_bytes());
-        hasher.update(self.header.previous_hash);
-        hasher.update(self.header.timestamp.to_le_bytes());
-        hasher.update(self.header.difficulty.to_le_bytes());
-        hasher.update(self.header.nonce.to_le_bytes());
-        hasher.update(self.header.merkle_root);
-        hasher.finalize().into()
+        // Delegate to header's hash calculation for consistency
+        self.header.calculate_hash()
     }
 
     pub fn calculate_merkle_root(transactions: &[Transaction]) -> Sha256Hash {
@@ -720,11 +771,31 @@ impl Blockchain {
                         self.state.apply_coinbase(cb_tx, valid_block.header.height)?;
                     },
                     Transaction::Transfer(tx) => {
-                        let triangle = self.state.utxo_set.get_mut(&tx.input_hash)
-                            .ok_or_else(|| ChainError::TriangleNotFound(
-                                format!("Transfer input {} missing from UTXO set", hex::encode(tx.input_hash))
-                            ))?;
+                        // Remove from old owner's index
+                        let old_owner = {
+                            let triangle = self.state.utxo_set.get(&tx.input_hash)
+                                .ok_or_else(|| ChainError::TriangleNotFound(
+                                    format!("Transfer input {} missing from UTXO set", hex::encode(tx.input_hash))
+                                ))?;
+                            triangle.owner.clone()
+                        };
+
+                        if let Some(hashes) = self.state.address_index.get_mut(&old_owner) {
+                            hashes.retain(|h| h != &tx.input_hash);
+                            if hashes.is_empty() {
+                                self.state.address_index.remove(&old_owner);
+                            }
+                        }
+
+                        // Update triangle ownership
+                        let triangle = self.state.utxo_set.get_mut(&tx.input_hash).unwrap();
                         triangle.owner = tx.new_owner.clone();
+
+                        // Add to new owner's index
+                        self.state.address_index
+                            .entry(tx.new_owner.clone())
+                            .or_insert_with(Vec::new)
+                            .push(tx.input_hash);
                     }
                 }
             }
@@ -827,11 +898,31 @@ impl Blockchain {
                         new_state.apply_coinbase(cb_tx, block.header.height)?;
                     }
                     Transaction::Transfer(transfer_tx) => {
-                        let triangle = new_state.utxo_set.get_mut(&transfer_tx.input_hash)
-                            .ok_or_else(|| ChainError::TriangleNotFound(
-                                format!("During fork rebuild, transfer input {} not found", hex::encode(transfer_tx.input_hash))
-                            ))?;
+                        // Remove from old owner's index
+                        let old_owner = {
+                            let triangle = new_state.utxo_set.get(&transfer_tx.input_hash)
+                                .ok_or_else(|| ChainError::TriangleNotFound(
+                                    format!("During fork rebuild, transfer input {} not found", hex::encode(transfer_tx.input_hash))
+                                ))?;
+                            triangle.owner.clone()
+                        };
+
+                        if let Some(hashes) = new_state.address_index.get_mut(&old_owner) {
+                            hashes.retain(|h| h != &transfer_tx.input_hash);
+                            if hashes.is_empty() {
+                                new_state.address_index.remove(&old_owner);
+                            }
+                        }
+
+                        // Update triangle ownership
+                        let triangle = new_state.utxo_set.get_mut(&transfer_tx.input_hash).unwrap();
                         triangle.owner = transfer_tx.new_owner.clone();
+
+                        // Add to new owner's index
+                        new_state.address_index
+                            .entry(transfer_tx.new_owner.clone())
+                            .or_insert_with(Vec::new)
+                            .push(transfer_tx.input_hash);
                     }
                 }
             }
