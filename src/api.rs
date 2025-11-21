@@ -559,11 +559,7 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 break;
             }
 
-            
-            tokio::time::sleep(Duration::from_secs(1)).await; // Add a 1-second delay to prevent timestamp issues
-
-            // Ensure Duration is imported if not already
-            use std::time::Duration; // Add this if not already present, though it likely is.// Get pending transactions
+            // Get pending transactions
             let block = {
                 let blockchain = match blockchain_clone.lock() {
                     Ok(lock) => lock,
@@ -575,8 +571,18 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 };
                 let transactions = blockchain.mempool.get_all_transactions();
 
+                let height = blockchain.blocks.len() as u64;
+                let last_block = blockchain.blocks.last().expect("Blockchain should have at least a genesis block");
+                let previous_hash = last_block.hash;
+                let parent_timestamp = last_block.header.timestamp;
+                let difficulty = blockchain.difficulty;
+
+                // Calculate proper block reward with halving
+                let block_reward = Blockchain::calculate_block_reward(height);
+                let total_fees = Blockchain::calculate_total_fees(&transactions);
+                let reward_area = block_reward.saturating_add(total_fees);
+
                 // Create coinbase transaction
-                let reward_area = 100u64;
                 let coinbase = Transaction::Coinbase(crate::transaction::CoinbaseTx {
                     reward_area,
                     beneficiary_address: miner_address.clone(),
@@ -585,11 +591,7 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 let mut all_txs = vec![coinbase];
                 all_txs.extend(transactions);
 
-                let height = blockchain.blocks.len() as u64;
-                let previous_hash = blockchain.blocks.last().expect("Blockchain should have at least a genesis block").hash;
-                let difficulty = blockchain.difficulty;
-
-                Block::new(height, previous_hash, difficulty, all_txs)
+                Block::new_with_parent_time(height, previous_hash, parent_timestamp, difficulty, all_txs)
             };
 
             // Mine the block (this is CPU intensive)

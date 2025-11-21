@@ -155,6 +155,40 @@ impl Block {
         }
     }
 
+    /// Create a new block ensuring timestamp is greater than parent timestamp
+    pub fn new_with_parent_time(
+        height: BlockHeight,
+        previous_hash: Sha256Hash,
+        parent_timestamp: i64,
+        difficulty: u64,
+        transactions: Vec<Transaction>,
+    ) -> Self {
+        let mut timestamp = Utc::now().timestamp();
+
+        // Ensure timestamp is strictly greater than parent
+        if timestamp <= parent_timestamp {
+            timestamp = parent_timestamp + 1;
+        }
+
+        let merkle_root = Self::calculate_merkle_root(&transactions);
+
+        let header = BlockHeader {
+            height,
+            previous_hash,
+            timestamp,
+            difficulty,
+            nonce: 0,
+            merkle_root,
+            headline: None,
+        };
+
+        Block {
+            header,
+            hash: [0; 32],
+            transactions,
+        }
+    }
+
     #[inline]
     pub fn calculate_hash(&self) -> Sha256Hash {
         let mut hasher = Sha256::new();
@@ -345,14 +379,16 @@ impl Mempool {
         }
 
         // Use partial sort for better performance when limit is small
-        // This is O(n log k) instead of O(n log n) where k = limit
-        txs.select_nth_unstable_by(limit, |a, b| b.fee().cmp(&a.fee()));
+        // This is O(n + k log k) instead of O(n log n) where k = limit
+        // select_nth_unstable_by partitions so that elements [0..limit] have the highest fees
+        txs.select_nth_unstable_by(limit - 1, |a, b| b.fee().cmp(&a.fee()));
 
-        // Sort the top `limit` transactions
-        let (top, _, _) = txs.select_nth_unstable_by(limit - 1, |a, b| b.fee().cmp(&a.fee()));
-        top.sort_unstable_by(|a, b| b.fee().cmp(&a.fee()));
+        // Now sort only the top limit transactions
+        txs[..limit].sort_unstable_by(|a, b| b.fee().cmp(&a.fee()));
 
-        txs.into_iter().take(limit).collect()
+        // Return only the top limit transactions
+        txs.truncate(limit);
+        txs
     }
 
     /// Get a specific transaction by hash
@@ -473,15 +509,19 @@ impl Blockchain {
         let genesis_hash = genesis.hash();
         state.utxo_set.insert(genesis_hash, genesis);
 
+        // Use a fixed genesis timestamp (January 1, 2024, 00:00:00 UTC)
+        // This ensures the genesis block is always the same across all instances
+        let genesis_timestamp: i64 = 1704067200;
+
         let mut genesis_block = Block {
             header: BlockHeader {
                 height: 0,
                 previous_hash: [0; 32],
-                timestamp: Utc::now().timestamp() - 1, // Genesis block is in the past
+                timestamp: genesis_timestamp,
                 difficulty: 2,
                 nonce: 0,
                 merkle_root: [0; 32],
-                headline: Some("Al's forward march confronts investor jitters over staggering valuations and a bull case that won't quit.".to_string()),
+                headline: Some("TrinityChain Genesis Block - Sierpinski Triangle Blockchain".to_string()),
             },
             hash: [0; 32], // Will be calculated based on header content
             transactions: vec![],
