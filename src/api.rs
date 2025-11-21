@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
     routing::{get, post},
     Json, Router, http::StatusCode, response::{IntoResponse, Response},
 };
@@ -11,13 +11,14 @@ use std::time::{Duration, Instant};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tokio::task::JoinHandle;
+use futures_util::{StreamExt, SinkExt};
 
 use crate::blockchain::{Blockchain, Block};
 use crate::persistence::Database;
 use crate::transaction::Transaction;
 use crate::crypto::KeyPair;
 use crate::miner;
-use crate::network::Node;
+use crate::network::{Node, NetworkMessage};
 use secp256k1::ecdsa::Signature;
 
 /// Mining state that tracks the current mining operation
@@ -132,6 +133,8 @@ pub async fn run_api_server() {
         // Network
         .route("/network/peers", get(get_peers))
         .route("/network/info", get(get_network_info))
+        // WebSocket P2P Bridge
+        .route("/ws/p2p", get(ws_p2p_handler))
         .with_state(app_state)
         .layer(cors.clone());
 
@@ -608,9 +611,23 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 Block::new_with_parent_time(height, previous_hash, parent_timestamp, difficulty, all_txs)
             };
 
-            // Mine the block (this is CPU intensive)
+            // Mine the block (this is CPU intensive - run on blocking thread pool)
             let start = Instant::now();
-            match miner::mine_block(block) {
+            let mine_result = tokio::task::spawn_blocking(move || {
+                miner::mine_block(block)
+            }).await;
+
+            // Handle spawn_blocking result
+            let mine_result = match mine_result {
+                Ok(result) => result,
+                Err(e) => {
+                    eprintln!("Mining task panicked: {}", e);
+                    mining_state.is_mining.store(false, Ordering::Relaxed);
+                    break;
+                }
+            };
+
+            match mine_result {
                 Ok(mined_block) => {
                     // Update last block time
                     {
@@ -825,6 +842,99 @@ async fn get_block_reward_info(State(state): State<AppState>, Path(height): Path
         blocks_until_halving,
         reward_after_halving,
     }).into_response()
+}
+
+/// WebSocket P2P Bridge Handler
+/// Allows nodes to communicate over WebSocket instead of raw TCP
+async fn ws_p2p_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws_p2p(socket, state))
+}
+
+async fn handle_ws_p2p(socket: WebSocket, state: AppState) {
+    let (mut sender, mut receiver) = socket.split();
+
+    println!("🌐 WebSocket P2P connection established");
+
+    while let Some(msg) = receiver.next().await {
+        match msg {
+            Ok(Message::Binary(data)) => {
+                // Deserialize the NetworkMessage from bincode
+                match bincode::deserialize::<NetworkMessage>(&data) {
+                    Ok(message) => {
+                        let response = handle_network_message(message, &state).await;
+                        if let Some(resp_data) = response {
+                            if let Err(e) = sender.send(Message::Binary(resp_data)).await {
+                                eprintln!("❌ WebSocket send error: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("❌ Failed to deserialize message: {}", e);
+                    }
+                }
+            }
+            Ok(Message::Close(_)) => {
+                println!("🔌 WebSocket P2P connection closed");
+                break;
+            }
+            Ok(_) => {} // Ignore other message types
+            Err(e) => {
+                eprintln!("❌ WebSocket error: {}", e);
+                break;
+            }
+        }
+    }
+}
+
+async fn handle_network_message(message: NetworkMessage, state: &AppState) -> Option<Vec<u8>> {
+    match message {
+        NetworkMessage::GetBlockHeaders { after_height } => {
+            let blockchain = state.blockchain.lock().ok()?;
+            let headers: Vec<_> = blockchain.blocks
+                .iter()
+                .filter(|b| b.header.height > after_height)
+                .map(|b| b.header.clone())
+                .collect();
+            let response = NetworkMessage::BlockHeaders(headers);
+            bincode::serialize(&response).ok()
+        }
+        NetworkMessage::GetBlocks(hashes) => {
+            let blockchain = state.blockchain.lock().ok()?;
+            let blocks: Vec<_> = hashes.iter()
+                .filter_map(|h| blockchain.block_index.get(h).cloned())
+                .collect();
+            let response = NetworkMessage::Blocks(blocks);
+            bincode::serialize(&response).ok()
+        }
+        NetworkMessage::GetPeers => {
+            let peers = state.network.peers.lock().ok()?;
+            let response = NetworkMessage::Peers(peers.clone());
+            bincode::serialize(&response).ok()
+        }
+        NetworkMessage::NewBlock(block) => {
+            let mut blockchain = state.blockchain.lock().ok()?;
+            if let Err(e) = blockchain.apply_block(*block) {
+                eprintln!("❌ Failed to add block: {}", e);
+            }
+            None
+        }
+        NetworkMessage::NewTransaction(tx) => {
+            let mut blockchain = state.blockchain.lock().ok()?;
+            if let Err(e) = blockchain.mempool.add_transaction(*tx) {
+                eprintln!("❌ Failed to add transaction: {}", e);
+            }
+            None
+        }
+        NetworkMessage::Ping => {
+            let response = NetworkMessage::Pong;
+            bincode::serialize(&response).ok()
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]

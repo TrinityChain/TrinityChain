@@ -25,7 +25,9 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 base64 = "0.21"
 rpassword = "7.3"
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 indicatif = "0.17"
 console = "0.15"

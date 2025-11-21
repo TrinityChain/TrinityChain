@@ -359,8 +359,8 @@ impl NetworkNode {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
-enum NetworkMessage {
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub enum NetworkMessage {
     GetBlockHeaders { after_height: u64 },
     BlockHeaders(Vec<crate::blockchain::BlockHeader>),
     GetBlock(crate::blockchain::Sha256Hash),
