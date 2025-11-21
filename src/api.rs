@@ -297,9 +297,18 @@ async fn get_recent_blocks(State(state): State<AppState>) -> impl IntoResponse {
         Ok(lock) => lock,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
     };
-    let blocks: Vec<RecentBlock> = blockchain.blocks.iter().rev().take(50).map(|b| RecentBlock {
-        height: b.header.height,
-        hash: hex::encode(b.hash),
+    let blocks: Vec<serde_json::Value> = blockchain.blocks.iter().rev().take(50).map(|b| {
+        serde_json::json!({
+            "index": b.header.height,
+            "height": b.header.height,
+            "hash": hex::encode(b.hash),
+            "previousHash": hex::encode(b.header.previous_hash),
+            "timestamp": b.header.timestamp,
+            "difficulty": b.header.difficulty,
+            "nonce": b.header.nonce,
+            "merkleRoot": hex::encode(b.header.merkle_root),
+            "transactions": b.transactions.len(),
+        })
     }).collect();
     // Wrap in object for dashboard compatibility
     Json(serde_json::json!({ "blocks": blocks })).into_response()

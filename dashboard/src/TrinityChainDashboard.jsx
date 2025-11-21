@@ -170,9 +170,9 @@ const TrinityChainDashboard = () => {
               <button
                 onClick={() => setAutoRefresh(!autoRefresh)}
                 className={`p-2 rounded-lg transition-all ${autoRefresh ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-700 hover:bg-slate-600'}`}
-                title={autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+                title={autoRefresh ? 'Pause auto-refresh' : 'Resume auto-refresh'}
               >
-                {autoRefresh ? <Play size={18} /> : <Pause size={18} />}
+                {autoRefresh ? <Pause size={18} /> : <Play size={18} />}
               </button>
               <button
                 onClick={fetchData}
