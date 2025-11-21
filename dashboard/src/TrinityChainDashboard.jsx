@@ -7,7 +7,8 @@ const TrinityChainDashboard = () => {
   const [blocks, setBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [nodeUrl, setNodeUrl] = useState('http://localhost:3000');
+  // Use empty string for relative URLs (works on Render) or localhost for dev
+  const [nodeUrl, setNodeUrl] = useState(window.location.hostname === 'localhost' ? 'http://localhost:3000' : '');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlock, setSelectedBlock] = useState(null);

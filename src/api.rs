@@ -297,11 +297,12 @@ async fn get_recent_blocks(State(state): State<AppState>) -> impl IntoResponse {
         Ok(lock) => lock,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
     };
-    let blocks: Vec<RecentBlock> = blockchain.blocks.iter().rev().take(20).map(|b| RecentBlock {
+    let blocks: Vec<RecentBlock> = blockchain.blocks.iter().rev().take(50).map(|b| RecentBlock {
         height: b.header.height,
         hash: hex::encode(b.hash),
     }).collect();
-    Json(blocks).into_response()
+    // Wrap in object for dashboard compatibility
+    Json(serde_json::json!({ "blocks": blocks })).into_response()
 }
 
 async fn get_block_by_height(State(state): State<AppState>, Path(height): Path<u64>) -> Result<Json<Option<Block>>, Response> {
