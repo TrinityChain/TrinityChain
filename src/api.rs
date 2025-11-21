@@ -135,8 +135,8 @@ pub async fn run_api_server() {
         .with_state(app_state)
         .layer(cors.clone());
 
-    // Serve static files from dashboard directory
-    let serve_dir = ServeDir::new("dashboard");
+    // Serve static files from dashboard/dist directory (Vite build output)
+    let serve_dir = ServeDir::new("dashboard/dist");
 
     let app = Router::new()
         .nest("/api", api_routes)

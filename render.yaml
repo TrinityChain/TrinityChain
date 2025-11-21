@@ -1,67 +1,39 @@
 services:
-  # TrinityChain P2P Node
+  # TrinityChain Main Server - API + Dashboard Combined
   - type: web
-    name: trinity-node
-    env: rust
-    plan: starter
-    buildCommand: "cargo build --release --bin trinity-node"
-    startCommand: "./target/release/trinity-node 8333"
+    name: trinitychain
+    runtime: rust
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: |
+      # Build the React dashboard first with Tailwind CSS
+      echo "Building React Dashboard..."
+      cd dashboard
+      npm install
+      npm run build
+      cd ..
+      # Build the Rust API server
+      echo "Building Rust API Server..."
+      cargo build --release --bin trinity-server
+    startCommand: ./target/release/trinity-server
     envVars:
       - key: RUST_LOG
         value: info
-      - key: DATABASE_PATH
-        value: /opt/render/project/src/trinitychain.db
-
-  # TrinityChain Combined Server (API + Telegram Bot)
-  - type: web
-    name: trinity-server
-    env: rust
-    plan: starter
-    buildCommand: "cargo build --release --bin trinity-server"
-    startCommand: "./target/release/trinity-server 3000"
-    envVars:
       - key: PORT
-        value: 3000
-      - key: RUST_LOG
-        value: info
-      - key: DATABASE_PATH
-        value: /opt/render/project/src/trinitychain.db
+        fromGroup: web
       - key: CORS_ORIGIN
         value: "*"
-      - key: TELOXIDE_TOKEN
-        sync: false
+    healthCheckPath: /api/blockchain/stats
+    disk:
+      name: trinitychain-data
+      mountPath: /opt/render/project/src
+      sizeGB: 1
+    autoDeploy: true
 
-  # React Dashboard
-  - type: web
-    name: trinity-dashboard
-    env: node
-    plan: starter
-    buildCommand: "cd dashboard && npm install && npm run build"
-    startCommand: "cd dashboard && npx serve -s dist -l 5173"
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: VITE_API_URL
-        value: https://trinity-server.onrender.com
-
-  # Auto Miner Worker (Optional - for continuous mining)
-  - type: worker
-    name: trinity-miner
-    env: rust
-    plan: starter
-    buildCommand: "cargo build --release --bin trinity-miner"
-    startCommand: "./target/release/trinity-miner"
-    envVars:
-      - key: RUST_LOG
-        value: info
-      - key: DATABASE_PATH
-        value: /opt/render/project/src/trinitychain.db
-      - key: MINING_THREADS
-        value: 2
-
-# Optional: Database service (if using PostgreSQL instead of SQLite)
-# databases:
-#   - name: trinity-db
-#     databaseName: trinitychain
-#     user: trinity
-#     plan: starter
+# The server serves both:
+# - API endpoints at /api/*
+# - React dashboard at / (from dashboard/dist via ServeDir)
+#
+# Dashboard will be accessible at: https://trinitychain.onrender.com
+# API will be accessible at: https://trinitychain.onrender.com/api/*

@@ -29,8 +29,8 @@ const TrinityChainDashboard = () => {
   const fetchData = async () => {
     try {
       const [statsRes, blocksRes] = await Promise.all([
-        fetch(`${nodeUrl}/api/stats`),
-        fetch(`${nodeUrl}/api/blocks?limit=50`)
+        fetch(`${nodeUrl}/api/blockchain/stats`),
+        fetch(`${nodeUrl}/api/blockchain/blocks?limit=50`)
       ]);
 
       if (!statsRes.ok || !blocksRes.ok) {
