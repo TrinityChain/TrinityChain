@@ -13,10 +13,10 @@ services:
       npm install
       npm run build
       cd ..
-      # Build the Rust API server
+      # Build the Rust API server (headless, production-ready)
       echo "Building Rust API Server..."
-      cargo build --release --bin trinity-server
-    startCommand: ./target/release/trinity-server
+      cargo build --release --bin trinity-api
+    startCommand: ./target/release/trinity-api
     envVars:
       - key: RUST_LOG
         value: info
@@ -37,3 +37,6 @@ services:
 #
 # Dashboard will be accessible at: https://trinitychain.onrender.com
 # API will be accessible at: https://trinitychain.onrender.com/api/*
+#
+# Note: trinity-api is the headless production server (no TUI)
+# trinity-server has a TUI for local development only
