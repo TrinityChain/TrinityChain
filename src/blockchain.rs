@@ -327,30 +327,39 @@ impl Mempool {
     }
 
     /// Evict the transaction with the lowest fee to make room for new ones
+    /// Optimized: When mempool is very full, evict 10% of lowest-fee transactions at once
+    /// to reduce the frequency of this expensive O(n) operation
     fn evict_lowest_fee_transaction(&mut self) -> Result<(), ChainError> {
         if self.transactions.is_empty() {
             return Ok(());
         }
 
-        // Find transaction with lowest fee
-        let mut lowest_fee = u64::MAX;
-        let mut lowest_hash: Option<Sha256Hash> = None;
+        // If mempool is > 90% full, do batch eviction (10% of transactions)
+        let evict_count = if self.transactions.len() > Self::MAX_TRANSACTIONS * 9 / 10 {
+            (Self::MAX_TRANSACTIONS / 10).max(1) // Evict 10% at once
+        } else {
+            1 // Just evict one
+        };
 
-        for (hash, tx) in &self.transactions {
-            let fee = match tx {
-                Transaction::Transfer(t) => t.fee,
-                Transaction::Subdivision(_) => 0, // Subdivisions don't have fees
-                Transaction::Coinbase(_) => 0,
-            };
+        // Collect (fee, hash) pairs and sort
+        let mut tx_fees: Vec<(u64, Sha256Hash)> = self.transactions
+            .iter()
+            .map(|(hash, tx)| {
+                let fee = match tx {
+                    Transaction::Transfer(t) => t.fee,
+                    Transaction::Subdivision(_) => 0,
+                    Transaction::Coinbase(_) => 0,
+                };
+                (fee, *hash)
+            })
+            .collect();
 
-            if fee < lowest_fee {
-                lowest_fee = fee;
-                lowest_hash = Some(*hash);
-            }
-        }
+        // Sort by fee (ascending) and take the lowest N
+        tx_fees.sort_unstable_by_key(|&(fee, _)| fee);
 
-        if let Some(hash) = lowest_hash {
-            self.transactions.remove(&hash);
+        // Remove the lowest-fee transactions
+        for (_, hash) in tx_fees.iter().take(evict_count) {
+            self.transactions.remove(hash);
         }
 
         Ok(())

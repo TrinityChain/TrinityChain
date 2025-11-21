@@ -519,10 +519,14 @@ async fn get_mining_status(State(state): State<AppState>) -> impl IntoResponse {
                     Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
                 };
                 let difficulty = blockchain.difficulty;
-                // SECURITY FIX: Prevent integer overflow by capping difficulty and using f64 directly
-                let capped_difficulty = difficulty.min(20);
-                let expected_hashes = (16_f64).powi(capped_difficulty as i32);
-                expected_hashes / elapsed
+                // Calculate expected hashes safely to prevent overflow
+                // For each leading zero, we expect 16x more hashes on average
+                // Cap at difficulty 40 to prevent f64 overflow (16^40 < f64::MAX)
+                let safe_difficulty = difficulty.min(40);
+                let expected_hashes = 16_f64.powi(safe_difficulty as i32);
+
+                // Return hashrate in hashes/second
+                expected_hashes / elapsed.max(0.001) // Prevent division by very small numbers
             } else {
                 0.0
             }

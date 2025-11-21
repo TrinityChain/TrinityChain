@@ -155,6 +155,11 @@ impl NetworkNode {
                 .map_err(|e| ChainError::NetworkError(format!("Read failed: {}", e)))?;
             let len = u32::from_be_bytes(len_bytes) as usize;
 
+            // Prevent DoS: reject messages larger than MAX_MESSAGE_SIZE
+            if len > MAX_MESSAGE_SIZE {
+                return Err(ChainError::NetworkError(format!("Message too large: {} bytes (max: {})", len, MAX_MESSAGE_SIZE)));
+            }
+
             let mut buffer = vec![0u8; len];
             stream.read_exact(&mut buffer).await
                 .map_err(|e| ChainError::NetworkError(format!("Read failed: {}", e)))?;
