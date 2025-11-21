@@ -142,6 +142,8 @@ pub async fn run_api_server() {
     let serve_dir = ServeDir::new("dashboard/dist");
 
     let app = Router::new()
+        .route("/", get(serve_landing))
+        .route("/dashboard", get(serve_dashboard))
         .nest("/api", api_routes)
         .fallback_service(serve_dir)
         .layer(cors);
@@ -164,6 +166,22 @@ pub async fn run_api_server() {
     println!("API server listening on http://{}", addr);
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("API server encountered a fatal error: {}", e);
+    }
+}
+
+// Landing page handler
+async fn serve_landing() -> impl IntoResponse {
+    match tokio::fs::read_to_string("dashboard/dist/landing.html").await {
+        Ok(html) => axum::response::Html(html).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "Landing page not found").into_response(),
+    }
+}
+
+// Dashboard app handler
+async fn serve_dashboard() -> impl IntoResponse {
+    match tokio::fs::read_to_string("dashboard/dist/index.html").await {
+        Ok(html) => axum::response::Html(html).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "Dashboard not found").into_response(),
     }
 }
 
