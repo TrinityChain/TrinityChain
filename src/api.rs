@@ -206,11 +206,13 @@ pub struct RecentBlock {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatsResponse {
-    pub height: u64,
+    pub chain_height: u64,
     pub difficulty: u64,
     pub utxo_count: usize,
     pub mempool_size: usize,
+    pub blocks_to_halving: u64,
     pub recent_blocks: Vec<RecentBlock>,
 }
 
@@ -224,11 +226,16 @@ async fn get_blockchain_stats(State(state): State<AppState>) -> impl IntoRespons
         hash: hex::encode(b.hash),
     }).collect();
 
+    let height = blockchain.blocks.len() as u64;
+    const HALVING_INTERVAL: u64 = 210_000;
+    let blocks_to_halving = HALVING_INTERVAL - (height % HALVING_INTERVAL);
+
     Json(StatsResponse {
-        height: blockchain.blocks.len() as u64,
+        chain_height: height,
         difficulty: blockchain.difficulty,
         utxo_count: blockchain.state.utxo_set.len(),
         mempool_size: blockchain.mempool.len(),
+        blocks_to_halving,
         recent_blocks,
     }).into_response()
 }
