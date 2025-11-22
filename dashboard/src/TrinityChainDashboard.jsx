@@ -136,7 +136,7 @@ const TrinityChainDashboard = () => {
           <div className="relative w-24 h-24 mx-auto mb-6">
             <div className="absolute inset-0 border-4 border-purple-500/30 rounded-full"></div>
             <div className="absolute inset-0 border-4 border-transparent border-t-purple-500 rounded-full animate-spin"></div>
-            <Layers className="absolute inset-0 m-auto text-purple-400" size={40} />
+            <img src="/logo.png" alt="TrinityChain" className="absolute inset-0 m-auto w-12 h-12 object-contain" />
           </div>
           <p className="text-purple-200 text-xl font-semibold">Connecting to TrinityChain Node...</p>
           <p className="text-purple-400 text-sm mt-2">{nodeUrl}</p>
@@ -154,14 +154,14 @@ const TrinityChainDashboard = () => {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <Layers className="text-purple-400" size={36} />
+                  <img src="/logo.png" alt="TrinityChain" className="w-10 h-10 object-contain" />
                   <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-900 animate-pulse"></div>
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">
                     TrinityChain
                   </h1>
-                  <p className="text-xs text-purple-300">Mining Dashboard v2.0</p>
+                  <p className="text-xs text-purple-300">Mining Dashboard v0.2.0</p>
                 </div>
               </div>
             </div>
