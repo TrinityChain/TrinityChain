@@ -232,6 +232,15 @@ pub struct StatsResponse {
     pub mempool_size: usize,
     pub blocks_to_halving: u64,
     pub recent_blocks: Vec<RecentBlock>,
+    // Additional fields for dashboard
+    pub blocks_mined: u64,
+    pub total_earned: u64,
+    pub current_reward: u64,
+    pub avg_block_time: f64,
+    pub uptime: u64,
+    pub total_supply: u64,
+    pub max_supply: u64,
+    pub halving_era: u64,
 }
 
 async fn get_blockchain_stats(State(state): State<AppState>) -> impl IntoResponse {
@@ -239,7 +248,7 @@ async fn get_blockchain_stats(State(state): State<AppState>) -> impl IntoRespons
         Ok(lock) => lock,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
     };
-    let recent_blocks = blockchain.blocks.iter().rev().take(6).map(|b| RecentBlock {
+    let recent_blocks: Vec<RecentBlock> = blockchain.blocks.iter().rev().take(6).map(|b| RecentBlock {
         height: b.header.height,
         hash: hex::encode(b.hash),
     }).collect();
@@ -248,6 +257,55 @@ async fn get_blockchain_stats(State(state): State<AppState>) -> impl IntoRespons
     const HALVING_INTERVAL: u64 = 210_000;
     let blocks_to_halving = HALVING_INTERVAL - (height % HALVING_INTERVAL);
 
+    // Calculate halving era (0 = first era with full reward)
+    let halving_era = height / HALVING_INTERVAL;
+
+    // Current block reward
+    let current_reward = Blockchain::calculate_block_reward(height);
+
+    // Max supply (geometric series: 50*210000 * (1 + 0.5 + 0.25 + ...) ≈ 21M equivalent)
+    // For TrinityChain with 1000 initial reward: 1000 * 210000 * 2 = 420M
+    const MAX_SUPPLY: u64 = 420_000_000;
+
+    // Calculate total supply minted so far
+    let total_supply: u64 = (0..=halving_era).map(|era| {
+        let era_reward = 1000u64 >> era; // 1000, 500, 250, etc.
+        let blocks_in_era = if era < halving_era {
+            HALVING_INTERVAL
+        } else {
+            height % HALVING_INTERVAL
+        };
+        era_reward.saturating_mul(blocks_in_era)
+    }).sum();
+
+    // Calculate average block time from recent blocks
+    let avg_block_time = if blockchain.blocks.len() > 1 {
+        let recent: Vec<_> = blockchain.blocks.iter().rev().take(10).collect();
+        if recent.len() > 1 {
+            let time_diffs: Vec<f64> = recent.windows(2)
+                .map(|w| (w[0].header.timestamp - w[1].header.timestamp).abs() as f64)
+                .collect();
+            if !time_diffs.is_empty() {
+                time_diffs.iter().sum::<f64>() / time_diffs.len() as f64
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+
+    // Total earned (sum of all coinbase rewards in chain)
+    let total_earned: u64 = blockchain.blocks.iter()
+        .filter_map(|b| b.transactions.first())
+        .filter_map(|tx| match tx {
+            crate::transaction::Transaction::Coinbase(cb) => Some(cb.reward_area),
+            _ => None,
+        })
+        .sum();
+
     Json(StatsResponse {
         chain_height: height,
         difficulty: blockchain.difficulty,
@@ -255,6 +313,14 @@ async fn get_blockchain_stats(State(state): State<AppState>) -> impl IntoRespons
         mempool_size: blockchain.mempool.len(),
         blocks_to_halving,
         recent_blocks,
+        blocks_mined: height,
+        total_earned,
+        current_reward,
+        avg_block_time,
+        uptime: 0, // Would need server start time tracking
+        total_supply,
+        max_supply: MAX_SUPPLY,
+        halving_era,
     }).into_response()
 }
 
@@ -326,6 +392,14 @@ async fn get_recent_blocks(State(state): State<AppState>) -> impl IntoResponse {
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
     };
     let blocks: Vec<serde_json::Value> = blockchain.blocks.iter().rev().take(50).map(|b| {
+        // Extract reward from coinbase transaction
+        let reward = b.transactions.first()
+            .and_then(|tx| match tx {
+                crate::transaction::Transaction::Coinbase(cb) => Some(cb.reward_area),
+                _ => None,
+            })
+            .unwrap_or(0);
+
         serde_json::json!({
             "index": b.header.height,
             "height": b.header.height,
@@ -336,6 +410,7 @@ async fn get_recent_blocks(State(state): State<AppState>) -> impl IntoResponse {
             "nonce": b.header.nonce,
             "merkleRoot": hex::encode(b.header.merkle_root),
             "transactions": b.transactions.len(),
+            "reward": reward,
         })
     }).collect();
     // Wrap in object for dashboard compatibility
@@ -620,9 +695,10 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 let difficulty = blockchain.difficulty;
 
                 // Calculate proper block reward with halving
+                // Block reward is static u64, fees are geometric f64
                 let block_reward = Blockchain::calculate_block_reward(height);
                 let total_fees = Blockchain::calculate_total_fees(&transactions);
-                let reward_area = block_reward.saturating_add(total_fees);
+                let reward_area = block_reward.saturating_add(total_fees as u64);
 
                 // Create coinbase transaction
                 let coinbase = Transaction::Coinbase(crate::transaction::CoinbaseTx {
