@@ -61,72 +61,40 @@ pub fn mine_block(mut block: Block) -> Result<Block, ChainError> {
     }
 }
 
+use crossbeam_channel::{unbounded, Receiver, Sender};
+
 /// Mines a new block using multi-threaded parallel nonce searching.
 /// Divides the nonce space among available CPU cores for faster mining.
 pub fn mine_block_parallel(block: Block) -> Result<Block, ChainError> {
     let difficulty = block.header.difficulty;
     let num_threads = rayon::current_num_threads();
-    let nonces_per_thread = u64::MAX / num_threads as u64;
-
-    // Use atomic flag to signal when a solution is found
     let found = Arc::new(AtomicBool::new(false));
-    // Store the found nonce so we can reconstruct the block
-    let found_nonce = Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX));
+    let (sender, receiver): (Sender<(u64, Sha256Hash)>, Receiver<(u64, Sha256Hash)>) = unbounded();
 
-    let result = (0..num_threads)
-        .into_par_iter()
-        .find_any(|thread_id| {
-            if found.load(Ordering::Relaxed) {
-                return false; // Another thread already found solution
-            }
+    (0..num_threads).into_par_iter().for_each_with(sender, |s, thread_id| {
+        let mut nonce = thread_id as u64;
+        while !found.load(Ordering::Relaxed) {
+            let mut test_block = block.clone();
+            test_block.header.nonce = nonce;
+            let hash = test_block.calculate_hash();
 
-            let start_nonce = *thread_id as u64 * nonces_per_thread;
-            let end_nonce = if *thread_id == num_threads - 1 {
-                u64::MAX
-            } else {
-                (*thread_id as u64 + 1) * nonces_per_thread
-            };
-
-            for nonce in start_nonce..end_nonce {
-                if found.load(Ordering::Relaxed) {
-                    return false; // Another thread found it
+            if is_hash_valid(&hash, difficulty) {
+                if !found.swap(true, Ordering::SeqCst) {
+                    let _ = s.send((nonce, hash));
                 }
-
-                let mut test_block = block.clone();
-                test_block.header.nonce = nonce;
-                let hash = test_block.calculate_hash();
-
-                if is_hash_valid(&hash, difficulty) {
-                    // attempt to record the nonce (only first wins)
-                    let prev = found_nonce
-                        .compare_exchange(u64::MAX, nonce, Ordering::SeqCst, Ordering::SeqCst)
-                        .unwrap_or(u64::MAX);
-                    if prev == u64::MAX {
-                        // we won the race
-                        test_block.hash = hash;
-                        found.store(true, Ordering::SeqCst);
-                        return true;
-                    } else {
-                        // another thread already recorded a nonce
-                        return false;
-                    }
-                }
+                return;
             }
-            false
-        })
-        .is_some();
-
-    if result {
-        let nonce = found_nonce.load(Ordering::SeqCst);
-        if nonce == u64::MAX {
-            return Err(ChainError::InvalidProofOfWork);
+            nonce += num_threads as u64;
         }
+    });
 
-        let mut mined = block.clone();
-        mined.header.nonce = nonce;
-        mined.hash = mined.calculate_hash();
-        Ok(mined)
-    } else {
-        Err(ChainError::InvalidProofOfWork)
+    match receiver.try_recv() {
+        Ok((nonce, hash)) => {
+            let mut mined_block = block;
+            mined_block.header.nonce = nonce;
+            mined_block.hash = hash;
+            Ok(mined_block)
+        }
+        Err(_) => Err(ChainError::InvalidProofOfWork),
     }
 }

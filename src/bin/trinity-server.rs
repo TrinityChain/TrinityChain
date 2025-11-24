@@ -11,6 +11,7 @@ use axum::{
     routing::get,
     extract::State as AxumState,
     Json,
+    http::StatusCode,
 };
 use tower_http::cors::{CorsLayer, Any};
 use ratatui::{
@@ -63,22 +64,22 @@ struct ServerData {
     stats: ServerStats,
 }
 
-async fn get_stats(AxumState(state): AxumState<AppState>) -> Json<Value> {
-    let data = state.lock().unwrap();
-    let chain = data.db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+async fn get_stats(AxumState(state): AxumState<AppState>) -> Result<Json<Value>, (StatusCode, String)> {
+    let data = state.lock().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to acquire lock".to_string()))?;
+    let chain = data.db.load_blockchain().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load blockchain".to_string()))?;
 
-    Json(json!({
+    Ok(Json(json!({
         "chainHeight": chain.blocks.last().map(|b| b.header.height).unwrap_or(0),
         "difficulty": chain.difficulty,
         "totalSupply": 0,
         "maxSupply": 420000000,
         "uptime": data.stats.uptime_secs,
-    }))
+    })))
 }
 
-async fn get_blocks(AxumState(state): AxumState<AppState>) -> Json<Value> {
-    let data = state.lock().unwrap();
-    let chain = data.db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+async fn get_blocks(AxumState(state): AxumState<AppState>) -> Result<Json<Value>, (StatusCode, String)> {
+    let data = state.lock().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to acquire lock".to_string()))?;
+    let chain = data.db.load_blockchain().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load blockchain".to_string()))?;
 
     let blocks: Vec<_> = chain.blocks.iter().rev().take(50).map(|b| {
         json!({
@@ -92,7 +93,7 @@ async fn get_blocks(AxumState(state): AxumState<AppState>) -> Json<Value> {
         })
     }).collect();
 
-    Json(json!({"blocks": blocks}))
+    Ok(Json(json!({"blocks": blocks})))
 }
 
 fn draw_ui(f: &mut ratatui::Frame, stats: &ServerStats) {
@@ -241,8 +242,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Update stats loop
     let stats_handle = tokio::spawn(async move {
         loop {
-            {
-                let mut data = state_clone.lock().unwrap();
+            if let Ok(mut data) = state_clone.lock() {
                 data.stats.status = "Running".to_string();
                 data.stats.uptime_secs = start_time.elapsed().as_secs();
 
@@ -272,10 +272,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let stats_lock = state.lock().unwrap().stats.clone();
-        terminal.draw(|f| {
-            draw_ui(f, &stats_lock);
-        })?;
+        if let Ok(stats_lock) = state.lock() {
+            let stats_clone = stats_lock.stats.clone();
+            terminal.draw(|f| {
+                draw_ui(f, &stats_clone);
+            })?;
+        }
 
         tokio::time::sleep(Duration::from_millis(250)).await;
     }

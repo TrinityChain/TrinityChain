@@ -2,9 +2,10 @@
 
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use crate::geometry::{Triangle, Point};
+use crate::geometry::{Coord, Triangle, Point};
 use crate::transaction::{Transaction, SubdivisionTx, CoinbaseTx};
 use crate::error::ChainError;
+use crate::mempool::Mempool;
 use chrono::Utc;
 
 pub type Sha256Hash = [u8; 32];
@@ -13,9 +14,9 @@ pub type BlockHeight = u64;
 /// The genesis triangle - the root of all triangles
 pub fn genesis_triangle() -> Triangle {
     Triangle::new(
-        Point { x: 0.0, y: 0.0 },
-        Point { x: 1.0, y: 0.0 },
-        Point { x: 0.5, y: 0.866025403784 },
+        Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+        Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
+        Point::new(Coord::from_num(0.5), Coord::from_num(0.8660254)),
         None,
         "genesis_owner".to_string(),
     )
@@ -65,10 +66,10 @@ impl TriangleState {
     }
 
     /// Calculate total area owned by an address (O(1) lookup + O(k) sum where k = # triangles owned)
-    pub fn get_balance(&self, owner: &str) -> f64 {
+    pub fn get_balance(&self, owner: &str) -> Coord {
         self.get_triangles_by_owner(owner)
             .iter()
-            .map(|t| t.area())
+            .map(|t| t.effective_value())
             .sum()
     }
 
@@ -118,8 +119,8 @@ impl TriangleState {
     ) -> Result<(), ChainError> {
         // Create a new triangle with a canonical shape based on the reward area
         // The position is offset by the block height to ensure uniqueness
-        let side = (2.0 * tx.reward_area as f64).sqrt() as f64;
-        if !side.is_finite() || side <= 0.0 {
+        let side = tx.reward_area.sqrt();
+        if side <= Coord::from_num(0) {
             return Err(ChainError::InvalidTransaction(
                 "Invalid reward area for coinbase transaction".to_string(),
             ));
@@ -127,11 +128,11 @@ impl TriangleState {
 
         // We'll create a right isosceles triangle at a location based on block height
         // This ensures that reward triangles don't collide with each other
-        let offset = block_height as f64 * 1000.0; // Use a large offset
+        let offset = Coord::from_num(block_height * 1000); // Use a large offset
         let new_triangle = Triangle::new(
-            Point { x: offset, y: 0.0 },
-            Point { x: offset + side, y: 0.0 },
-            Point { x: offset, y: side },
+            Point::new(offset, Coord::from_num(0)),
+            Point::new(offset + side, Coord::from_num(0)),
+            Point::new(offset, side),
             None,
             tx.beneficiary_address.clone(),
         );
@@ -290,231 +291,6 @@ impl Block {
     }
 }
 
-/// Transaction pool for pending (unconfirmed) transactions
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Mempool {
-    /// Pending transactions indexed by their hash
-    transactions: HashMap<Sha256Hash, Transaction>,
-}
-
-impl Mempool {
-    /// Maximum number of transactions in mempool (to prevent DoS)
-    const MAX_TRANSACTIONS: usize = 10000;
-
-    /// Maximum transactions per address to prevent spam
-    const MAX_PER_ADDRESS: usize = 100;
-
-    pub fn new() -> Self {
-        Mempool {
-            transactions: HashMap::new(),
-        }
-    }
-
-    /// Add a transaction to the mempool with validation
-    pub fn add_transaction(&mut self, tx: Transaction) -> Result<(), ChainError> {
-        let tx_hash = tx.hash();
-
-        // Check if transaction already exists
-        if self.transactions.contains_key(&tx_hash) {
-            return Err(ChainError::InvalidTransaction(
-                "Transaction already in mempool".to_string()
-            ));
-        }
-
-        // Validate transaction before adding to mempool
-        match &tx {
-            Transaction::Transfer(transfer_tx) => {
-                // Validate signature before adding
-                transfer_tx.validate()?;
-            },
-            Transaction::Coinbase(_) => {
-                return Err(ChainError::InvalidTransaction(
-                    "Coinbase transactions cannot be added to mempool".to_string()
-                ));
-            },
-            Transaction::Subdivision(sub_tx) => {
-                // We can still validate the signature without state access, which is a cheap
-                // way to discard obviously invalid transactions.
-                sub_tx.validate_signature()?;
-            }
-        }
-
-        // Check per-address limit to prevent spam
-        let sender_address = match &tx {
-            Transaction::Transfer(t) => Some(&t.sender),
-            Transaction::Subdivision(s) => Some(&s.owner_address),
-            Transaction::Coinbase(_) => None,
-        };
-
-        if let Some(sender) = sender_address {
-            // Count transactions from this sender (optimized single pass)
-            let mut count = 0;
-            for tx in self.transactions.values() {
-                let tx_sender = match tx {
-                    Transaction::Transfer(t) => Some(&t.sender),
-                    Transaction::Subdivision(s) => Some(&s.owner_address),
-                    _ => None,
-                };
-                if let Some(tx_sender) = tx_sender {
-                    if tx_sender == sender {
-                        count += 1;
-                        if count >= Self::MAX_PER_ADDRESS {
-                            return Err(ChainError::InvalidTransaction(
-                                format!("Address has reached maximum mempool limit of {}", Self::MAX_PER_ADDRESS)
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-
-        // If mempool is full, evict lowest fee transaction
-        if self.transactions.len() >= Self::MAX_TRANSACTIONS {
-            self.evict_lowest_fee_transaction()?;
-        }
-
-        self.transactions.insert(tx_hash, tx);
-        Ok(())
-    }
-
-    /// Evict the transaction with the lowest fee to make room for new ones
-    /// Optimized: When mempool is very full, evict 10% of lowest-fee transactions at once
-    /// to reduce the frequency of this expensive O(n) operation
-    fn evict_lowest_fee_transaction(&mut self) -> Result<(), ChainError> {
-        if self.transactions.is_empty() {
-            return Ok(());
-        }
-
-        // If mempool is > 90% full, do batch eviction (10% of transactions)
-        let evict_count = if self.transactions.len() > Self::MAX_TRANSACTIONS * 9 / 10 {
-            (Self::MAX_TRANSACTIONS / 10).max(1) // Evict 10% at once
-        } else {
-            1 // Just evict one
-        };
-
-        // Collect (fee_area, hash) pairs and sort
-        // Use f64 for geometric fees
-        let mut tx_fees: Vec<(f64, Sha256Hash)> = self.transactions
-            .iter()
-            .map(|(hash, tx)| {
-                let fee = tx.fee_area();
-                (fee, *hash)
-            })
-            .collect();
-
-        // Sort by fee (ascending) - lowest fees first for eviction
-        tx_fees.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Remove the lowest-fee transactions
-        for (_, hash) in tx_fees.iter().take(evict_count) {
-            self.transactions.remove(hash);
-        }
-
-        Ok(())
-    }
-
-    /// Remove a transaction from the mempool
-    pub fn remove_transaction(&mut self, tx_hash: &Sha256Hash) -> Option<Transaction> {
-        self.transactions.remove(tx_hash)
-    }
-
-    /// Get all transactions currently in the mempool
-    pub fn get_all_transactions(&self) -> Vec<Transaction> {
-        self.transactions.values().cloned().collect()
-    }
-
-    /// Get transactions ordered by fee (highest first) for mining prioritization
-    /// Returns up to `limit` transactions with the highest fees
-    /// Optimized to use partial sorting for better performance when limit < total
-    pub fn get_transactions_by_fee(&self, limit: usize) -> Vec<Transaction> {
-        let mut txs: Vec<Transaction> = self.transactions.values().cloned().collect();
-
-        if limit >= txs.len() {
-            // Just sort normally if we want all transactions
-            txs.sort_unstable_by(|a, b| b.fee().cmp(&a.fee()));
-            return txs;
-        }
-
-        // Use partial sort for better performance when limit is small
-        // This is O(n + k log k) instead of O(n log n) where k = limit
-        // select_nth_unstable_by partitions so that elements [0..limit] have the highest fees
-        txs.select_nth_unstable_by(limit - 1, |a, b| b.fee().cmp(&a.fee()));
-
-        // Now sort only the top limit transactions
-        txs[..limit].sort_unstable_by(|a, b| b.fee().cmp(&a.fee()));
-
-        // Return only the top limit transactions
-        txs.truncate(limit);
-        txs
-    }
-
-    /// Get a specific transaction by hash
-    pub fn get_transaction(&self, tx_hash: &Sha256Hash) -> Option<&Transaction> {
-        self.transactions.get(tx_hash)
-    }
-
-    /// Remove multiple transactions (e.g., after they're included in a block)
-    pub fn remove_transactions(&mut self, tx_hashes: &[Sha256Hash]) {
-        for hash in tx_hashes {
-            self.transactions.remove(hash);
-        }
-    }
-
-    /// Clear all transactions from the mempool
-    pub fn clear(&mut self) {
-        self.transactions.clear();
-    }
-
-    /// Get the number of pending transactions
-    pub fn len(&self) -> usize {
-        self.transactions.len()
-    }
-
-    /// Check if mempool is empty
-    pub fn is_empty(&self) -> bool {
-        self.transactions.is_empty()
-    }
-
-    /// Validate all transactions in mempool against current state
-    /// Removes invalid transactions and returns count of removed transactions
-    /// Optimized to collect invalid hashes first to avoid iterator invalidation
-    pub fn validate_and_prune(&mut self, state: &TriangleState) -> usize {
-        let mut to_remove = Vec::new();
-
-        // Single pass through transactions
-        for (hash, tx) in self.transactions.iter() {
-            let is_valid = match tx {
-                Transaction::Subdivision(sub_tx) => {
-                    // Check if parent exists in UTXO set and signature is valid
-                    state.utxo_set.contains_key(&sub_tx.parent_hash) &&
-                    sub_tx.validate(state).is_ok()
-                },
-                Transaction::Transfer(transfer_tx) => {
-                    // Check if input exists in UTXO set and signature is valid
-                    state.utxo_set.contains_key(&transfer_tx.input_hash) &&
-                    transfer_tx.validate().is_ok()
-                },
-                Transaction::Coinbase(_) => {
-                    // Coinbase transactions shouldn't be in mempool
-                    false
-                }
-            };
-
-            if !is_valid {
-                to_remove.push(*hash);
-            }
-        }
-
-        let removed_count = to_remove.len();
-        // Batch removal to avoid repeated HashMap lookups
-        for hash in to_remove {
-            self.transactions.remove(&hash);
-        }
-
-        removed_count
-    }
-}
-
 /// The blockchain itself
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Blockchain {
@@ -550,16 +326,17 @@ const MAX_HALVINGS: u64 = 64;
 /// = 1000 * 210,000 * 2 = 420,000,000 area units
 pub const MAX_SUPPLY: u64 = INITIAL_MINING_REWARD * REWARD_HALVING_INTERVAL * 2;
 
-/// Calculate block reward based on height (with halving)
-pub fn calculate_block_reward(height: BlockHeight) -> u64 {
-    let halvings = height / REWARD_HALVING_INTERVAL;
-    if halvings >= MAX_HALVINGS {
-        return 0;
-    }
-    INITIAL_MINING_REWARD >> halvings
-}
-
 impl Blockchain {
+    /// Calculate the block reward for a given block height (with halving)
+    pub fn calculate_block_reward(height: BlockHeight) -> u64 {
+        let halvings = height / REWARD_HALVING_INTERVAL;
+        if halvings >= MAX_HALVINGS {
+            // After 64 halvings, reward is 0
+            return 0;
+        }
+        INITIAL_MINING_REWARD >> halvings
+    }
+
     pub fn new() -> Self {
         let mut state = TriangleState::new();
         let genesis = genesis_triangle();
@@ -682,7 +459,7 @@ impl Blockchain {
 
         // Validate coinbase transaction rules
         let mut coinbase_count = 0;
-        let mut coinbase_reward = 0u64;
+        let mut coinbase_reward = Coord::from_num(0);
         for (i, tx) in block.transactions.iter().enumerate() {
             if let Transaction::Coinbase(coinbase_tx) = tx {
                 coinbase_count += 1;
@@ -705,16 +482,16 @@ impl Blockchain {
 
         // Validate coinbase reward doesn't exceed block reward + fees
         if block.header.height > 0 {
-            let block_reward = Self::calculate_block_reward(block.header.height);
+            let block_reward = Blockchain::calculate_block_reward(block.header.height);
             let total_fees = Self::calculate_total_fees(&block.transactions);
 
-            // Max reward = static block reward + geometric fee area (converted to u64)
-            // Note: fee_area is f64, so we floor it for coinbase calculation
-            let max_reward = block_reward.saturating_add(total_fees as u64);
+            // Max reward = static block reward + geometric fee area
+            let max_reward = Coord::from_num(block_reward) + total_fees;
 
-            if coinbase_reward > max_reward {
+            // Use a tolerance for floating point comparison
+            if coinbase_reward > max_reward + Coord::from_num(1e-9) {
                 return Err(ChainError::InvalidTransaction(
-                    format!("Coinbase reward {} exceeds maximum allowed {} (block reward: {}, fees: {:.9})",
+                    format!("Coinbase reward {} exceeds maximum allowed {} (block reward: {}, fees: {})",
                         coinbase_reward, max_reward, block_reward, total_fees)
                 ));
             }
@@ -765,48 +542,56 @@ impl Blockchain {
                         self.state.apply_coinbase(cb_tx, valid_block.header.height)?;
                     },
                     Transaction::Transfer(tx) => {
-                        // GEOMETRIC FEE DEDUCTION:
-                        // 1. Remove old triangle from UTXO set
-                        // 2. Create new triangle with same geometry, new owner, reduced value
-                        // 3. Fee is implicitly collected in coinbase reward
+                        // New transfer logic with "change"
+                        // 1. Remove input triangle from UTXO set.
+                        // 2. Calculate change value.
+                        // 3. Create a new triangle for the recipient with `tx.amount`.
+                        // 4. Create a new "change" triangle for the sender with the remaining value.
+                        // 5. Add both new triangles to the UTXO set and update address indexes.
 
-                        // Get the old triangle and compute new value
-                        let old_triangle = self.state.utxo_set.remove(&tx.input_hash)
+                        let input_triangle = self.state.utxo_set.remove(&tx.input_hash)
                             .ok_or_else(|| ChainError::TriangleNotFound(
                                 format!("Transfer input {} missing from UTXO set", hex::encode(tx.input_hash))
                             ))?;
 
-                        let old_owner = old_triangle.owner.clone();
-                        let old_value = old_triangle.effective_value();
-                        let new_value = old_value - tx.fee_area;
+                        let input_value = input_triangle.effective_value();
+                        let change_value = input_value - tx.amount - tx.fee_area;
 
-                        // Remove from old owner's address index
-                        if let Some(hashes) = self.state.address_index.get_mut(&old_owner) {
-                            hashes.retain(|h| h != &tx.input_hash);
-                            if hashes.is_empty() {
-                                self.state.address_index.remove(&old_owner);
-                            }
+                        // --- Create Recipient's Triangle ---
+                        let recipient_triangle = crate::geometry::Triangle::new_with_value(
+                            input_triangle.a,
+                            input_triangle.b,
+                            input_triangle.c,
+                            Some(tx.input_hash),
+                            tx.new_owner.clone(),
+                            tx.amount,
+                        );
+                        let recipient_hash = recipient_triangle.hash();
+                        self.state.utxo_set.insert(recipient_hash, recipient_triangle);
+                        self.state.address_index.entry(tx.new_owner.clone()).or_default().push(recipient_hash);
+
+                        // --- Create Sender's Change Triangle ---
+                        if change_value >= crate::geometry::GEOMETRIC_TOLERANCE {
+                            let change_triangle = crate::geometry::Triangle::new_with_value(
+                                input_triangle.a,
+                                input_triangle.b,
+                                input_triangle.c,
+                                Some(tx.input_hash),
+                                tx.sender.clone(),
+                                change_value,
+                            );
+                            let change_hash = change_triangle.hash();
+                            self.state.utxo_set.insert(change_hash, change_triangle);
+                            self.state.address_index.entry(tx.sender.clone()).or_default().push(change_hash);
                         }
 
-                        // Create new triangle with reduced value and new owner
-                        let new_triangle = crate::geometry::Triangle::new_with_value(
-                            old_triangle.a,
-                            old_triangle.b,
-                            old_triangle.c,
-                            old_triangle.parent_hash,
-                            tx.new_owner.clone(),
-                            new_value,
-                        );
-
-                        // Insert new triangle (same hash since geometry unchanged)
-                        let new_hash = new_triangle.hash();
-                        self.state.utxo_set.insert(new_hash, new_triangle);
-
-                        // Add to new owner's index
-                        self.state.address_index
-                            .entry(tx.new_owner.clone())
-                            .or_insert_with(Vec::new)
-                            .push(new_hash);
+                        // --- Update Sender's Address Index (Remove Old Hash) ---
+                        if let Some(hashes) = self.state.address_index.get_mut(&tx.sender) {
+                            hashes.retain(|h| h != &tx.input_hash);
+                            if hashes.is_empty() {
+                                self.state.address_index.remove(&tx.sender);
+                            }
+                        }
                     }
                 }
             }
@@ -822,7 +607,7 @@ impl Blockchain {
             }
 
             self.mempool.remove_transactions(&tx_hashes);
-            self.mempool.validate_and_prune(&self.state);
+            self.mempool.prune(&self.state);
 
         } else if self.block_index.contains_key(&parent_hash) {
             // Case 2: The new block creates a fork
@@ -884,7 +669,6 @@ impl Blockchain {
         // 3. ATOMIC SWAP: If state building was successful, replace the old chain and state.
         self.blocks = new_chain;
         self.state = new_state;
-        self.mempool.validate_and_prune(&self.state);
         // The difficulty is implicitly handled as the new chain's difficulty will be inherited.
 
         Ok(())
@@ -954,16 +738,6 @@ impl Blockchain {
         Ok(new_state)
     }
 
-    /// Calculate the block reward for a given block height (with halving)
-    pub fn calculate_block_reward(height: BlockHeight) -> u64 {
-        let halvings = height / REWARD_HALVING_INTERVAL;
-        if halvings >= MAX_HALVINGS {
-            // After 64 halvings, reward is 0
-            return 0;
-        }
-        INITIAL_MINING_REWARD >> halvings
-    }
-
     /// Calculate the total supply that has been mined up to a given block height
     /// This accounts for all halvings that have occurred
     pub fn calculate_current_supply(height: BlockHeight) -> u64 {
@@ -1009,17 +783,17 @@ impl Blockchain {
 
     /// Calculate total geometric fee area in a block
     /// Returns the sum of all fee_area values from transfer and subdivision transactions
-    pub fn calculate_total_fees(transactions: &[Transaction]) -> f64 {
+    pub fn calculate_total_fees(transactions: &[Transaction]) -> Coord {
         transactions.iter()
             .filter(|tx| !matches!(tx, Transaction::Coinbase(_)))
             .map(|tx| tx.fee_area())
-            .fold(0.0_f64, |acc, fee| acc + fee)
+            .sum()
     }
 
     /// Calculate total fees as u64 (for backward compatibility)
     /// Deprecated: Use calculate_total_fees() which returns f64
     pub fn calculate_total_fees_u64(transactions: &[Transaction]) -> u64 {
-        Self::calculate_total_fees(transactions) as u64
+        Self::calculate_total_fees(transactions).to_num::<u64>()
     }
 
     fn adjust_difficulty(&mut self) {
@@ -1077,17 +851,17 @@ mod tests {
     #[test]
     fn test_genesis_triangle_is_canonical() {
         let genesis = genesis_triangle();
-        assert_eq!(genesis.a.x, 0.0);
-        assert_eq!(genesis.a.y, 0.0);
-        assert_eq!(genesis.b.x, 1.0);
-        assert_eq!(genesis.c.x, 0.5);
-        assert!((genesis.c.y - 0.866025403784).abs() < 1e-10);
+        assert_eq!(genesis.a.x, Coord::from_num(0.0));
+        assert_eq!(genesis.a.y, Coord::from_num(0.0));
+        assert_eq!(genesis.b.x, Coord::from_num(1.0));
+        assert_eq!(genesis.c.x, Coord::from_num(0.5));
+        assert!((genesis.c.y - Coord::from_num(0.8660254)).abs() < Coord::from_num(1e-6));
     }
 
     #[test]
     fn test_block_merkle_root_calculation() {
         let coinbase = CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: "test".to_string(),
         };
         let transactions = vec![Transaction::Coinbase(coinbase)];
@@ -1104,7 +878,7 @@ mod tests {
     #[test]
     fn test_merkle_tree_single() {
         let coinbase = CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: "miner".to_string(),
         };
         let txs = vec![Transaction::Coinbase(coinbase)];
@@ -1115,11 +889,11 @@ mod tests {
     #[test]
     fn test_merkle_tree_even() {
         let tx1 = Transaction::Coinbase(CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: "miner1".to_string(),
         });
         let tx2 = Transaction::Coinbase(CoinbaseTx {
-            reward_area: 2000,
+            reward_area: Coord::from_num(2000),
             beneficiary_address: "miner2".to_string(),
         });
         let root = Block::calculate_merkle_root(&[tx1, tx2]);
@@ -1129,15 +903,15 @@ mod tests {
     #[test]
     fn test_merkle_tree_odd() {
         let tx1 = Transaction::Coinbase(CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: "miner1".to_string(),
         });
         let tx2 = Transaction::Coinbase(CoinbaseTx {
-            reward_area: 2000,
+            reward_area: Coord::from_num(2000),
             beneficiary_address: "miner2".to_string(),
         });
         let tx3 = Transaction::Coinbase(CoinbaseTx {
-            reward_area: 3000,
+            reward_area: Coord::from_num(3000),
             beneficiary_address: "miner3".to_string(),
         });
         let root = Block::calculate_merkle_root(&[tx1, tx2, tx3]);
@@ -1156,14 +930,14 @@ mod tests {
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), 0, 1);
+        let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 1);
         let message = tx.signable_message();
         let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature, public_key);
 
         let coinbase = CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: address,
         };
 
@@ -1208,14 +982,14 @@ mod tests {
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), 0, 1);
+        let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 1);
         let message = tx.signable_message();
         let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature, public_key);
 
         let coinbase = CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: address,
         };
 
@@ -1291,20 +1065,20 @@ mod tests {
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
 
-        let mut tx1 = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), 0, 1);
+        let mut tx1 = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 1);
         let message1 = tx1.signable_message();
         let signature1 = keypair.sign(&message1).expect("Test setup should ensure this exists");
         let public_key1 = keypair.public_key.serialize().to_vec();
         tx1.sign(signature1, public_key1);
 
-        let mut tx2 = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), 0, 2);
+        let mut tx2 = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 2);
         let message2 = tx2.signable_message();
         let signature2 = keypair.sign(&message2).expect("Test setup should ensure this exists");
         let public_key2 = keypair.public_key.serialize().to_vec();
         tx2.sign(signature2, public_key2);
 
         let coinbase = CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: address,
         };
 
@@ -1421,7 +1195,7 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, 0, 1);
+        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
         let message = valid_tx.signable_message();
         let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
@@ -1443,7 +1217,7 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, 0, 1);
+        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
         let message = valid_tx.signable_message();
         let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
@@ -1454,8 +1228,7 @@ mod tests {
         mempool.add_transaction(tx.clone()).expect("Test setup should ensure this exists");
         assert_eq!(mempool.len(), 1);
 
-        let removed = mempool.remove_transaction(&tx_hash);
-        assert!(removed.is_some());
+        mempool.remove_transaction(&tx_hash);
         assert_eq!(mempool.len(), 0);
     }
 
@@ -1469,7 +1242,7 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, 0, 1);
+        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
         let message = valid_tx.signable_message();
         let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
@@ -1484,50 +1257,6 @@ mod tests {
     }
 
     #[test]
-    fn test_mempool_validate_and_prune() {
-        let mut mempool = Mempool::new();
-        let mut state = TriangleState::new();
-
-        // Add genesis triangle to state
-        let genesis = genesis_triangle();
-        let genesis_hash = genesis.hash();
-        state.utxo_set.insert(genesis_hash, genesis.clone());
-
-        // Create valid subdivision transaction
-        let children = genesis.subdivide();
-        let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
-        let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, 0, 1);
-        let message = valid_tx.signable_message();
-        let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
-        let public_key = keypair.public_key.serialize().to_vec();
-        valid_tx.sign(signature, public_key);
-
-        mempool.add_transaction(Transaction::Subdivision(valid_tx)).expect("Test setup should ensure this exists");
-
-        // Create invalid subdivision (non-existent parent), but with a valid signature
-        let invalid_parent_hash = [1; 32];
-        let keypair2 = KeyPair::generate().expect("Test setup should ensure this exists");
-        let address2 = keypair2.address();
-        let mut invalid_tx = SubdivisionTx::new(invalid_parent_hash, children.to_vec(), address2, 0, 1);
-        let message2 = invalid_tx.signable_message();
-        let signature2 = keypair2.sign(&message2).expect("Test setup should ensure this exists");
-        let public_key2 = keypair2.public_key.serialize().to_vec();
-        invalid_tx.sign(signature2, public_key2);
-
-        // This should succeed because the signature is valid, even if the state is not.
-        mempool.add_transaction(Transaction::Subdivision(invalid_tx)).expect("Test setup should ensure this exists");
-
-        // Should have 2 transactions
-        assert_eq!(mempool.len(), 2);
-
-        // Validate and prune - should remove 1 invalid transaction
-        let removed = mempool.validate_and_prune(&state);
-        assert_eq!(removed, 1);
-        assert_eq!(mempool.len(), 1);
-    }
-
-    #[test]
     fn test_blockchain_with_mempool() {
         let mut chain = Blockchain::new();
         assert!(chain.mempool.is_empty());
@@ -1538,7 +1267,7 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, 0, 1);
+        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
         let message = valid_tx.signable_message();
         let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
@@ -1550,7 +1279,7 @@ mod tests {
         // Create and apply a block with that transaction
         let last_block = chain.blocks.last().expect("Test setup should ensure this exists");
         let coinbase = CoinbaseTx {
-            reward_area: 1000,
+            reward_area: Coord::from_num(1000),
             beneficiary_address: "miner_address".to_string(),
         };
         let mut new_block = Block::new(
@@ -1612,25 +1341,26 @@ mod tests {
         let address = "test_address".to_string();
 
         // Test subdivision transaction with fee (still u64 for SubdivisionTx)
-        let sub_tx = SubdivisionTx::new(genesis.hash(), children.to_vec(), address.clone(), 100, 1);
+        let sub_tx = SubdivisionTx::new(genesis.hash(), children.to_vec(), address.clone(), Coord::from_num(100), 1);
         let tx1 = Transaction::Subdivision(sub_tx);
-        assert!((tx1.fee_area() - 100.0).abs() < 1e-9);
+        assert_eq!(tx1.fee_area(), Coord::from_num(100));
 
         // Test transfer transaction with geometric fee_area (f64)
         let transfer_tx = TransferTx::new(
             genesis.hash(),
             "new_owner".to_string(),
             address,
-            50.5, // Geometric fee area
+            Coord::from_num(0),
+            Coord::from_num(50.5), // Geometric fee area
             1,
         );
         let tx2 = Transaction::Transfer(transfer_tx);
-        assert!((tx2.fee_area() - 50.5).abs() < 1e-9);
+        assert_eq!(tx2.fee_area(), Coord::from_num(50.5));
 
         // Test total fees calculation (now returns f64)
         let transactions = vec![tx1, tx2];
         let total_fees = Blockchain::calculate_total_fees(&transactions);
-        assert!((total_fees - 150.5).abs() < 1e-9);
+        assert_eq!(total_fees, Coord::from_num(150.5));
     }
 
     #[test]
@@ -1646,7 +1376,7 @@ mod tests {
 
         // Create transactions with different fees
         for (i, fee) in [10u64, 50, 25, 100, 5].iter().enumerate() {
-            let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), *fee, i as u64);
+            let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(*fee), i as u64);
             let message = tx.signable_message();
             let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
             let public_key = keypair.public_key.serialize().to_vec();
@@ -1673,5 +1403,94 @@ mod tests {
         assert_eq!(top_3[0].fee(), 100);
         assert_eq!(top_3[1].fee(), 50);
         assert_eq!(top_3[2].fee(), 25);
+    }
+
+    #[test]
+    fn test_wallet_to_wallet_transfer_with_change() {
+        use crate::transaction::TransferTx;
+
+        // 1. Setup blockchain and two wallets
+        let mut chain = Blockchain::new();
+        let wallet_a = KeyPair::generate().unwrap();
+        let wallet_b = KeyPair::generate().unwrap();
+        let address_a = wallet_a.address();
+        let address_b = wallet_b.address();
+
+        // 2. Create a large "coin" (triangle) for Wallet A
+        let initial_triangle = Triangle::new(
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(10.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(5.0), Coord::from_num(10.0)), // Area = 50
+            None,
+            address_a.clone(),
+        );
+        let initial_hash = initial_triangle.hash();
+        chain.state.utxo_set.insert(initial_hash, initial_triangle);
+        chain.state.rebuild_address_index();
+
+        assert_eq!(chain.state.get_balance(&address_a), Coord::from_num(50.0));
+        assert_eq!(chain.state.get_balance(&address_b), Coord::from_num(0.0));
+
+        // 3. Create a transfer transaction from A to B for a smaller amount
+        let amount_to_send = Coord::from_num(10.0);
+        let fee = Coord::from_num(1.0);
+        let mut tx = TransferTx::new(
+            initial_hash,
+            address_b.clone(),
+            address_a.clone(),
+            amount_to_send,
+            fee,
+            1, // nonce
+        );
+
+        let message = tx.signable_message();
+        let signature = wallet_a.sign(&message).unwrap();
+        let public_key = wallet_a.public_key.serialize().to_vec();
+        tx.sign(signature, public_key);
+
+        let transaction = Transaction::Transfer(tx);
+
+        // 4. Create and apply a new block with this transaction
+        let last_block = chain.blocks.last().unwrap();
+        let mut new_block = Block::new_with_parent_time(
+            last_block.header.height + 1,
+            last_block.hash,
+            last_block.header.timestamp,
+            chain.difficulty,
+            vec![
+                Transaction::Coinbase(CoinbaseTx {
+                    reward_area: Coord::from_num(1000) , // Miner gets block reward
+                    beneficiary_address: "miner".to_string(),
+                }),
+                transaction,
+            ],
+        );
+
+        // Mine the block
+        while !new_block.verify_proof_of_work() {
+            new_block.header.nonce += 1;
+            new_block.hash = new_block.calculate_hash();
+        }
+
+        chain.apply_block(new_block).unwrap();
+
+        // 5. Verify the state
+        // The original large triangle should be gone
+        assert!(!chain.state.utxo_set.contains_key(&initial_hash));
+
+        // Wallet B should have a new triangle with the exact amount
+        let triangles_b = chain.state.get_triangles_by_owner(&address_b);
+        assert_eq!(triangles_b.len(), 1);
+        assert_eq!(triangles_b[0].effective_value(), amount_to_send);
+
+        // Wallet A should have a new "change" triangle
+        let triangles_a = chain.state.get_triangles_by_owner(&address_a);
+        let expected_change = Coord::from_num(50.0) - amount_to_send - fee;
+        assert_eq!(triangles_a.len(), 1);
+        assert_eq!(triangles_a[0].effective_value(), expected_change);
+
+        // Check total balances
+        assert_eq!(chain.state.get_balance(&address_a), expected_change);
+        assert_eq!(chain.state.get_balance(&address_b), amount_to_send);
     }
 }
