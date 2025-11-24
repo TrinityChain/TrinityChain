@@ -167,6 +167,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let transaction = Transaction::Transfer(tx);
     chain.mempool.add_transaction(transaction.clone())?;
+    // Persist mempool transaction so separate miner process can include it
+    db.save_mempool_tx(&transaction)?;
 
     pb.set_message("Broadcasting to network...");
 

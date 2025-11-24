@@ -11,15 +11,22 @@ use secp256k1::SecretKey;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
     let args: Vec<String> = env::args().collect();
-    // check for --threads N
+    // Parse arguments for --threads and --from
     let mut threads: usize = 1;
+    let mut wallet_name: Option<String> = None;
     let mut i = 1;
+    
     while i < args.len() {
         if args[i] == "--threads" || args[i] == "-t" {
             if i + 1 < args.len() {
                 if let Ok(n) = args[i + 1].parse::<usize>() {
                     threads = n.max(1);
                 }
+            }
+            i += 2;
+        } else if args[i] == "--from" {
+            if i + 1 < args.len() {
+                wallet_name = Some(args[i + 1].clone());
             }
             i += 2;
         } else {
@@ -35,15 +42,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Blockchain is empty")?;
     println!("📊 Current height: {}", current_height);
 
-    // Ensure wallet exists, create if it doesn't
-    let wallet_path = wallet::get_default_wallet_path()?;
-    if !wallet_path.exists() {
-        println!("👛 No default wallet found. Creating a new one...");
-        wallet::create_default_wallet()?;
-        println!("✅ New wallet created at: {}", wallet_path.display());
-    }
-
-    let wallet_data = wallet::load_default_wallet()?;
+    // Load the specified wallet or error if none specified
+    let wallet_data = match wallet_name {
+        Some(name) => {
+            println!("👛 Using wallet: {}", name);
+            wallet::load_named_wallet(&name)?
+        }
+        None => {
+            eprintln!("❌ Error: No wallet specified. Use --from <wallet_name>");
+            std::process::exit(1);
+        }
+    };
 
     let address = wallet_data.address;
     let secret_hex = wallet_data.secret_key_hex;
@@ -106,6 +115,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     db.save_block(&new_block)?;
     db.save_utxo_set(&chain.state)?;
+    // Remove included transactions from persistent mempool
+    for tx in new_block.transactions.iter() {
+        let tx_hash = tx.hash();
+        let _ = db.remove_mempool_tx(&tx_hash);
+    }
 
     println!("\n🎉 Block {} mined successfully!", chain.blocks.len() - 1);
     println!("   UTXOs: {}", chain.state.count());
