@@ -237,7 +237,7 @@ async fn answer(
                             .filter(|(_, triangle)| triangle.owner == address)
                             .collect();
 
-                        let balance: f64 = triangles_owned.iter()
+                        let balance: trinitychain::geometry::Coord = triangles_owned.iter()
                             .map(|(_, triangle)| triangle.area())
                             .sum();
 

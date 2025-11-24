@@ -20,6 +20,7 @@ use crate::crypto::KeyPair;
 use crate::miner;
 use crate::network::{Node, NetworkMessage};
 use secp256k1::ecdsa::Signature;
+use crate::geometry::Coord;
 
 /// Mining state that tracks the current mining operation
 #[derive(Clone)]
@@ -214,7 +215,7 @@ async fn get_block_by_hash(State(state): State<AppState>, Path(hash): Path<Strin
 #[derive(Serialize, Deserialize)]
 pub struct BalanceResponse {
     pub triangles: Vec<String>,
-    pub total_area: f64,
+    pub total_area: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -304,6 +305,7 @@ async fn get_blockchain_stats(State(state): State<AppState>) -> impl IntoRespons
             crate::transaction::Transaction::Coinbase(cb) => Some(cb.reward_area),
             _ => None,
         })
+        .map(|reward| reward.to_num::<u64>())
         .sum();
 
     Json(StatsResponse {
@@ -330,7 +332,7 @@ async fn get_address_balance(State(state): State<AppState>, Path(addr): Path<Str
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get blockchain lock").into_response(),
     };
     let mut triangles = Vec::new();
-    let mut total_area = 0.0;
+    let mut total_area = Coord::from_num(0);
 
     for (hash, triangle) in &blockchain.state.utxo_set {
         if triangle.owner == addr {
@@ -341,7 +343,7 @@ async fn get_address_balance(State(state): State<AppState>, Path(addr): Path<Str
 
     Json(BalanceResponse {
         triangles,
-        total_area,
+        total_area: total_area.to_string(),
     }).into_response()
 }
 
@@ -393,11 +395,12 @@ async fn get_recent_blocks(State(state): State<AppState>) -> impl IntoResponse {
     };
     let blocks: Vec<serde_json::Value> = blockchain.blocks.iter().rev().take(50).map(|b| {
         // Extract reward from coinbase transaction
-        let reward = b.transactions.first()
+        let reward: u64 = b.transactions.first()
             .and_then(|tx| match tx {
                 crate::transaction::Transaction::Coinbase(cb) => Some(cb.reward_area),
                 _ => None,
             })
+            .map(|area| area.to_num::<u64>())
             .unwrap_or(0);
 
         serde_json::json!({
@@ -429,8 +432,8 @@ async fn get_block_by_height(State(state): State<AppState>, Path(height): Path<u
 #[derive(Serialize, Deserialize)]
 pub struct TriangleInfo {
     pub hash: String,
-    pub area: f64,
-    pub vertices: Vec<(f64, f64)>,
+    pub area: String,
+    pub vertices: Vec<(String, String)>,
 }
 
 async fn get_address_triangles(State(state): State<AppState>, Path(addr): Path<String>) -> impl IntoResponse {
@@ -442,11 +445,11 @@ async fn get_address_triangles(State(state): State<AppState>, Path(addr): Path<S
         .filter(|(_, triangle)| triangle.owner == addr)
         .map(|(hash, triangle)| TriangleInfo {
             hash: hex::encode(hash),
-            area: triangle.area(),
+            area: triangle.area().to_string(),
             vertices: vec![
-                (triangle.a.x, triangle.a.y),
-                (triangle.b.x, triangle.b.y),
-                (triangle.c.x, triangle.c.y),
+                (triangle.a.x.to_string(), triangle.a.y.to_string()),
+                (triangle.b.x.to_string(), triangle.b.y.to_string()),
+                (triangle.c.x.to_string(), triangle.c.y.to_string()),
             ],
         })
         .collect();
@@ -584,11 +587,20 @@ async fn send_transaction(State(state): State<AppState>, Json(req): Json<SendTra
     };
 
     let tx_hash = req.transaction.hash();
-    let message = secp256k1::Message::from_digest_slice(&tx_hash).unwrap();
+    let message = match secp256k1::Message::from_digest_slice(&tx_hash) {
+        Ok(msg) => msg,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create message from hash").into_response(),
+    };
     let public_key = match &req.transaction {
         Transaction::Transfer(tx) => {
-            let key_bytes = hex::decode(&tx.sender).unwrap();
-            secp256k1::PublicKey::from_slice(&key_bytes).unwrap()
+            let key_bytes = match hex::decode(&tx.sender) {
+                Ok(bytes) => bytes,
+                Err(_) => return (StatusCode::BAD_REQUEST, "Invalid sender address format").into_response(),
+            };
+            match secp256k1::PublicKey::from_slice(&key_bytes) {
+                Ok(key) => key,
+                Err(_) => return (StatusCode::BAD_REQUEST, "Invalid public key").into_response(),
+            }
         }
         _ => return (StatusCode::BAD_REQUEST, "Only transfer transactions are supported").into_response(),
     };
@@ -689,7 +701,14 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 let transactions = blockchain.mempool.get_all_transactions();
 
                 let height = blockchain.blocks.len() as u64;
-                let last_block = blockchain.blocks.last().expect("Blockchain should have at least a genesis block");
+                let last_block = match blockchain.blocks.last() {
+                    Some(block) => block,
+                    None => {
+                        eprintln!("CRITICAL: Blockchain has no blocks, not even genesis.");
+                        mining_state.is_mining.store(false, Ordering::Relaxed);
+                        break;
+                    }
+                };
                 let previous_hash = last_block.hash;
                 let parent_timestamp = last_block.header.timestamp;
                 let difficulty = blockchain.difficulty;
@@ -698,7 +717,7 @@ async fn start_mining(State(state): State<AppState>, Json(req): Json<StartMining
                 // Block reward is static u64, fees are geometric f64
                 let block_reward = Blockchain::calculate_block_reward(height);
                 let total_fees = Blockchain::calculate_total_fees(&transactions);
-                let reward_area = block_reward.saturating_add(total_fees as u64);
+                let reward_area = Coord::from_num(block_reward) + total_fees;
 
                 // Create coinbase transaction
                 let coinbase = Transaction::Coinbase(crate::transaction::CoinbaseTx {
@@ -1109,7 +1128,8 @@ mod tests {
         assert_eq!(response.status_code(), StatusCode::OK);
         let balance: BalanceResponse = response.json();
         assert_eq!(balance.triangles.len(), 1);
-        assert!(balance.total_area > 0.0);
+        let total_area: f64 = balance.total_area.parse().unwrap();
+        assert!(total_area > 0.0);
     }
 
     #[tokio::test]
@@ -1121,7 +1141,7 @@ mod tests {
         let address = keypair.address();
         let parent_hash = *blockchain.state.utxo_set.keys().next().expect("UTXO set should not be empty in test");
         let children = blockchain.state.utxo_set.values().next().expect("UTXO set should not be empty in test").subdivide();
-        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, 0, 1);
+        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
         let message = tx.signable_message();
         let signature = keypair.sign(&message).expect("Signing message should succeed in test");
         let public_key = keypair.public_key.serialize().to_vec();

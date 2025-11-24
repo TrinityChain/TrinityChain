@@ -367,7 +367,7 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
         let difficulty = chain.difficulty;
 
         let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
-            reward_area: 1000,
+            reward_area: trinitychain::geometry::Coord::from_num(1000),
             beneficiary_address: beneficiary_address.clone(),
         });
 

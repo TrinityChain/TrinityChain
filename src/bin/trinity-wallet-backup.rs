@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encrypted = EncryptedWallet::from_wallet(&wallet, &password)?;
 
     // Save encrypted backup
-    let backup_path = wallet::get_wallet_dir().join("wallet_backup.json");
+    let backup_path = wallet::get_wallet_dir()?.join("wallet_backup.json");
     encrypted.save(&backup_path)?;
 
     println!("✅ Wallet backed up successfully!");

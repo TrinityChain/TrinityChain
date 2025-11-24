@@ -1,7 +1,8 @@
 //! Database persistence layer for TrinityChain
 
 use rusqlite::{Connection, params};
-use crate::blockchain::{Blockchain, Block, BlockHeader, TriangleState, Mempool};
+use crate::blockchain::{Blockchain, Block, BlockHeader, TriangleState};
+use crate::mempool::Mempool;
 use crate::transaction::Transaction;
 use crate::geometry::Triangle;
 use crate::error::ChainError;
