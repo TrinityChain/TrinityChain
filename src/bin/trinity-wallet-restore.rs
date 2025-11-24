@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backup_path = if args.len() > 1 {
         PathBuf::from(&args[1])
     } else {
-        wallet::get_wallet_dir().join("wallet_backup.json")
+        wallet::get_wallet_dir()?.join("wallet_backup.json")
     };
 
     if !backup_path.exists() {
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Check if wallet already exists
-    let wallet_path = wallet::get_default_wallet_path();
+    let wallet_path = wallet::get_default_wallet_path()?;
     if wallet_path.exists() {
         print!("\n⚠️  WARNING: A wallet already exists. Overwrite? (yes/no): ");
         io::stdout().flush()?;

@@ -14,7 +14,7 @@ const LOGO: &str = r#"
 ║        ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝   ╚═╝      ╚═╝         ║
 ║                                                               ║
 ║                   🔺 Wallet Manager 🔺                        ║
-║                    Version 0.1.0 - Alpha                     ║
+║                    Version 0.2.0 - Alpha                     ║
 ╚═══════════════════════════════════════════════════════════════╝
 "#;
 
@@ -27,8 +27,20 @@ fn main() {
     }
 
     match args[1].as_str() {
-        "new" => create_wallet(),
-        "address" => show_address(),
+        "new" => {
+            if args.len() > 2 {
+                create_wallet(Some(args[2].clone()))
+            } else {
+                create_wallet(None)
+            }
+        }
+        "address" => {
+            if args.len() > 2 {
+                show_address(Some(args[2].clone()))
+            } else {
+                show_address(None)
+            }
+        }
         "list" => list_wallets(),
         "help" => print_usage(),
         _ => {
@@ -42,7 +54,7 @@ fn print_banner() {
     println!("{}", LOGO.bright_cyan());
 }
 
-fn create_wallet() {
+fn create_wallet(name: Option<String>) {
     print_banner();
 
     println!("{}", "┌─────────────────────────────────────────┐".bright_green());
@@ -50,7 +62,13 @@ fn create_wallet() {
     println!("{}", "└─────────────────────────────────────────┘".bright_green());
     println!();
 
-    match wallet::create_default_wallet() {
+    let result = if let Some(name) = name {
+        wallet::create_named_wallet(&name)
+    } else {
+        wallet::create_default_wallet()
+    };
+
+    match result {
         Ok(wallet) => {
             println!("{}", "╔══════════════════════════════════════════════════════════╗".green());
             println!("{}", "║            ✨ Wallet Created Successfully! ✨            ║".green().bold());
@@ -60,7 +78,9 @@ fn create_wallet() {
             let addr_part2 = if addr_len > 42 { &wallet.address[42..] } else { "" };
             println!("{}", format!("║  📍 Address: {:<42} ║", addr_part1).green());
             println!("{}", format!("║             {:<42} ║", addr_part2).green());
-            println!("{}", format!("║  📁 Location: {:<39} ║", wallet::get_default_wallet_path().display()).green());
+            if let Ok(path) = wallet::get_default_wallet_path() {
+                println!("{}", format!("║  📁 Location: {:<39} ║", path.display()).green());
+            }
             println!("{}", format!("║  📅 Created: {:<40} ║", wallet.created).green());
             println!("{}", "╚══════════════════════════════════════════════════════════╝".green());
             println!();
@@ -81,7 +101,7 @@ fn create_wallet() {
     }
 }
 
-fn show_address() {
+fn show_address(address: Option<String>) {
     print_banner();
 
     println!("{}", "┌─────────────────────────────────────────┐".bright_cyan());
@@ -89,7 +109,13 @@ fn show_address() {
     println!("{}", "└─────────────────────────────────────────┘".bright_cyan());
     println!();
 
-    match wallet::load_default_wallet() {
+    let result = if let Some(address) = address {
+        wallet::load_named_wallet(&address)
+    } else {
+        wallet::load_default_wallet()
+    };
+
+    match result {
         Ok(wallet) => {
             println!("{}", "╔══════════════════════════════════════════════════════════╗".cyan());
             println!("{}", "║                   Your Wallet Details                    ║".cyan().bold());

@@ -8,9 +8,12 @@
 
 use crate::crypto::KeyPair;
 use crate::error::ChainError;
-use std::fs;
-use std::path::PathBuf;
+use rpassword::prompt_password;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
 /// Wallet data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,8 +60,13 @@ impl Wallet {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| ChainError::WalletError(format!("Failed to serialize wallet: {}", e)))?;
 
-        fs::write(path, json)
-            .map_err(|e| ChainError::WalletError(format!("Failed to write wallet: {}", e)))?;
+        let mut temp_file = NamedTempFile::new()
+            .map_err(|e| ChainError::WalletError(format!("Failed to create temp file: {}", e)))?;
+        write!(temp_file, "{}", json)
+            .map_err(|e| ChainError::WalletError(format!("Failed to write to temp file: {}", e)))?;
+        temp_file
+            .persist(path)
+            .map_err(|e| ChainError::WalletError(format!("Failed to persist wallet file: {}", e)))?;
 
         Ok(())
     }
@@ -73,24 +81,25 @@ impl Wallet {
 }
 
 /// Get the default wallet directory
-pub fn get_wallet_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".trinitychain")
+pub fn get_wallet_dir() -> Result<PathBuf, ChainError> {
+    let home = std::env::var("HOME")
+        .map_err(|e| ChainError::WalletError(format!("Failed to get HOME env var: {}", e)))?;
+    Ok(PathBuf::from(home).join(".trinitychain"))
 }
 
 /// Get the default wallet file path
-pub fn get_default_wallet_path() -> PathBuf {
-    get_wallet_dir().join("wallet.json")
+pub fn get_default_wallet_path() -> Result<PathBuf, ChainError> {
+    Ok(get_wallet_dir()?.join("wallet.json"))
 }
 
 /// Get a named wallet file path
-pub fn get_named_wallet_path(name: &str) -> PathBuf {
-    get_wallet_dir().join(format!("wallet_{}.json", name))
+pub fn get_named_wallet_path(name: &str) -> Result<PathBuf, ChainError> {
+    Ok(get_wallet_dir()?.join(format!("wallet_{}.json", name)))
 }
 
 /// Create the wallet directory if it doesn't exist
 pub fn ensure_wallet_dir() -> Result<(), ChainError> {
-    let wallet_dir = get_wallet_dir();
+    let wallet_dir = get_wallet_dir()?;
     fs::create_dir_all(&wallet_dir)
         .map_err(|e| ChainError::WalletError(format!("Failed to create wallet directory: {}", e)))?;
     Ok(())
@@ -100,16 +109,19 @@ pub fn ensure_wallet_dir() -> Result<(), ChainError> {
 pub fn create_default_wallet() -> Result<Wallet, ChainError> {
     ensure_wallet_dir()?;
 
-    let path = get_default_wallet_path();
+    let path = get_default_wallet_path()?;
 
     if path.exists() {
         return Err(ChainError::WalletError(
-            "Wallet already exists at default location".to_string()
+            "Wallet already exists at default location".to_string(),
         ));
     }
+    let password = prompt_password("Enter a password for your new wallet: ")
+        .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
 
     let wallet = Wallet::new(None)?;
-    wallet.save(&path)?;
+    let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, &password)?;
+    encrypted_wallet.save(&path)?;
 
     Ok(wallet)
 }
@@ -118,49 +130,61 @@ pub fn create_default_wallet() -> Result<Wallet, ChainError> {
 pub fn create_named_wallet(name: &str) -> Result<Wallet, ChainError> {
     ensure_wallet_dir()?;
 
-    let path = get_named_wallet_path(name);
+    let path = get_named_wallet_path(name)?;
 
     if path.exists() {
-        return Err(ChainError::WalletError(
-            format!("Wallet '{}' already exists", name)
-        ));
+        return Err(ChainError::WalletError(format!(
+            "Wallet '{}' already exists",
+            name
+        )));
     }
 
+    let password = prompt_password("Enter a password for your new wallet: ")
+        .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
+
     let wallet = Wallet::new(Some(name.to_string()))?;
-    wallet.save(&path)?;
+    let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, &password)?;
+    encrypted_wallet.save(&path)?;
 
     Ok(wallet)
 }
 
 /// Load the default wallet
 pub fn load_default_wallet() -> Result<Wallet, ChainError> {
-    let path = get_default_wallet_path();
+    let path = get_default_wallet_path()?;
 
     if !path.exists() {
         return Err(ChainError::WalletError(
-            "No wallet found. Run 'trinity-wallet new' first.".to_string()
+            "No wallet found. Run 'trinity-wallet new' first.".to_string(),
         ));
     }
 
-    Wallet::load(&path)
+    let encrypted_wallet = EncryptedWallet::load(&path)?;
+    let password = prompt_password("Enter your wallet password: ")
+        .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
+    encrypted_wallet.decrypt(&password)
 }
 
 /// Load a named wallet
 pub fn load_named_wallet(name: &str) -> Result<Wallet, ChainError> {
-    let path = get_named_wallet_path(name);
+    let path = get_named_wallet_path(name)?;
 
     if !path.exists() {
-        return Err(ChainError::WalletError(
-            format!("Wallet '{}' not found", name)
-        ));
+        return Err(ChainError::WalletError(format!(
+            "Wallet '{}' not found",
+            name
+        )));
     }
 
-    Wallet::load(&path)
+    let encrypted_wallet = EncryptedWallet::load(&path)?;
+    let password = prompt_password("Enter your wallet password: ")
+        .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
+    encrypted_wallet.decrypt(&password)
 }
 
 /// List all available wallets in the wallet directory
 pub fn list_wallets() -> Result<Vec<String>, ChainError> {
-    let wallet_dir = get_wallet_dir();
+    let wallet_dir = get_wallet_dir()?;
 
     if !wallet_dir.exists() {
         return Ok(Vec::new());
@@ -172,12 +196,17 @@ pub fn list_wallets() -> Result<Vec<String>, ChainError> {
         .map_err(|e| ChainError::WalletError(format!("Failed to read wallet directory: {}", e)))?;
 
     for entry in entries {
-        let entry = entry
-            .map_err(|e| ChainError::WalletError(format!("Failed to read directory entry: {}", e)))?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Warning: Failed to read directory entry: {}", e);
+                continue;
+            }
+        };
 
         let path = entry.path();
 
-        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
             if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
                 wallets.push(filename.to_string());
             }
@@ -311,20 +340,29 @@ impl EncryptedWallet {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| ChainError::WalletError(format!("Failed to serialize wallet: {}", e)))?;
 
-        fs::write(path, json)
-            .map_err(|e| ChainError::WalletError(format!("Failed to write wallet: {}", e)))?;
+        // Create the file in a temporary location
+        let mut temp_file = NamedTempFile::new()
+            .map_err(|e| ChainError::WalletError(format!("Failed to create temp file: {}", e)))?;
 
-        // Set file permissions to owner-only (Unix only)
+        // Write the wallet data
+        write!(temp_file, "{}", json)
+            .map_err(|e| ChainError::WalletError(format!("Failed to write to temp file: {}", e)))?;
+
+        // Set file permissions before persisting
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(path)
+            let mut perms = temp_file.as_file().metadata()
                 .map_err(|e| ChainError::WalletError(format!("Failed to get file metadata: {}", e)))?
                 .permissions();
             perms.set_mode(0o600); // rw-------
-            fs::set_permissions(path, perms)
+            fs::set_permissions(temp_file.path(), perms)
                 .map_err(|e| ChainError::WalletError(format!("Failed to set file permissions: {}", e)))?;
         }
+
+        // Atomically move the file to the final destination
+        temp_file.persist(path)
+            .map_err(|e| ChainError::WalletError(format!("Failed to persist wallet file: {}", e)))?;
 
         Ok(())
     }
@@ -345,41 +383,71 @@ impl EncryptedWallet {
 mod tests {
     use super::*;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
-    fn test_wallet_creation() {
-        let wallet = Wallet::new(Some("test".to_string())).unwrap();
+    fn test_wallet_creation_and_keypair_recovery() {
+        let wallet_result = Wallet::new(Some("test".to_string()));
+        assert!(wallet_result.is_ok());
+        let wallet = wallet_result.unwrap();
+
         assert_eq!(wallet.name, Some("test".to_string()));
         assert!(!wallet.address.is_empty());
         assert!(!wallet.secret_key_hex.is_empty());
-    }
 
-    #[test]
-    fn test_wallet_keypair_recovery() {
-        let wallet = Wallet::new(None).unwrap();
-        let keypair = wallet.get_keypair().unwrap();
+        let keypair_result = wallet.get_keypair();
+        assert!(keypair_result.is_ok());
+        let keypair = keypair_result.unwrap();
         assert_eq!(wallet.address, keypair.address());
     }
 
     #[test]
-    fn test_wallet_save_and_load() {
-        let temp_dir = std::env::temp_dir();
-        let wallet_path = temp_dir.join("test_wallet.json");
+    fn test_encrypted_wallet_save_and_load() {
+        let temp_dir = tempdir().unwrap();
+        let wallet_path = temp_dir.path().join("encrypted_wallet.json");
 
-        // Clean up if exists - ignore errors if file doesn't exist
-        let _ = fs::remove_file(&wallet_path);
+        let password = "strong_password";
+        let wallet = Wallet::new(Some("encrypted_test".to_string())).unwrap();
 
-        // Create and save
-        let wallet = Wallet::new(Some("test_save".to_string())).unwrap();
-        wallet.save(&wallet_path).unwrap();
+        let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, password).unwrap();
+        let save_result = encrypted_wallet.save(&wallet_path);
+        assert!(save_result.is_ok());
 
-        // Load and verify
-        let loaded = Wallet::load(&wallet_path).unwrap();
-        assert_eq!(wallet.address, loaded.address);
-        assert_eq!(wallet.secret_key_hex, loaded.secret_key_hex);
-        assert_eq!(wallet.name, loaded.name);
+        let loaded_encrypted = EncryptedWallet::load(&wallet_path).unwrap();
+        let decrypted_wallet_result = loaded_encrypted.decrypt(password);
+        assert!(decrypted_wallet_result.is_ok());
+        let decrypted_wallet = decrypted_wallet_result.unwrap();
 
-        // Cleanup
-        fs::remove_file(&wallet_path).unwrap();
+        assert_eq!(wallet.address, decrypted_wallet.address);
+        assert_eq!(wallet.secret_key_hex, decrypted_wallet.secret_key_hex);
+    }
+
+    #[test]
+    fn test_atomic_save() {
+        let temp_dir = tempdir().unwrap();
+        let wallet_path = temp_dir.path().join("atomic_save_test.json");
+
+        let wallet = Wallet::new(Some("atomic".to_string())).unwrap();
+        let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, "password").unwrap();
+
+        let save_result = encrypted_wallet.save(&wallet_path);
+        assert!(save_result.is_ok());
+
+        let loaded_wallet = EncryptedWallet::load(&wallet_path);
+        assert!(loaded_wallet.is_ok());
+    }
+
+    #[test]
+    fn test_wrong_password_fails() {
+        let temp_dir = tempdir().unwrap();
+        let wallet_path = temp_dir.path().join("wrong_password_test.json");
+
+        let wallet = Wallet::new(None).unwrap();
+        let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, "correct_password").unwrap();
+        encrypted_wallet.save(&wallet_path).unwrap();
+
+        let loaded_wallet = EncryptedWallet::load(&wallet_path).unwrap();
+        let decrypt_result = loaded_wallet.decrypt("wrong_password");
+        assert!(decrypt_result.is_err());
     }
 }

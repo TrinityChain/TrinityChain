@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     let mut my_triangles = 0;
-    let mut total_area = 0.0;
+    let mut total_area = trinitychain::geometry::Coord::from_num(0);
     let mut triangle_list = Vec::new();
 
     // Filter triangles owned by this address
@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Cell::new("Area").fg(TableColor::Cyan).add_attribute(Attribute::Bold),
         ]);
 
-    triangle_list.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    triangle_list.sort_by(|a, b| b.1.cmp(&a.1));
 
     for (idx, (hash, area)) in triangle_list.iter().enumerate() {
         let hash_short = if hash.len() > 20 {
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", format!("║  🔺 Triangles: {:<42} ║", my_triangles).green());
     println!("{}", format!("║  📐 Total Area: {:<39.6} ║", total_area).green());
 
-    let avg_area = total_area / my_triangles as f64;
+    let avg_area = total_area / trinitychain::geometry::Coord::from_num(my_triangles);
     println!("{}", format!("║  📊 Average Area: {:<37.6} ║", avg_area).green());
     println!("{}", "╚══════════════════════════════════════════════════════════╝".bright_green());
     println!();

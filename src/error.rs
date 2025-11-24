@@ -16,6 +16,7 @@ pub enum ChainError {
     OrphanBlock,
     ApiError(String),
     AuthenticationError(String),
+    MempoolFull,
 }
 
 impl fmt::Display for ChainError {
@@ -33,6 +34,7 @@ impl fmt::Display for ChainError {
             ChainError::OrphanBlock => write!(f, "Orphan block"),
             ChainError::ApiError(msg) => write!(f, "API error: {}", msg),
             ChainError::AuthenticationError(msg) => write!(f, "Authentication error: {}", msg),
+            ChainError::MempoolFull => write!(f, "Mempool is full"),
         }
     }
 }

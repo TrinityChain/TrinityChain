@@ -442,8 +442,8 @@ impl SecurityManager {
 pub fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -462,17 +462,17 @@ mod tests {
 
         // Allow localhost
         policy.add_rule(FirewallRule::Allow(
-            "127.0.0.1/8".parse().unwrap(),
+            "127.0.0.1/8".parse().expect("Failed to parse IP network"),
         ));
 
         // Allow private network
         policy.add_rule(FirewallRule::Allow(
-            "192.168.0.0/16".parse().unwrap(),
+            "192.168.0.0/16".parse().expect("Failed to parse IP network"),
         ));
 
         // Check IP addresses
-        assert!(policy.is_ip_allowed("127.0.0.1".parse().unwrap()));
-        assert!(policy.is_ip_allowed("192.168.1.1".parse().unwrap()));
+        assert!(policy.is_ip_allowed("127.0.0.1".parse().expect("Failed to parse IP")));
+        assert!(policy.is_ip_allowed("192.168.1.1".parse().expect("Failed to parse IP")));
     }
 
     #[test]

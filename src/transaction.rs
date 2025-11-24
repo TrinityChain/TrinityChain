@@ -2,7 +2,7 @@
 
 use sha2::{Digest, Sha256};
 use crate::blockchain::{Sha256Hash, TriangleState};
-use crate::geometry::Triangle;
+use crate::geometry::{Coord, Triangle};
 use crate::error::ChainError;
 
 pub type Address = String;
@@ -39,16 +39,16 @@ impl Transaction {
     /// Get the geometric fee area for this transaction
     pub fn fee_area(&self) -> crate::geometry::Coord {
         match self {
-            Transaction::Subdivision(tx) => tx.fee as crate::geometry::Coord,
+            Transaction::Subdivision(tx) => tx.fee_area,
             Transaction::Transfer(tx) => tx.fee_area,
-            Transaction::Coinbase(_) => 0.0, // Coinbase has no fee
+            Transaction::Coinbase(_) => Coord::from_num(0), // Coinbase has no fee
         }
     }
 
     /// Get the fee as u64 (for backward compatibility, converts fee_area)
     /// Deprecated: Use fee_area() for geometric fees
     pub fn fee(&self) -> u64 {
-        self.fee_area() as u64
+        self.fee_area().to_num::<u64>()
     }
 
     /// Calculate the hash of this transaction
@@ -61,7 +61,7 @@ impl Transaction {
                     hasher.update(child.hash());
                 }
                 hasher.update(tx.owner_address.as_bytes());
-                hasher.update(tx.fee.to_le_bytes());
+                hasher.update(tx.fee_area.to_le_bytes());
                 hasher.update(tx.nonce.to_le_bytes());
             }
             Transaction::Coinbase(tx) => {
@@ -74,6 +74,7 @@ impl Transaction {
                 hasher.update(tx.input_hash);
                 hasher.update(tx.new_owner.as_bytes());
                 hasher.update(tx.sender.as_bytes());
+                hasher.update(tx.amount.to_le_bytes());
                 hasher.update(tx.fee_area.to_le_bytes());
                 hasher.update(tx.nonce.to_le_bytes());
             }
@@ -97,7 +98,7 @@ pub struct SubdivisionTx {
     pub parent_hash: Sha256Hash,
     pub children: Vec<Triangle>,
     pub owner_address: Address,
-    pub fee: u64,
+    pub fee_area: Coord,
     pub nonce: u64,
     pub signature: Option<Vec<u8>>,
     pub public_key: Option<Vec<u8>>,
@@ -108,14 +109,14 @@ impl SubdivisionTx {
         parent_hash: Sha256Hash,
         children: Vec<Triangle>,
         owner_address: Address,
-        fee: u64,
+        fee_area: Coord,
         nonce: u64,
     ) -> Self {
         SubdivisionTx {
             parent_hash,
             children,
             owner_address,
-            fee,
+            fee_area,
             nonce,
             signature: None,
             public_key: None,
@@ -129,7 +130,7 @@ impl SubdivisionTx {
             message.extend_from_slice(&child.hash());
         }
         message.extend_from_slice(self.owner_address.as_bytes());
-        message.extend_from_slice(&self.fee.to_le_bytes());
+        message.extend_from_slice(&self.fee_area.to_le_bytes());
         message.extend_from_slice(&self.nonce.to_le_bytes());
         message
     }
@@ -205,17 +206,17 @@ impl SubdivisionTx {
 /// Coinbase transaction: miner reward
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CoinbaseTx {
-    pub reward_area: u64,
+    pub reward_area: Coord,
     pub beneficiary_address: Address,
 }
 
 impl CoinbaseTx {
     /// Maximum reward area that can be claimed in a coinbase transaction
-    pub const MAX_REWARD_AREA: u64 = 1000;
+    pub const MAX_REWARD_AREA: Coord = Coord::from_bits(1000i64 << 32);
 
     pub fn validate(&self) -> Result<(), ChainError> {
         // Validate reward area is within acceptable bounds
-        if self.reward_area == 0 {
+        if self.reward_area <= Coord::from_num(0) {
             return Err(ChainError::InvalidTransaction(
                 "Coinbase reward area must be greater than zero".to_string()
             ));
@@ -246,6 +247,8 @@ pub struct TransferTx {
     pub input_hash: Sha256Hash,
     pub new_owner: Address,
     pub sender: Address,
+    /// Amount being sent to the new owner
+    pub amount: crate::geometry::Coord,
     /// Geometric fee: area deducted from triangle value and given to miner
     pub fee_area: crate::geometry::Coord,
     pub nonce: u64,
@@ -258,15 +261,12 @@ pub struct TransferTx {
 impl TransferTx {
     /// Maximum memo length (256 characters)
     pub const MAX_MEMO_LENGTH: usize = 256;
-
-    /// Geometric tolerance for fee comparisons (matches geometry.rs)
-    pub const GEOMETRIC_TOLERANCE: crate::geometry::Coord = 1e-9;
-
-    pub fn new(input_hash: Sha256Hash, new_owner: Address, sender: Address, fee_area: crate::geometry::Coord, nonce: u64) -> Self {
+    pub fn new(input_hash: Sha256Hash, new_owner: Address, sender: Address, amount: crate::geometry::Coord, fee_area: crate::geometry::Coord, nonce: u64) -> Self {
         TransferTx {
             input_hash,
             new_owner,
             sender,
+            amount,
             fee_area,
             nonce,
             signature: None,
@@ -291,6 +291,7 @@ impl TransferTx {
         message.extend_from_slice(&self.input_hash);
         message.extend_from_slice(self.new_owner.as_bytes());
         message.extend_from_slice(self.sender.as_bytes());
+        message.extend_from_slice(&self.amount.to_le_bytes());
         // Use f64 bytes for geometric fee
         message.extend_from_slice(&self.fee_area.to_le_bytes());
         message.extend_from_slice(&self.nonce.to_le_bytes());
@@ -318,11 +319,8 @@ impl TransferTx {
             return Err(ChainError::InvalidTransaction("New owner address cannot be empty".to_string()));
         }
 
-        // Validate fee_area is non-negative and finite
-        if !self.fee_area.is_finite() {
-            return Err(ChainError::InvalidTransaction("Fee area must be a finite number".to_string()));
-        }
-        if self.fee_area < 0.0 {
+        // Validate fee_area is non-negative
+        if self.fee_area < Coord::from_num(0) {
             return Err(ChainError::InvalidTransaction("Fee area cannot be negative".to_string()));
         }
 
@@ -364,14 +362,14 @@ impl TransferTx {
         })?;
 
         // Area balance check: input value must be strictly greater than fee
-        // Using tolerance to handle floating-point precision
         let input_value = input_triangle.effective_value();
-        let remaining_value = input_value - self.fee_area;
+        let total_spent = self.amount + self.fee_area;
+        let remaining_value = input_value - total_spent;
 
-        if remaining_value < Self::GEOMETRIC_TOLERANCE {
+        if remaining_value < crate::geometry::GEOMETRIC_TOLERANCE {
             return Err(ChainError::InvalidTransaction(format!(
-                "Insufficient triangle value: input has {:.9} but fee_area is {:.9}, leaving {:.9} (minimum: {:.9})",
-                input_value, self.fee_area, remaining_value, Self::GEOMETRIC_TOLERANCE
+                "Insufficient triangle value: input has {} but amount + fee_area is {}, leaving {} (minimum: {})",
+                input_value, total_spent, remaining_value, crate::geometry::GEOMETRIC_TOLERANCE
             )));
         }
 
@@ -392,15 +390,15 @@ mod tests {
     use super::*;
     use crate::blockchain::TriangleState;
     use crate::crypto::KeyPair;
-    use crate::geometry::{Point, Triangle};
+    use crate::geometry::{Coord, Point, Triangle};
 
     #[test]
     fn test_tx_validation_success() {
         let mut state = TriangleState::new();
         let parent = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 1.0, y: 0.0 },
-            Point { x: 0.5, y: 0.866 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
             "test_owner".to_string(),
         );
@@ -411,7 +409,7 @@ mod tests {
         let keypair = KeyPair::generate().unwrap();
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, 0, 1);
+        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
         let message = tx.signable_message();
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
@@ -424,9 +422,9 @@ mod tests {
     fn test_unsigned_transaction_fails() {
         let mut state = TriangleState::new();
         let parent = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 1.0, y: 0.0 },
-            Point { x: 0.5, y: 0.866 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
             "test_owner".to_string(),
         );
@@ -436,7 +434,7 @@ mod tests {
         let children = parent.subdivide();
         let address = "test_address".to_string();
 
-        let tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, 0, 1);
+        let tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
         assert!(tx.validate(&state).is_err());
     }
 
@@ -444,9 +442,9 @@ mod tests {
     fn test_invalid_signature_fails() {
         let mut state = TriangleState::new();
         let parent = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 1.0, y: 0.0 },
-            Point { x: 0.5, y: 0.866 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
             "test_owner".to_string(),
         );
@@ -457,7 +455,7 @@ mod tests {
         let keypair = KeyPair::generate().unwrap();
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, 0, 1);
+        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
         let fake_signature = vec![0u8; 64];
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(fake_signature, public_key);
@@ -469,9 +467,9 @@ mod tests {
     fn test_tx_validation_area_conservation_failure() {
         let mut state = TriangleState::new();
         let parent = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 1.0, y: 0.0 },
-            Point { x: 0.5, y: 0.866 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
             "test_owner".to_string(),
         );
@@ -479,9 +477,9 @@ mod tests {
         state.utxo_set.insert(parent_hash, parent);
 
         let bad_child = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 2.0, y: 0.0 },
-            Point { x: 1.0, y: 1.732 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(2.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(1.0), Coord::from_num(1.732)),
             None,
             "test_owner".to_string(),
         );
@@ -490,7 +488,7 @@ mod tests {
         let keypair = KeyPair::generate().unwrap();
         let address = keypair.address();
 
-        let tx = SubdivisionTx::new(parent_hash, children, address, 0, 1);
+        let tx = SubdivisionTx::new(parent_hash, children, address, Coord::from_num(0), 1);
         assert!(tx.validate(&state).is_err());
     }
 
@@ -499,9 +497,9 @@ mod tests {
         let state = TriangleState::new();
 
         let parent = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 1.0, y: 0.0 },
-            Point { x: 0.5, y: 0.866 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
             "test_owner".to_string(),
         );
@@ -509,65 +507,52 @@ mod tests {
         let children = parent.subdivide();
 
         let address = "test_address".to_string();
-        let tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, 0, 1);
+        let tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
 
         assert!(tx.validate(&state).is_err());
     }
 
     #[test]
     fn test_geometric_fee_deduction() {
-        // Test case: Start with a large triangle (area ~10.0), transfer with fee_area 0.0001
-        // After transfer, the resulting triangle must have value = 10.0 - 0.0001
-
-        // Create a right triangle with area = 10.0 (base=4, height=5 -> area = 0.5*4*5 = 10)
         let mut state = TriangleState::new();
         let keypair = KeyPair::generate().unwrap();
         let sender_address = keypair.address();
 
-        // Triangle with area exactly 10.0: vertices at (0,0), (4,0), (0,5)
-        // Area = 0.5 * base * height = 0.5 * 4 * 5 = 10.0
         let large_triangle = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 4.0, y: 0.0 },
-            Point { x: 0.0, y: 5.0 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(4.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(0.0), Coord::from_num(5.0)),
             None,
             sender_address.clone(),
         );
 
         let triangle_hash = large_triangle.hash();
-        let triangle_area = large_triangle.area();
-        assert!((triangle_area - 10.0).abs() < 1e-9, "Test setup: triangle should have area 10.0");
+        assert_eq!(large_triangle.area(), Coord::from_num(10.0));
 
         state.utxo_set.insert(triangle_hash, large_triangle);
 
-        // Create a transfer transaction with geometric fee
-        let fee_area: f64 = 0.0001;
+        let fee_area = Coord::from_num(0.0001);
         let recipient_address = "recipient_address".to_string();
 
         let mut tx = TransferTx::new(
             triangle_hash,
             recipient_address.clone(),
             sender_address.clone(),
+            Coord::from_num(1.0), // Amount > fee
             fee_area,
             1,
         );
 
-        // Sign the transaction
         let message = tx.signable_message();
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature, public_key);
 
-        // Validate the transaction against state
-        assert!(tx.validate_with_state(&state).is_ok(), "Transfer should be valid");
+        assert!(tx.validate_with_state(&state).is_ok());
 
-        // Simulate what apply_block does:
-        // 1. Remove old triangle
         let old_triangle = state.utxo_set.remove(&triangle_hash).unwrap();
-        let old_value = old_triangle.effective_value();
-        let new_value = old_value - fee_area;
+        let new_value = old_triangle.effective_value() - fee_area;
 
-        // 2. Create new triangle with reduced value
         let new_triangle = Triangle::new_with_value(
             old_triangle.a,
             old_triangle.b,
@@ -580,43 +565,24 @@ mod tests {
         let new_hash = new_triangle.hash();
         state.utxo_set.insert(new_hash, new_triangle);
 
-        // 3. Verify the result
         let result_triangle = state.utxo_set.get(&new_hash).unwrap();
-
-        // Assert: new owner is the recipient
         assert_eq!(result_triangle.owner, recipient_address);
 
-        // Assert: effective value is exactly 10.0 - 0.0001 = 9.9999
-        let expected_value = 10.0 - 0.0001;
-        let actual_value = result_triangle.effective_value();
-        assert!(
-            (actual_value - expected_value).abs() < 1e-12,
-            "After fee deduction, triangle value should be {:.9}, got {:.9}",
-            expected_value,
-            actual_value
-        );
-
-        // Assert: geometric area is unchanged (still 10.0)
-        let geometric_area = result_triangle.area();
-        assert!(
-            (geometric_area - 10.0).abs() < 1e-9,
-            "Geometric area should remain 10.0, got {:.9}",
-            geometric_area
-        );
+        let expected_value = Coord::from_num(10.0) - Coord::from_num(0.0001);
+        assert_eq!(result_triangle.effective_value(), expected_value);
+        assert_eq!(result_triangle.area(), Coord::from_num(10.0));
     }
 
     #[test]
     fn test_geometric_fee_insufficient_value() {
-        // Test that a fee larger than the triangle value fails validation
         let mut state = TriangleState::new();
         let keypair = KeyPair::generate().unwrap();
         let sender_address = keypair.address();
 
-        // Small triangle with area ~0.5
         let small_triangle = Triangle::new(
-            Point { x: 0.0, y: 0.0 },
-            Point { x: 1.0, y: 0.0 },
-            Point { x: 0.5, y: 1.0 },
+            Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
+            Point::new(Coord::from_num(0.5), Coord::from_num(1.0)),
             None,
             sender_address.clone(),
         );
@@ -625,13 +591,13 @@ mod tests {
         let triangle_area = small_triangle.area();
         state.utxo_set.insert(triangle_hash, small_triangle);
 
-        // Try to pay a fee larger than the triangle area
-        let fee_area = triangle_area + 0.1; // More than available
+        let fee_area = triangle_area + Coord::from_num(0.1);
 
         let mut tx = TransferTx::new(
             triangle_hash,
             "recipient".to_string(),
             sender_address.clone(),
+            Coord::from_num(0),
             fee_area,
             1,
         );
@@ -641,12 +607,11 @@ mod tests {
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature, public_key);
 
-        // This should fail validation due to insufficient value
         let result = tx.validate_with_state(&state);
-        assert!(result.is_err(), "Transfer with fee > value should fail");
+        assert!(result.is_err());
 
         if let Err(ChainError::InvalidTransaction(msg)) = result {
-            assert!(msg.contains("Insufficient"), "Error should mention insufficient value");
+            assert!(msg.contains("Insufficient"));
         } else {
             panic!("Expected InvalidTransaction error");
         }
@@ -654,14 +619,14 @@ mod tests {
 
     #[test]
     fn test_negative_fee_rejected() {
-        // Test that negative fees are rejected in stateless validation
         let keypair = KeyPair::generate().unwrap();
 
         let mut tx = TransferTx::new(
             [0u8; 32],
             "recipient".to_string(),
             keypair.address(),
-            -1.0, // Negative fee
+            Coord::from_num(0),
+            Coord::from_num(-1.0), // Negative fee
             1,
         );
 
@@ -671,6 +636,6 @@ mod tests {
         tx.sign(signature, public_key);
 
         let result = tx.validate();
-        assert!(result.is_err(), "Negative fee should be rejected");
+        assert!(result.is_err());
     }
 }

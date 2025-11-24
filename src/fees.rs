@@ -2,7 +2,7 @@
 //!
 //! Provides dynamic fee estimation based on network conditions and transaction size
 
-use crate::blockchain::Mempool;
+use crate::mempool::Mempool;
 use crate::transaction::Transaction;
 
 /// Fee statistics for the current network state

@@ -1,5 +1,6 @@
 pub mod geometry;
 pub mod blockchain;
+pub mod mempool;
 pub mod transaction;
 pub mod error;
 pub mod miner;

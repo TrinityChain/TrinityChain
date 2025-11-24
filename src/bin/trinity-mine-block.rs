@@ -36,21 +36,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Current height: {}", current_height);
 
     // Ensure wallet exists, create if it doesn't
-    let wallet_path = wallet::get_default_wallet_path();
+    let wallet_path = wallet::get_default_wallet_path()?;
     if !wallet_path.exists() {
         println!("👛 No default wallet found. Creating a new one...");
         wallet::create_default_wallet()?;
         println!("✅ New wallet created at: {}", wallet_path.display());
     }
 
-    let wallet_content = std::fs::read_to_string(&wallet_path)?;
-    let wallet_data: serde_json::Value = serde_json::from_str(&wallet_content)?;
+    let wallet_data = wallet::load_default_wallet()?;
 
-    let address = wallet_data["address"].as_str()
-        .ok_or("Wallet address not found")?
-        .to_string();
-    let secret_hex = wallet_data["secret_key"].as_str()
-        .ok_or("Secret key not found")?;
+    let address = wallet_data.address;
+    let secret_hex = wallet_data.secret_key_hex;
     let secret_bytes = hex::decode(secret_hex)?;
     let secret_key = SecretKey::from_slice(&secret_bytes)?;
     let keypair = KeyPair::from_secret_key(secret_key);
@@ -66,13 +62,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔺 Subdividing triangle {}...", hash_prefix);
     let children = parent_triangle.subdivide();
 
-    let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address.clone(), 0, chain.blocks.len() as u64);
+    let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address.clone(), trinitychain::geometry::Coord::from_num(0), chain.blocks.len() as u64);
     let message = tx.signable_message();
     let signature = keypair.sign(&message)?;
     let public_key = keypair.public_key.serialize().to_vec();
     tx.sign(signature, public_key);
 
-    let coinbase = CoinbaseTx { reward_area: 1000, beneficiary_address: address };
+    let coinbase = CoinbaseTx { reward_area: trinitychain::geometry::Coord::from_num(1000), beneficiary_address: address };
 
     // Include pending transactions from mempool (prioritized by fee)
     let mempool_txs = chain.mempool.get_transactions_by_fee(100); // Get up to 100 highest-fee transactions
