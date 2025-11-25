@@ -24,17 +24,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let home = std::env::var("HOME")?;
 
-    // Check if address was provided as argument
-    let my_address = if args.len() > 1 {
-        args[1].clone()
-    } else {
-        // Otherwise, load from wallet file (support WALLET_NAME env var)
-        let wallet_name = std::env::var("WALLET_NAME").unwrap_or_else(|_| String::new());
-        let wallet_file = if wallet_name.is_empty() {
-            format!("{}/.trinitychain/wallet.json", home)
+    // Parse arguments for --wallet flag or positional wallet name
+    let mut wallet_name: Option<String> = None;
+    let mut i = 1;
+    
+    while i < args.len() {
+        if args[i] == "--wallet" {
+            if i + 1 < args.len() {
+                wallet_name = Some(args[i + 1].clone());
+            }
+            i += 2;
+        } else if !args[i].starts_with("-") {
+            // Positional argument is wallet name
+            wallet_name = Some(args[i].clone());
+            i += 1;
         } else {
-            format!("{}/.trinitychain/wallet_{}.json", home, wallet_name)
-        };
+            i += 1;
+        }
+    }
+    
+    let my_address = if let Some(name) = wallet_name {
+        // Load from named wallet
+        let wallet_file = format!("{}/.trinitychain/wallet_{}.json", home, name);
 
         let wallet_content = std::fs::read_to_string(&wallet_file)
             .map_err(|e| {
@@ -42,6 +53,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("{}", "║         ❌ Wallet Not Found!            ║".red().bold());
                 eprintln!("{}", "╚══════════════════════════════════════════╝".red());
                 eprintln!();
+                eprintln!("{}", "💡 Usage: trinity-balance --wallet <name>".yellow());
+                eprintln!("{}", "💡 Or: trinity-balance <name>".yellow());
                 eprintln!("{}", "💡 Run 'trinity-wallet-new <name>' to create a wallet".yellow());
                 format!("No wallet found at {}: {}", wallet_file, e)
             })?;
@@ -52,6 +65,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         wallet_data["address"].as_str()
             .ok_or("Wallet address not found in wallet file")?
             .to_string()
+    } else {
+            eprintln!("{}", "╔══════════════════════════════════════════════════════════╗".red());
+            eprintln!("{}", "║         ❌ No Wallet Specified!                         ║".red().bold());
+            eprintln!("{}", "╚══════════════════════════════════════════════════════════╝".red());
+            eprintln!();
+            eprintln!("{}", "Usage: trinity-balance --wallet <name>".yellow());
+            eprintln!("{}", "Or: trinity-balance <name>".yellow());
+            std::process::exit(1);
     };
 
     let db = Database::open("trinitychain.db")

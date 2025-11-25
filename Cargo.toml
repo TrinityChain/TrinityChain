@@ -1,6 +1,6 @@
 [package]
 name = "trinitychain"
-version = "0.2.0"
+version = "0.5.0"
 edition = "2021"
 
 [lib]
@@ -47,10 +47,6 @@ bip32 = "0.5"
 tempfile = "3.23.0"
 crossbeam-channel = "0.5.15"
 fixed = { version = "1.29.0", features = ["serde"] }
-
-[[bin]]
-name = "trinity-wallet"
-path = "src/bin/trinity-wallet.rs"
 
 [[bin]]
 name = "trinity-miner"

@@ -3,6 +3,7 @@
 use trinitychain::blockchain::Blockchain;
 use trinitychain::persistence::Database;
 use trinitychain::network::NetworkNode;
+use trinitychain::discovery::{PeerDiscovery, mainnet_dns_seeds};
 use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -198,11 +199,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn node server
     let node = NetworkNode::new(blockchain, db_path);
+    let node_server = node.clone();
+    let server_handle = tokio::spawn(async move {
+        if let Err(e) = node_server.start_server(9090).await {
+            eprintln!("❌ Node server error: {}", e);
+        }
+    });
+
+    // Peer discovery and auto-connect task
+    let node_for_discovery = node.clone();
+    let discovery_handle = tokio::spawn(async move {
+        let mut discovery = PeerDiscovery::new();
+
+        // Add mainnet DNS seeds as initial discovery sources
+        for seed in mainnet_dns_seeds() {
+            discovery.add_dns_seed(seed);
+        }
+
+        loop {
+            match discovery.discover_peers().await {
+                Ok(peers) => {
+                    for peer in peers {
+                        // Try to connect; errors are logged but don't stop discovery
+                        let host = peer.host.clone();
+                        let port = peer.port;
+                        let node_clone = node_for_discovery.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = node_clone.connect_peer(host, port).await {
+                                eprintln!("⚠️  Auto-connect failed: {}", e);
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    eprintln!("⚠️  Peer discovery failed: {}", e);
+                }
+            }
+
+            // Wait before next discovery pass
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+    });
 
     if args.len() >= 4 && args[2] == "--peer" {
         let peer_addr = &args[3];
         stats.lock().unwrap().peers.push(peer_addr.clone());
         stats.lock().unwrap().peer_count = 1;
+        
+        // Connect to peer
+        let node_peer = node.clone();
+        let peer_host = peer_addr.split(':').next().unwrap_or("localhost").to_string();
+        let peer_port: u16 = peer_addr.split(':').nth(1).unwrap_or("9090").parse().unwrap_or(9090);
+        tokio::spawn(async move {
+            if let Err(e) = node_peer.connect_peer(peer_host, peer_port).await {
+                eprintln!("❌ Peer connection error: {}", e);
+            }
+        });
     }
 
     let node_handle = tokio::spawn(async move {
@@ -240,7 +292,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
+    // Abort background tasks cleanly
     node_handle.abort();
+    server_handle.abort();
+    discovery_handle.abort();
 
     Ok(())
 }
