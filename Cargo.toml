@@ -49,10 +49,6 @@ crossbeam-channel = "0.5.15"
 fixed = { version = "1.29.0", features = ["serde"] }
 
 [[bin]]
-name = "trinity-wallet"
-path = "src/bin/trinity-wallet.rs"
-
-[[bin]]
 name = "trinity-miner"
 path = "src/bin/trinity-miner.rs"
 

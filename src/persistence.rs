@@ -394,4 +394,38 @@ mod tests {
         assert_eq!(loaded_chain.blocks[0].header.height, 0);
         assert_eq!(loaded_chain.difficulty, chain.difficulty);
     }
+
+    #[test]
+    fn test_persistent_mempool_roundtrip() {
+        let db = Database::open(":memory:").unwrap();
+        let mut chain = Blockchain::new();
+
+        // Prepare a simple subdivision transaction to place in the mempool.
+        // Use the genesis triangle hash from the UTXO set (triangle hash),
+        // not the block hash.
+        let genesis_hash = *chain.state.utxo_set.keys().next().expect("genesis triangle missing");
+        let parent = chain.state.utxo_set.get(&genesis_hash).unwrap().clone();
+        let children = parent.subdivide();
+        let sub_tx = crate::transaction::SubdivisionTx::new(genesis_hash, children.to_vec(), "alice".to_string(), crate::geometry::Coord::from_num(0), 1);
+        let tx_enum = crate::transaction::Transaction::Subdivision(sub_tx.clone());
+
+        // Save a block and UTXO set so load_blockchain takes the full code path
+        db.save_block(&chain.blocks[0]).unwrap();
+        db.save_utxo_set(&chain.state).unwrap();
+        db.save_difficulty(chain.difficulty).unwrap();
+
+        // Persist mempool tx
+        db.save_mempool_tx(&tx_enum).unwrap();
+
+        // Load blockchain and ensure the mempool entry is loaded into memory
+        let loaded_chain = db.load_blockchain().unwrap();
+        assert_eq!(loaded_chain.mempool.len(), 1);
+
+        // Remove the persisted mempool tx and ensure it's gone after reload
+        let tx_hash = tx_enum.hash();
+        db.remove_mempool_tx(&tx_hash).unwrap();
+
+        let reloaded = db.load_blockchain().unwrap();
+        assert_eq!(reloaded.mempool.len(), 0);
+    }
 }
