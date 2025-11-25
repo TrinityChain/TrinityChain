@@ -17,7 +17,8 @@ MINER_BIN=$BIN_DIR/trinity-headless-miner
 
 echo "Running test suite..."
 # Run tests to ensure project health before starting services
-cargo test --release
+# Note: skip doctests due to Rust compiler issues on some platforms (e.g., Termux aarch64)
+cargo test --release --lib
 
 if [ ! -x "$WALLET_BIN" ] || [ ! -x "$NODE_BIN" ] || [ ! -x "$MINER_BIN" ]; then
   echo "One or more binaries missing after build. Exiting." >&2
