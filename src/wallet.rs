@@ -159,17 +159,10 @@ pub fn load_default_wallet() -> Result<Wallet, ChainError> {
         ));
     }
 
-    // First try to load an unencrypted wallet (created by CLI tools)
-    match Wallet::load(&path) {
-        Ok(w) => Ok(w),
-        Err(_) => {
-            // Fallback to encrypted wallet format
-            let encrypted_wallet = EncryptedWallet::load(&path)?;
-            let password = prompt_password("Enter your wallet password: ")
-                .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
-            encrypted_wallet.decrypt(&password)
-        }
-    }
+    let encrypted_wallet = EncryptedWallet::load(&path)?;
+    let password = prompt_password("Enter your wallet password: ")
+        .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
+    encrypted_wallet.decrypt(&password)
 }
 
 /// Load a named wallet
@@ -183,16 +176,10 @@ pub fn load_named_wallet(name: &str) -> Result<Wallet, ChainError> {
         )));
     }
 
-    // Try plain wallet file first (CLI-created), otherwise try encrypted wallet
-    match Wallet::load(&path) {
-        Ok(w) => Ok(w),
-        Err(_) => {
-            let encrypted_wallet = EncryptedWallet::load(&path)?;
-            let password = prompt_password("Enter your wallet password: ")
-                .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
-            encrypted_wallet.decrypt(&password)
-        }
-    }
+    let encrypted_wallet = EncryptedWallet::load(&path)?;
+    let password = prompt_password("Enter your wallet password: ")
+        .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
+    encrypted_wallet.decrypt(&password)
 }
 
 /// List all available wallets in the wallet directory
@@ -395,6 +382,7 @@ impl EncryptedWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
 
     #[test]

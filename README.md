@@ -1,433 +1,289 @@
 <p align="center">
-  <img src="assets/logo.png" alt="TrinityChain Logo" width="100"/>
+  <img src="assets/logo.png" alt="TrinityChain Logo" width="200"/>
 </p>
+
+<h1 align="center">TrinityChain</h1>
+
 <p align="center">
-  <img src="assets/TrinityChain.svg" alt="TrinityChain Title" width="400"/>
+  <strong>The Geometric Blockchain</strong><br>
+  <em>Where Area = Value</em>
 </p>
 
 <p align="center">
-  <strong>Geometric Proof-of-Work Blockchain</strong>
-</p>
-
-<p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-0.5.0-blue" />
-  <img alt="build" src="https://img.shields.io/badge/build-passing-brightgreen" />
-  <img alt="tests" src="https://img.shields.io/badge/tests-82%20passed-brightgreen" />
-  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue" />
-  <img alt="rust" src="https://img.shields.io/badge/rust-1.70+-orange" />
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#api">API</a> •
+  <a href="#contributing">Contributing</a>
 </p>
 
 ---
 
-TrinityChain is a proof-of-work blockchain where value exists as geometric triangles. Each UTXO is a triangle with three coordinates in 2D space—the area of that triangle is its value. This is a working blockchain with nodes, miners, wallets, and a complete transaction system.
+## Overview
 
-The protocol supports three transaction types: coinbase transactions that mint new triangles as mining rewards, transfer transactions that move triangle ownership between addresses, and subdivision transactions that split triangles into three smaller pieces. Consensus is achieved through SHA-256 proof-of-work with dynamic difficulty adjustment.
+TrinityChain is a revolutionary proof-of-work blockchain where **value is represented as geometric triangles**. Instead of abstract numbers, every UTXO is a triangle with real coordinates—its spendable value equals its geometric area.
 
-Last test run: `2025-11-25 01:00:54Z` (UTC) — 82 tests passing.
-
----
-
-## Installation
-
-### Requirements
-
-- Rust 1.70+
-- SQLite3
-
-### Build
-
-```bash
-git clone https://github.com/TrinityChain/TrinityChain.git
-cd TrinityChain
-cargo build --release
-cargo test --release
+```
+    △ Area = Value
+   /  \
+  /    \  Subdivide into 3 child triangles (Sierpiński)
+ /______\ Transfer ownership while preserving geometry
 ```
 
-Binaries are in `target/release/`.
+**Status:** Functional with tests, CLI tools, and web dashboard. Built by one developer with AI assistance—we welcome contributors!
+
+---
+
+## Features
+
+### Core Innovation: Triangle-Based UTXO
+
+| Operation | Input | Output | Description |
+|-----------|-------|--------|-------------|
+| **Coinbase** | ∅ | 1 △ | Mining reward creates a new triangle |
+| **Transfer** | 1 △ | 1 △ | Change ownership, pay geometric fees |
+| **Subdivision** | 1 △ | 3 △ | Split into Sierpiński children |
+
+### Geometric Fee Model
+
+Transaction fees are paid by **reducing the triangle's geometric area**:
+
+```rust
+// Fee deduction preserves triangle identity
+input_area: 100.0 → fee: 0.1 → output_area: 99.9
+```
+
+The triangle's shape and coordinates remain unchanged—only its spendable value decreases.
+
+### Technical Features
+
+- **Proof-of-Work**: SHA-256 mining with dynamic difficulty adjustment
+- **Cryptography**: secp256k1 signatures, HD wallets with BIP-39 mnemonics
+- **Persistence**: SQLite-backed blockchain storage
+- **Networking**: TCP P2P with WebSocket bridge support
+- **API**: Full REST API + WebSocket for real-time updates
+- **Dashboard**: React-based web interface with live stats
 
 ---
 
 ## Quick Start
 
-The fastest way to get a node and miner running:
+### Prerequisites
+
+- Rust 1.70+ (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- SQLite3
+
+### Build & Test
 
 ```bash
-chmod +x scripts/quickstart.sh
-source "$HOME/.cargo/env"
-./scripts/quickstart.sh
+git clone https://github.com/TrinityChain/TrinityChain.git
+cd TrinityChain
+
+# Build optimized release
+cargo build --release
+
+# Run all tests
+cargo test --lib
 ```
 
-This will build everything, run tests, create a wallet, start a headless node (P2P server), and launch the headless miner. The quickstart miner runs the headless miner in the foreground and prints mined-block messages; to run the interactive miner dashboard use `trinity-miner` instead.
-
-To run the miner in the background:
+### Create a Wallet
 
 ```bash
-./scripts/quickstart.sh --detach-miner
-tail -f logs/node.log logs/miner.log
+# Generate new HD wallet with mnemonic
+./target/release/trinity-wallet-new
+
+# Or restore from mnemonic
+./target/release/trinity-wallet-restore
 ```
 
-### Manual Start
+### Run a Node
 
 ```bash
-# Create a wallet
-target/release/trinity-wallet-new mywalletname
+# Start node with API server on port 3000
+./target/release/trinity-node
 
-# Start the node (headless). The node runs a P2P server on port 9090 by default.
-nohup target/release/trinity-headless-node 9090 > logs/node.log 2>&1 &
-
-# Start mining (interactive dashboard)
-target/release/trinity-miner <your_address>
-
-# Or run the headless miner (non-TUI) which mines N blocks and exits, e.g.:
-target/release/trinity-headless-miner <your_address> --blocks 1
+# Or specify custom port
+./target/release/trinity-node 8080
 ```
 
-Your address is in `~/.trinitychain/wallet_mywalletname.json`.
-
----
-
-## How Value Works
-
-### Triangle UTXOs
-
-Every spendable unit on TrinityChain is a triangle:
-
-```rust
-struct Triangle {
-    vertices: [(f64, f64); 3],  // three points
-    owner: Address,              // public key hash
-    value: f64                   // geometric area
-}
-```
-
-The area is computed with the Shoelace formula. That area is what you spend.
-
-### Transactions
-
-**Coinbase** — Miners create a new triangle when they mine a block. Current reward is 1,000 TRC, halving every 210,000 blocks.
-
-**Transfer** — Send a triangle to another address. The coordinates stay the same, but ownership changes. Fees are paid by reducing the output triangle's area.
-
-**Subdivision** — Split one triangle into three smaller ones using Sierpiński geometry:
-
-```
-    Parent                 After Split
-      /\                      /\   /\
-     /  \        →           /__\_/__\
-    /____\                  \  / \  / /
-                             \/___\/\/
-```
-
-The three children sum to the parent's area, minus any fee.
-
-### Validation
-
-Nodes validate transactions by checking:
-- Digital signatures match the triangle owner
-- Triangles exist and haven't been spent
-- Area is conserved in subdivisions
-- No double-spends
-
-### Proof-of-Work
-
-Miners solve SHA-256 puzzles to add blocks. Difficulty adjusts every 2,016 blocks (the difficulty window is 2,016 blocks). The target block time is 60 seconds (1 minute). The chain with the most accumulated work is the valid chain.
-
----
-
-## Running a Node
-
-### Interactive Mode
+### Mine Blocks
 
 ```bash
-target/release/trinity-node [port]
+# Mine a single block
+./target/release/trinity-mine-block <your_address>
+
+# Parallel mining with multiple threads
+./target/release/trinity-mine-block --threads 4 <your_address>
 ```
 
-Terminal interface with live stats. Press `q` to quit.
-
-### Headless Mode
+### Send Triangles
 
 ```bash
-target/release/trinity-headless-node 9090
-```
-
-Runs in the background, logs to stdout.
-
-### Adding Peers
-
-```bash
-target/release/trinity-headless-node 9090 --peer 192.168.1.50:9090 --peer node.example.com:9090
-```
-
-The node discovers peers through DNS seeds automatically, but you can add specific nodes if needed.
-
----
-
-## Mining
-
-### Interactive Miner
-
-```bash
-target/release/trinity-miner <your_address>
-```
-
-Shows hashrate, blocks found, and network stats. Press `q` to quit.
-
-### Headless Miner
-
-```bash
-target/release/trinity-headless-miner <your_address>
-```
-
-Runs in the background for server deployments.
-
----
-
-## Wallet Management
-
-### Create Wallet
-
-```bash
-target/release/trinity-wallet-new walletname
-```
-
-Generates a new wallet with BIP-39 mnemonic. Wallet file goes to `~/.trinitychain/`.
-
-### Restore Wallet
-
-```bash
-target/release/trinity-wallet-restore
-```
-
-Restore from your mnemonic phrase.
-
-### Backup Wallet
-
-```bash
-target/release/trinity-wallet-backup
-```
-
-Export wallet data for safekeeping.
-
----
-
-## Sending Transactions
-
-```bash
-target/release/trinity-send <recipient_address> <triangle_hash> [memo]
-```
-
-This creates, signs, and broadcasts the transaction.
-
----
-
-## HTTP API
-
-The node runs an HTTP server on port 3000 (set `PORT` env var to change).
-
-### Blockchain Data
-
-```bash
-# Current chain state
-curl http://localhost:3000/api/blockchain/stats
-
-# Recent blocks
-curl http://localhost:3000/api/blockchain/blocks
-
-# Specific block
-curl http://localhost:3000/api/blockchain/block/<hash>
-```
-
-### Address Data
-
-```bash
-# Check balance
-curl http://localhost:3000/api/address/<address>/balance
-
-# List triangles owned
-curl http://localhost:3000/api/address/<address>/triangles
-```
-
-### Submit Transaction
-
-```bash
-curl -X POST http://localhost:3000/api/transaction \
-  -H "Content-Type: application/json" \
-  -d '{"transaction": "<hex_tx>"}'
-```
-
-### Mining Control
-
-```bash
-# Start mining
-curl -X POST http://localhost:3000/api/mining/start
-
-# Stop mining
-curl -X POST http://localhost:3000/api/mining/stop
-
-# Check status
-curl http://localhost:3000/api/mining/status
-```
-
-### Network
-
-```bash
-# List connected peers
-curl http://localhost:3000/api/network/peers
-
-# WebSocket for live updates
-ws://localhost:3000/ws/p2p
+# Transfer a triangle to another address
+./target/release/trinity-send <to_address> <triangle_hash> [memo]
 ```
 
 ---
 
-## Data Storage
+## Architecture
 
-All blockchain data is stored in `trinitychain.db` (SQLite). This includes:
-- All blocks
-- All transactions
-- Current UTXO set
-- Chain metadata
+<p align="center">
+  <img src="assets/architecture.svg" alt="Architecture Diagram" width="600"/>
+</p>
 
-Wallet files are in `~/.trinitychain/`.
-
-### Backups
-
-```bash
-# Backup the blockchain
-cp trinitychain.db trinitychain.db.backup
-
-# Backup wallets
-cp -r ~/.trinitychain ~/.trinitychain.backup
-```
-
----
-
-## Network
-
-Nodes communicate over TCP on port 9090. They discover peers automatically through DNS seeds and share blocks and transactions with connected peers.
-
-If you're behind a firewall:
-
-```bash
-target/release/trinity-headless-node 9090 --peer <known_node_ip>:9090
-```
-
----
-
-## Protocol Specifications
-
-| Parameter | Value |
-|-----------|-------|
-| Block reward (initial) | 1,000 TRC |
-| Halving interval | 210,000 blocks |
-| Target block time | 60 seconds |
-| Difficulty adjustment | Every 2,016 blocks |
-| Max supply | ~420,000,000 TRC |
-| PoW hash function | SHA-256 |
-| Signature algorithm | secp256k1 ECDSA |
-| Key derivation | BIP-39/BIP-32 |
-
----
-
-## Codebase
+### Module Structure
 
 ```
 src/
-├── geometry.rs       # Triangle math and area calculation
-├── transaction.rs    # Transaction types and validation
-├── blockchain.rs     # UTXO set, mempool, consensus rules
-├── network.rs        # P2P networking
-├── miner.rs          # Proof-of-work mining
-├── persistence.rs    # SQLite operations
-├── api.rs            # HTTP and WebSocket server
-├── crypto.rs         # secp256k1 wrappers
-├── wallet.rs         # Wallet operations
-├── hdwallet.rs       # HD wallet derivation
-└── bin/              # CLI programs
+├── geometry.rs      # Triangle primitives, area calculation (Shoelace formula)
+├── transaction.rs   # Coinbase, Transfer, Subdivision transactions
+├── blockchain.rs    # Chain state, UTXO set, mempool, validation
+├── network.rs       # P2P networking, peer discovery, message handling
+├── miner.rs         # PoW mining, difficulty adjustment
+├── persistence.rs   # SQLite database layer
+├── api.rs           # REST API + WebSocket endpoints
+├── crypto.rs        # secp256k1 keys, signatures
+├── wallet.rs        # Wallet management
+└── hdwallet.rs      # BIP-39/BIP-32 HD wallet derivation
+```
+
+### Data Flow
+
+```
+Wallet → Transaction → Mempool → Miner → Block → Blockchain → Persistence
+                         ↑                           ↓
+                    P2P Network ←──────────────── Broadcast
+```
+
+### Precision & Safety
+
+- **Floating-point**: IEEE 754 `f64` with `GEOMETRIC_TOLERANCE = 1e-9`
+- **Concurrency**: `Arc<RwLock<T>>` for P2P, `Arc<Mutex<T>>` for API
+- **Atomic mining**: `AtomicBool` + `AtomicU64` with `SeqCst` ordering
+
+---
+
+## API
+
+The node exposes a REST API on port 3000 (configurable via `PORT` env var).
+
+### Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/blockchain/stats` | GET | Chain height, difficulty, supply stats |
+| `/api/blockchain/blocks` | GET | Recent blocks with rewards |
+| `/api/blockchain/block/:hash` | GET | Block by hash |
+| `/api/address/:addr/balance` | GET | Address balance and triangles |
+| `/api/address/:addr/triangles` | GET | Triangle details with vertices |
+| `/api/transaction` | POST | Submit transaction |
+| `/api/mining/start` | POST | Start mining |
+| `/api/mining/stop` | POST | Stop mining |
+| `/api/mining/status` | GET | Mining status and hashrate |
+| `/api/network/peers` | GET | Connected peers |
+| `/ws/p2p` | WS | WebSocket P2P bridge |
+
+### Example
+
+```bash
+# Get blockchain stats
+curl http://localhost:3000/api/blockchain/stats
+
+# Get address balance
+curl http://localhost:3000/api/address/YOUR_ADDRESS/balance
 ```
 
 ---
 
-## Testing
+## Dashboard
+
+A React-based web dashboard is included for monitoring and interaction.
 
 ```bash
-# Run all tests
-cargo test --release
-
-# Test specific module
-cargo test --release --lib blockchain
-cargo test --release --lib geometry
+cd dashboard
+npm install
+npm run build
 ```
 
-Tests cover geometry calculations, transaction validation, UTXO management, signature verification, block validation, and difficulty adjustment.
+Access at `http://localhost:3000/dashboard` when the node is running.
+
+Features:
+- Live blockchain stats (height, difficulty, supply)
+- Block explorer with transaction details
+- Mining controls (start/stop)
+- Network performance charts
+- Halving countdown
 
 ---
 
-## Troubleshooting
+## Tokenomics
 
-### Build Issues
+| Parameter | Value |
+|-----------|-------|
+| Initial Block Reward | 1,000 TRC |
+| Halving Interval | 210,000 blocks |
+| Max Supply | 420,000,000 TRC |
+| Block Time Target | ~10 seconds |
 
-```bash
-rustup update stable
-cargo clean
-cargo build --release
-```
-
-### Peer Discovery
-
-If the node can't find peers:
-- Check that port 9090 is open in your firewall
-- Use `--peer` to manually add nodes
-- Verify DNS is working
-
-### TUI Problems
-
-The terminal dashboards need:
-- A real terminal (not log redirection)
-- ANSI color support
-- Minimum 80x24 size
-
-### Database Issues
-
-Check integrity:
-```bash
-sqlite3 trinitychain.db "PRAGMA integrity_check;"
-```
+Supply follows a geometric series with halvings, similar to Bitcoin's emission schedule.
 
 ---
 
 ## Documentation
 
-- `ARCHITECTURE_MOC.md` — System architecture
-- `ARCHITECTURE_AUDIT.md` — Data flow
-- `SAFETY_AUDIT.md` — Concurrency and error handling
-- `TRIANGLE_UTXO_AUDIT.md` — Geometric model details
-- `API_ENDPOINTS.md` — Complete API docs
-- `NODE_SETUP.md` — Deployment guide
+Detailed architecture documents are available:
+
+- [`ARCHITECTURE_MOC.md`](ARCHITECTURE_MOC.md) - Visual component map with ASCII diagrams
+- [`ARCHITECTURE_AUDIT.md`](ARCHITECTURE_AUDIT.md) - Data flow and component analysis
+- [`SAFETY_AUDIT.md`](SAFETY_AUDIT.md) - Mutability, concurrency, error handling
+- [`TRIANGLE_UTXO_AUDIT.md`](TRIANGLE_UTXO_AUDIT.md) - Triangle UTXO model deep dive
+- [`API_ENDPOINTS.md`](API_ENDPOINTS.md) - Full API reference
+- [`NODE_SETUP.md`](NODE_SETUP.md) - Production node deployment guide
 
 ---
 
 ## Contributing
 
-Fork the repo, make your changes, add tests, and submit a pull request.
+We actively welcome contributions! This project needs:
 
-Use `cargo fmt` and `cargo clippy`. Write tests for new features. Follow Rust conventions.
+- **Developers**: Rust, React, networking
+- **Reviewers**: Security audits, code review
+- **Testers**: Run nodes, stress testing
+- **Writers**: Documentation, tutorials
 
----
+### How to Contribute
 
-## License
+1. Fork & clone the repository
+2. Create a feature branch: `git checkout -b feature/your-name`
+3. Write tests for your changes
+4. Run `cargo test --lib` and ensure all pass
+5. Submit a PR with a clear description
 
-MIT — see `LICENSE`.
+Look for `good first issue` labels or open an issue describing what you'd like to work on.
+
+### Code Style
+
+- Follow Rust conventions (`cargo fmt`, `cargo clippy`)
+- Add tests for new functionality
+- Document public APIs
 
 ---
 
 ## Links
 
-**Repository:** https://github.com/TrinityChain/TrinityChain  
-**Issues:** https://github.com/TrinityChain/TrinityChain/issues
+- **Repository**: https://github.com/TrinityChain/TrinityChain
+- **Issues**: https://github.com/TrinityChain/TrinityChain/issues
+- **Dashboard**: See `dashboard/README.md`
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
 <p align="center">
-Rust • SQLite • secp256k1 • SHA-256
+  <strong>Built with Rust</strong><br>
+  <em>Thank you for exploring TrinityChain!</em>
 </p>

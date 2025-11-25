@@ -183,79 +183,16 @@ impl Triangle {
         let mid_ca = self.c.midpoint(&self.a);
 
         let parent_hash = Some(self.hash());
-        // Preserve the total effective value when subdividing.
-        // Use `effective_value()` so that if the parent had an explicit `value`
-        // it will be split proportionally; otherwise we split the geometric
-        // area-derived value equally among children.
-        let parent_effective = self.effective_value();
-        let child_value = Some(parent_effective / Coord::from_num(3));
+        let child_value = self.value.map(|v| v / 3);
 
-        let t1 = Triangle::new_with_value(self.a, mid_ab, mid_ca, parent_hash, self.owner.clone(), child_value.unwrap());
-        let t2 = Triangle::new_with_value(mid_ab, self.b, mid_bc, parent_hash, self.owner.clone(), child_value.unwrap());
-        let t3 = Triangle::new_with_value(mid_ca, mid_bc, self.c, parent_hash, self.owner.clone(), child_value.unwrap());
+        let mut t1 = Triangle::new(self.a, mid_ab, mid_ca, parent_hash, self.owner.clone());
+        t1.value = child_value;
+        let mut t2 = Triangle::new(mid_ab, self.b, mid_bc, parent_hash, self.owner.clone());
+        t2.value = child_value;
+        let mut t3 = Triangle::new(mid_ca, mid_bc, self.c, parent_hash, self.owner.clone());
+        t3.value = child_value;
 
         [t1, t2, t3]
-    }
-
-    /// Attempts to reconstruct the parent triangle from three children produced
-    /// by a previous `subdivide()` operation. Returns `Some(parent)` when the
-    /// three children are consistent (share the same `parent_hash`, their
-    /// vertex topology matches a proper subdivision, and owners are identical).
-    ///
-    /// This is a best-effort reconstruction: we derive the parent's vertices
-    /// by counting vertex occurrences across the children (parent corners
-    /// appear once, midpoints appear twice). The returned parent will have
-    /// `parent_hash` set to `None` since we cannot recover the original
-    /// parent's parent hash from children alone.
-    pub fn try_merge(children: &[Triangle; 3]) -> Option<Triangle> {
-        // All children must reference the same parent hash
-        let first_parent = children[0].parent_hash;
-        if first_parent.is_none() {
-            return None;
-        }
-        if children.iter().any(|c| c.parent_hash != first_parent) {
-            return None;
-        }
-
-        use std::collections::HashMap;
-
-        // Count vertex occurrences; parent vertices appear once, midpoints twice
-        let mut counts: HashMap<Point, usize> = HashMap::new();
-        for c in children.iter() {
-            for p in [&c.a, &c.b, &c.c] {
-                *counts.entry(*p).or_insert(0) += 1;
-            }
-        }
-
-        // Extract candidate parent points (occurrence == 1)
-        let parent_points: Vec<Point> = counts
-            .iter()
-            .filter(|(_, &v)| v == 1)
-            .map(|(p, _)| *p)
-            .collect();
-
-        // There must be exactly three unique parent vertices
-        if parent_points.len() != 3 {
-            return None;
-        }
-
-        // Ensure owners are all the same to avoid ambiguous merges
-        let owner = &children[0].owner;
-        if children.iter().any(|c| &c.owner != owner) {
-            return None;
-        }
-
-        // Reconstruct parent value as the sum of effective child values
-        let total_value: Coord = children.iter().map(|c| c.effective_value()).sum();
-
-        Some(Triangle::new_with_value(
-            parent_points[0],
-            parent_points[1],
-            parent_points[2],
-            None,
-            owner.clone(),
-            total_value,
-        ))
     }
 
     // ------------------------------------------------------------------------
@@ -279,6 +216,7 @@ impl Triangle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fixed::types::I32F32;
 
     fn setup_test_triangle() -> Triangle {
         Triangle::new(
@@ -339,15 +277,10 @@ mod tests {
     fn test_subdivision_correctness() {
         let parent = setup_test_triangle();
         let parent_area = parent.area();
-        let parent_value = parent.effective_value();
         let children = parent.subdivide();
         let total_child_area: Coord = children.iter().map(|t| t.area()).sum();
-        let total_child_value: Coord = children.iter().map(|t| t.effective_value()).sum();
 
-        // Geometry: three corner children cover 3/4 of parent area (Sierpiński subdivision)
-        assert!((total_child_area - parent_area * Coord::from_num(0.75)).abs() <= Coord::from_num(1e-6));
-        // Economic: effective values should preserve the parent's effective value
-        assert!((total_child_value - parent_value).abs() <= Coord::from_num(1e-6));
+        assert_eq!(total_child_area, parent_area * Coord::from_num(0.75));
     }
 
     #[test]

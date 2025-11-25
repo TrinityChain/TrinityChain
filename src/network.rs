@@ -27,7 +27,6 @@ impl Node {
     }
 }
 
-#[derive(Clone)]
 pub struct NetworkNode {
     blockchain: Arc<RwLock<Blockchain>>,
     peers: Arc<RwLock<Vec<Node>>>,
