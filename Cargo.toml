@@ -106,3 +106,7 @@ path = "src/bin/trinity-server.rs"
 
 [dev-dependencies]
 axum-test = "14.1.1"
+
+[[bin]]
+name = "trinity-connect"
+path = "src/bin/trinity-connect.rs"
