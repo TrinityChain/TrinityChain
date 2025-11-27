@@ -8,6 +8,7 @@ use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 use trinitychain::wallet;
+use std::collections::HashSet;
 use trinitychain::geometry::Coord;
 
 const LOGO: &str = r#"
@@ -94,13 +95,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open("trinitychain.db")?;
     let mut chain = db.load_blockchain()?;
 
+
+    // Track locked triangles from pending transactions
+    let mut locked_triangles = HashSet::new();
+
+    // Load existing mempool from disk
+    if let Ok(mempool_data) = std::fs::read_to_string("mempool.json") {
+        let transactions: Result<Vec<Transaction>, _> = serde_json::from_str(&mempool_data);
+        if let Ok(txs) = transactions {
+            let txs_clone = txs.clone();
+            
+            for tx in txs {
+                let _ = chain.mempool.add_transaction(tx);
+            }
+            
+            if chain.mempool.len() > 0 {
+                pb.println(format!("📬 {} pending transaction(s) already in mempool", chain.mempool.len()));
+            }
+            
+            // Collect locked UTXOs from pending transfers
+            for tx in txs_clone {
+                if let Transaction::Transfer(transfer_tx) = tx {
+                    locked_triangles.insert(transfer_tx.input_hash);
+                }
+            }
+        }
+    }
     pb.set_message("Finding a suitable triangle...");
 
     let (input_hash, _input_triangle) = chain
         .state
         .utxo_set
         .iter()
-        .find(|(_, triangle)| triangle.owner == from_address && triangle.effective_value() >= amount_coord)
+        .find(|(hash, triangle)| triangle.owner == from_address && triangle.effective_value() >= amount_coord && !locked_triangles.contains(*hash))
         .ok_or("No single triangle with sufficient value found for the transfer")?;
 
     pb.finish_and_clear();

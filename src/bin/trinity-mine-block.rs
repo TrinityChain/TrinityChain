@@ -8,6 +8,7 @@ use std::env;
 use trinitychain::wallet;
 use secp256k1::SecretKey;
 
+use std::collections::HashSet;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
 
@@ -60,9 +61,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret_bytes = hex::decode(secret_hex)?;
     let secret_key = SecretKey::from_slice(&secret_bytes)?;
     let keypair = KeyPair::from_secret_key(secret_key);
-
-    let parent_hash = *chain.state.utxo_set.keys().next()
-        .ok_or("No UTXOs available")?;
+    // Get pending transactions from mempool EARLY to check for conflicts
+    let mempool_txs = chain.mempool.get_transactions_by_fee(100);
+    
+    // Collect locked triangles from pending transfers
+    let mut locked_triangles = HashSet::new();
+    for tx in &mempool_txs {
+        if let Transaction::Transfer(transfer_tx) = tx {
+            locked_triangles.insert(transfer_tx.input_hash);
+        }
+    }
+    
+    // Select parent triangle, avoiding locked ones
+    let parent_hash = *chain.state.utxo_set.keys()
+        .find(|hash| !locked_triangles.contains(*hash))
+        .ok_or("No UTXOs available for subdivision")?;
     let parent_triangle = chain.state.utxo_set.get(&parent_hash)
         .ok_or("Parent triangle not found")?
         .clone();
@@ -90,7 +103,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         beneficiary_address: address
     };
 
-    let mempool_txs = chain.mempool.get_transactions_by_fee(100);
 
     let mut transactions = vec![Transaction::Coinbase(coinbase)];
     transactions.extend(mempool_txs);
