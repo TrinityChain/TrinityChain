@@ -144,7 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.set_message("Creating transaction...");
 
-    let fee = Coord::from_num(0); // TODO: Dynamic fee calculation
+    let fee = Coord::from_num(0);
     let mut tx = TransferTx::new(
         *input_hash,
         to_address.to_string(),
@@ -167,6 +167,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let transaction = Transaction::Transfer(tx);
     chain.mempool.add_transaction(transaction.clone())?;
+
+    pb.set_message("Saving mempool...");
+    let all_txs = chain.mempool.get_all_transactions();
+    std::fs::write("mempool.json", serde_json::to_string(&all_txs)?)?;
 
     pb.set_message("Broadcasting to network...");
 

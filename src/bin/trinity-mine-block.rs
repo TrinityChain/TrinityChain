@@ -10,8 +10,8 @@ use secp256k1::SecretKey;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
+
     let args: Vec<String> = env::args().collect();
-    // check for --threads N
     let mut threads: usize = 1;
     let mut i = 1;
     while i < args.len() {
@@ -30,12 +30,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open("trinitychain.db")?;
     let mut chain = db.load_blockchain()?;
 
+    // Load mempool from disk if it exists
+    if let Ok(mempool_data) = std::fs::read_to_string("mempool.json") {
+        let transactions: Result<Vec<Transaction>, _> = serde_json::from_str(&mempool_data);
+        if let Ok(txs) = transactions {
+            for tx in txs {
+                let _ = chain.mempool.add_transaction(tx);
+            }
+            println!("📬 Loaded {} pending transactions from mempool", chain.mempool.len());
+        }
+    }
+
     let current_height = chain.blocks.last()
         .map(|b| b.header.height)
         .ok_or("Blockchain is empty")?;
     println!("📊 Current height: {}", current_height);
 
-    // Ensure wallet exists, create if it doesn't
     let wallet_path = wallet::get_default_wallet_path()?;
     if !wallet_path.exists() {
         println!("👛 No default wallet found. Creating a new one...");
@@ -60,25 +70,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hash_hex = hex::encode(parent_hash);
     let hash_prefix = &hash_hex[..16];
     println!("🔺 Subdividing triangle {}...", hash_prefix);
+
     let children = parent_triangle.subdivide();
 
-    let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address.clone(), trinitychain::geometry::Coord::from_num(0), chain.blocks.len() as u64);
+    let mut tx = SubdivisionTx::new(
+        parent_hash,
+        children.to_vec(),
+        address.clone(),
+        trinitychain::geometry::Coord::from_num(0),
+        chain.blocks.len() as u64
+    );
     let message = tx.signable_message();
     let signature = keypair.sign(&message)?;
     let public_key = keypair.public_key.serialize().to_vec();
     tx.sign(signature, public_key);
 
-    let coinbase = CoinbaseTx { reward_area: trinitychain::geometry::Coord::from_num(1000), beneficiary_address: address };
+    let coinbase = CoinbaseTx {
+        reward_area: trinitychain::geometry::Coord::from_num(1000),
+        beneficiary_address: address
+    };
 
-    // Include pending transactions from mempool (prioritized by fee)
-    let mempool_txs = chain.mempool.get_transactions_by_fee(100); // Get up to 100 highest-fee transactions
+    let mempool_txs = chain.mempool.get_transactions_by_fee(100);
 
     let mut transactions = vec![Transaction::Coinbase(coinbase)];
-
-    // Add mempool transactions first (they have fees!)
     transactions.extend(mempool_txs);
-
-    // Then add our subdivision transaction
     transactions.push(Transaction::Subdivision(tx));
 
     println!("⛏️  Mining block (difficulty {})...", chain.difficulty);
@@ -103,9 +118,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Block mined! Hash: {}", new_hash_prefix);
 
     chain.apply_block(new_block.clone())?;
-
     db.save_block(&new_block)?;
     db.save_utxo_set(&chain.state)?;
+
+    // Clear mempool file after mining
+    let _ = std::fs::remove_file("mempool.json");
 
     println!("\n🎉 Block {} mined successfully!", chain.blocks.len() - 1);
     println!("   UTXOs: {}", chain.state.count());
