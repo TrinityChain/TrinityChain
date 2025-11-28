@@ -20,6 +20,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::io;
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 struct NodeStats {
@@ -32,6 +33,7 @@ struct NodeStats {
     blocks_sent: u64,
     status: String,
     peers: Vec<String>,
+    last_block_hash: String,
 }
 
 impl Default for NodeStats {
@@ -46,7 +48,16 @@ impl Default for NodeStats {
             blocks_sent: 0,
             status: "Initializing...".to_string(),
             peers: Vec::new(),
+            last_block_hash: "N/A".to_string(),
         }
+    }
+}
+
+fn format_hash(hash: &str) -> String {
+    if hash.len() > 20 {
+        format!("{}...{}", &hash[..10], &hash[hash.len()-10..])
+    } else {
+        hash.to_string()
     }
 }
 
@@ -58,7 +69,7 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &NodeStats) {
         .margin(1)
         .constraints([
             Constraint::Length(3),  // Title
-            Constraint::Length(8),  // Status
+            Constraint::Length(9),  // Status (increased for block hash)
             Constraint::Length(8),  // Stats
             Constraint::Min(5),     // Peers
             Constraint::Length(3),  // Footer
@@ -89,6 +100,10 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &NodeStats) {
         Line::from(vec![
             Span::styled("   Uptime: ", Style::default().fg(Color::Gray)),
             Span::styled(format!("{}m {}s", stats.uptime_secs / 60, stats.uptime_secs % 60), Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::styled("   Last Block: ", Style::default().fg(Color::Gray)),
+            Span::styled(format_hash(&stats.last_block_hash), Style::default().fg(Color::Yellow)),
         ]),
         Line::from(vec![
             Span::styled("   Network Activity: ", Style::default().fg(Color::Gray)),
@@ -185,10 +200,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open(&db_path).expect("Failed to open database");
     let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
 
+    let initial_height = blockchain.blocks.last().map(|b| b.header.height).unwrap_or(0);
+    let initial_hash = blockchain.blocks.last()
+        .map(|b| hex::encode(b.hash))
+        .unwrap_or_else(|| "N/A".to_string());
+
     let stats = Arc::new(Mutex::new(NodeStats {
         port,
-        chain_height: blockchain.blocks.last().map(|b| b.header.height).unwrap_or(0),
+        chain_height: initial_height,
         utxo_count: blockchain.state.count(),
+        last_block_hash: initial_hash,
         status: "Starting...".to_string(),
         ..Default::default()
     }));
@@ -196,22 +217,70 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stats_clone = Arc::clone(&stats);
     let start_time = Instant::now();
 
-    // Spawn node server
-    let node = NetworkNode::new(blockchain, db_path);
+    // Create network node
+    let node = Arc::new(NetworkNode::new(blockchain, db_path.clone()));
+    let node_clone = node.clone();
 
+    // Connect to peer if specified
     if args.len() >= 4 && args[2] == "--peer" {
-        let peer_addr = &args[3];
+        let peer_addr = args[3].clone();
         stats.lock().unwrap().peers.push(peer_addr.clone());
         stats.lock().unwrap().peer_count = 1;
+
+        let node_for_connect = node.clone();
+        tokio::spawn(async move {
+            if let Some((host, port_str)) = peer_addr.split_once(':') {
+                if let Ok(peer_port) = port_str.parse::<u16>() {
+                    println!("🔗 Connecting to peer {}...", peer_addr);
+                    if let Err(e) = node_for_connect.connect_peer(host.to_string(), peer_port).await {
+                        eprintln!("⚠️  Failed to connect to peer: {}", e);
+                    } else {
+                        println!("✅ Connected to peer {}", peer_addr);
+                    }
+                }
+            }
+        });
     }
 
+    // Start P2P server
+    tokio::spawn(async move {
+        if let Err(e) = node_clone.start_server(port).await {
+            eprintln!("❌ Network error: {}", e);
+        }
+    });
+
+    // Stats update task
+    let stats_update = Arc::clone(&stats);
+    let node_for_stats = node.clone();
     let node_handle = tokio::spawn(async move {
-        // Update status periodically
         loop {
             {
-                let mut s = stats_clone.lock().unwrap();
+                let height = node_for_stats.get_height().await;
+                let peer_count = node_for_stats.peers_count().await;
+                let peers_list = node_for_stats.list_peers().await;
+                
+                let mut s = stats_update.lock().unwrap();
                 s.status = "Running".to_string();
                 s.uptime_secs = start_time.elapsed().as_secs();
+                
+                // Update chain height and block hash if changed
+                if height != s.chain_height {
+                    s.blocks_received += 1;
+                    s.chain_height = height;
+                    
+                    // Get latest block hash from the node's blockchain
+                    let db = Database::open(&db_path).ok();
+                    if let Some(db) = db {
+                        if let Ok(chain) = db.load_blockchain() {
+                            if let Some(last_block) = chain.blocks.last() {
+                                s.last_block_hash = hex::encode(last_block.hash);
+                            }
+                        }
+                    }
+                }
+                
+                s.peer_count = peer_count;
+                s.peers = peers_list.iter().map(|p| p.addr()).collect();
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
