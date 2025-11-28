@@ -1,10 +1,11 @@
 <div align="center">
 
-![Trinity Chain Logo](documentation/assets/trinitychain_logo.png)
+<img src="documentation/assets/logo.png" alt="TrinityChain Logo" width="200"/>
 
-[![Build Status](https://github.com/TrinityChain/TrinityChain/actions/workflows/rust.yml/badge.svg)](https://github.com/TrinityChain/TrinityChain/actions/workflows/rust.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Rust 1.70+](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+![Trinity Chain](documentation/assets/text.png)
+
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Rust 1.70+](https://img.shields.io/badge/rust-1.70%2B-orange.svg)
 
 **A blockchain where value is geometric area**
 
