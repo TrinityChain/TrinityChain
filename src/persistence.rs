@@ -1,11 +1,11 @@
 //! Database persistence layer for TrinityChain
 
-use rusqlite::{Connection, params};
-use crate::blockchain::{Blockchain, Block, BlockHeader, TriangleState};
+use crate::blockchain::{Block, BlockHeader, Blockchain, TriangleState};
+use crate::error::ChainError;
+use crate::geometry::Triangle;
 use crate::mempool::Mempool;
 use crate::transaction::Transaction;
-use crate::geometry::Triangle;
-use crate::error::ChainError;
+use rusqlite::{params, Connection};
 use std::collections::HashMap;
 
 pub struct Database {
@@ -29,7 +29,8 @@ impl Database {
                 transactions TEXT NOT NULL
             )",
             [],
-        ).map_err(|e| ChainError::DatabaseError(format!("Failed to create blocks table: {}", e)))?;
+        )
+        .map_err(|e| ChainError::DatabaseError(format!("Failed to create blocks table: {}", e)))?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS utxo_set (
@@ -37,7 +38,10 @@ impl Database {
                 triangle_data TEXT NOT NULL
             )",
             [],
-        ).map_err(|e| ChainError::DatabaseError(format!("Failed to create utxo_set table: {}", e)))?;
+        )
+        .map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to create utxo_set table: {}", e))
+        })?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS metadata (
@@ -45,14 +49,18 @@ impl Database {
                 value TEXT NOT NULL
             )",
             [],
-        ).map_err(|e| ChainError::DatabaseError(format!("Failed to create metadata table: {}", e)))?;
+        )
+        .map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to create metadata table: {}", e))
+        })?;
 
         Ok(Database { conn })
     }
 
     pub fn save_block(&self, block: &Block) -> Result<(), ChainError> {
-        let transactions_json = serde_json::to_string(&block.transactions)
-            .map_err(|e| ChainError::DatabaseError(format!("Failed to serialize transactions: {}", e)))?;
+        let transactions_json = serde_json::to_string(&block.transactions).map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to serialize transactions: {}", e))
+        })?;
 
         self.conn.execute(
             "INSERT OR REPLACE INTO blocks (height, hash, previous_hash, timestamp, difficulty, nonce, merkle_root, transactions)
@@ -74,24 +82,28 @@ impl Database {
 
     pub fn save_utxo_set(&self, state: &TriangleState) -> Result<(), ChainError> {
         // Use a transaction for atomic UTXO set update
-        let tx = self.conn.unchecked_transaction()
-            .map_err(|e| ChainError::DatabaseError(format!("Failed to start transaction: {}", e)))?;
+        let tx = self.conn.unchecked_transaction().map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to start transaction: {}", e))
+        })?;
 
         tx.execute("DELETE FROM utxo_set", [])
             .map_err(|e| ChainError::DatabaseError(format!("Failed to clear utxo_set: {}", e)))?;
 
         for (hash, triangle) in &state.utxo_set {
-            let triangle_json = serde_json::to_string(triangle)
-                .map_err(|e| ChainError::DatabaseError(format!("Failed to serialize triangle: {}", e)))?;
+            let triangle_json = serde_json::to_string(triangle).map_err(|e| {
+                ChainError::DatabaseError(format!("Failed to serialize triangle: {}", e))
+            })?;
 
             tx.execute(
                 "INSERT INTO utxo_set (hash, triangle_data) VALUES (?1, ?2)",
                 params![hash.to_vec(), triangle_json],
-            ).map_err(|e| ChainError::DatabaseError(format!("Failed to save UTXO: {}", e)))?;
+            )
+            .map_err(|e| ChainError::DatabaseError(format!("Failed to save UTXO: {}", e)))?;
         }
 
-        tx.commit()
-            .map_err(|e| ChainError::DatabaseError(format!("Failed to commit transaction: {}", e)))?;
+        tx.commit().map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to commit transaction: {}", e))
+        })?;
 
         Ok(())
     }
@@ -99,14 +111,18 @@ impl Database {
     pub fn load_utxo_set(&self) -> Result<TriangleState, ChainError> {
         let mut utxo_set = HashMap::new();
 
-        let mut stmt = self.conn.prepare("SELECT hash, triangle_data FROM utxo_set")
+        let mut stmt = self
+            .conn
+            .prepare("SELECT hash, triangle_data FROM utxo_set")
             .map_err(|e| ChainError::DatabaseError(format!("Failed to prepare query: {}", e)))?;
 
-        let rows = stmt.query_map([], |row| {
-            let hash_bytes: Vec<u8> = row.get(0)?;
-            let triangle_json: String = row.get(1)?;
-            Ok((hash_bytes, triangle_json))
-        }).map_err(|e| ChainError::DatabaseError(format!("Failed to query UTXO set: {}", e)))?;
+        let rows = stmt
+            .query_map([], |row| {
+                let hash_bytes: Vec<u8> = row.get(0)?;
+                let triangle_json: String = row.get(1)?;
+                Ok((hash_bytes, triangle_json))
+            })
+            .map_err(|e| ChainError::DatabaseError(format!("Failed to query UTXO set: {}", e)))?;
 
         for row_result in rows {
             let (hash_bytes, triangle_json) = row_result
@@ -115,8 +131,9 @@ impl Database {
             let mut hash = [0u8; 32];
             hash.copy_from_slice(&hash_bytes);
 
-            let triangle: Triangle = serde_json::from_str(&triangle_json)
-                .map_err(|e| ChainError::DatabaseError(format!("Failed to deserialize triangle: {}", e)))?;
+            let triangle: Triangle = serde_json::from_str(&triangle_json).map_err(|e| {
+                ChainError::DatabaseError(format!("Failed to deserialize triangle: {}", e))
+            })?;
 
             utxo_set.insert(hash, triangle);
         }
@@ -128,23 +145,32 @@ impl Database {
     }
 
     pub fn save_difficulty(&self, difficulty: u64) -> Result<(), ChainError> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('difficulty', ?1)",
-            params![difficulty.to_string()],
-        ).map_err(|e| ChainError::DatabaseError(format!("Failed to save difficulty: {}", e)))?;
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES ('difficulty', ?1)",
+                params![difficulty.to_string()],
+            )
+            .map_err(|e| ChainError::DatabaseError(format!("Failed to save difficulty: {}", e)))?;
 
         Ok(())
     }
 
     /// Atomically saves a block and the associated blockchain state
     /// This ensures database consistency by wrapping all operations in a transaction
-    pub fn save_blockchain_state(&self, block: &Block, state: &TriangleState, difficulty: u64) -> Result<(), ChainError> {
-        let tx = self.conn.unchecked_transaction()
-            .map_err(|e| ChainError::DatabaseError(format!("Failed to start transaction: {}", e)))?;
+    pub fn save_blockchain_state(
+        &self,
+        block: &Block,
+        state: &TriangleState,
+        difficulty: u64,
+    ) -> Result<(), ChainError> {
+        let tx = self.conn.unchecked_transaction().map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to start transaction: {}", e))
+        })?;
 
         // Save block
-        let transactions_json = serde_json::to_string(&block.transactions)
-            .map_err(|e| ChainError::DatabaseError(format!("Failed to serialize transactions: {}", e)))?;
+        let transactions_json = serde_json::to_string(&block.transactions).map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to serialize transactions: {}", e))
+        })?;
 
         tx.execute(
             "INSERT OR REPLACE INTO blocks (height, hash, previous_hash, timestamp, difficulty, nonce, merkle_root, transactions)
@@ -166,24 +192,28 @@ impl Database {
             .map_err(|e| ChainError::DatabaseError(format!("Failed to clear utxo_set: {}", e)))?;
 
         for (hash, triangle) in &state.utxo_set {
-            let triangle_json = serde_json::to_string(triangle)
-                .map_err(|e| ChainError::DatabaseError(format!("Failed to serialize triangle: {}", e)))?;
+            let triangle_json = serde_json::to_string(triangle).map_err(|e| {
+                ChainError::DatabaseError(format!("Failed to serialize triangle: {}", e))
+            })?;
 
             tx.execute(
                 "INSERT INTO utxo_set (hash, triangle_data) VALUES (?1, ?2)",
                 params![hash.to_vec(), triangle_json],
-            ).map_err(|e| ChainError::DatabaseError(format!("Failed to save UTXO: {}", e)))?;
+            )
+            .map_err(|e| ChainError::DatabaseError(format!("Failed to save UTXO: {}", e)))?;
         }
 
         // Save difficulty
         tx.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('difficulty', ?1)",
             params![difficulty.to_string()],
-        ).map_err(|e| ChainError::DatabaseError(format!("Failed to save difficulty: {}", e)))?;
+        )
+        .map_err(|e| ChainError::DatabaseError(format!("Failed to save difficulty: {}", e)))?;
 
         // Commit all changes atomically
-        tx.commit()
-            .map_err(|e| ChainError::DatabaseError(format!("Failed to commit transaction: {}", e)))?;
+        tx.commit().map_err(|e| {
+            ChainError::DatabaseError(format!("Failed to commit transaction: {}", e))
+        })?;
 
         Ok(())
     }
@@ -194,44 +224,50 @@ impl Database {
              FROM blocks ORDER BY height ASC"
         ).map_err(|e| ChainError::DatabaseError(format!("Failed to prepare query: {}", e)))?;
 
-        let blocks_iter = stmt.query_map([], |row| {
-            let transactions_json: String = row.get(7)?;
-            let transactions: Vec<Transaction> = serde_json::from_str(&transactions_json)
-                .map_err(|_e| rusqlite::Error::InvalidQuery)?;
+        let blocks_iter = stmt
+            .query_map([], |row| {
+                let transactions_json: String = row.get(7)?;
+                let transactions: Vec<Transaction> = serde_json::from_str(&transactions_json)
+                    .map_err(|_e| rusqlite::Error::InvalidQuery)?;
 
-            let height: i64 = row.get(0)?;
-            let timestamp: i64 = row.get(3)?;
-            let difficulty: i64 = row.get(4)?;
-            let nonce: i64 = row.get(5)?;
-            let hash_vec: Vec<u8> = row.get(1)?;
-            let previous_hash_vec: Vec<u8> = row.get(2)?;
-            let merkle_root_vec: Vec<u8> = row.get(6)?;
+                let height: i64 = row.get(0)?;
+                let timestamp: i64 = row.get(3)?;
+                let difficulty: i64 = row.get(4)?;
+                let nonce: i64 = row.get(5)?;
+                let hash_vec: Vec<u8> = row.get(1)?;
+                let previous_hash_vec: Vec<u8> = row.get(2)?;
+                let merkle_root_vec: Vec<u8> = row.get(6)?;
 
-            let mut hash = [0u8; 32];
-            hash.copy_from_slice(&hash_vec);
-            let mut previous_hash = [0u8; 32];
-            previous_hash.copy_from_slice(&previous_hash_vec);
-            let mut merkle_root = [0u8; 32];
-            merkle_root.copy_from_slice(&merkle_root_vec);
+                let mut hash = [0u8; 32];
+                hash.copy_from_slice(&hash_vec);
+                let mut previous_hash = [0u8; 32];
+                previous_hash.copy_from_slice(&previous_hash_vec);
+                let mut merkle_root = [0u8; 32];
+                merkle_root.copy_from_slice(&merkle_root_vec);
 
-            Ok(Block {
-                header: BlockHeader {
-                    height: height as u64,
-                    previous_hash,
-                    timestamp,
-                    difficulty: difficulty as u64,
-                    nonce: nonce as u64,
-                    merkle_root,
-                    headline: None, // Headlines not stored in old blocks
-                },
-                hash,
-                transactions,
+                Ok(Block {
+                    header: BlockHeader {
+                        height: height as u64,
+                        previous_hash,
+                        timestamp,
+                        difficulty: difficulty as u64,
+                        nonce: nonce as u64,
+                        merkle_root,
+                        headline: None, // Headlines not stored in old blocks
+                    },
+                    hash,
+                    transactions,
+                })
             })
-        }).map_err(|e| ChainError::DatabaseError(format!("Failed to query blocks: {}", e)))?;
+            .map_err(|e| ChainError::DatabaseError(format!("Failed to query blocks: {}", e)))?;
 
         let mut blocks = Vec::new();
         for block_result in blocks_iter {
-            blocks.push(block_result.map_err(|e| ChainError::DatabaseError(format!("Failed to load block: {}", e)))?);
+            blocks.push(
+                block_result.map_err(|e| {
+                    ChainError::DatabaseError(format!("Failed to load block: {}", e))
+                })?,
+            );
         }
 
         if blocks.is_empty() {
@@ -239,37 +275,48 @@ impl Database {
         }
 
         let mut utxo_set = HashMap::new();
-        let mut stmt = self.conn.prepare("SELECT hash, triangle_data FROM utxo_set")
-            .map_err(|e| ChainError::DatabaseError(format!("Failed to prepare UTXO query: {}", e)))?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT hash, triangle_data FROM utxo_set")
+            .map_err(|e| {
+                ChainError::DatabaseError(format!("Failed to prepare UTXO query: {}", e))
+            })?;
 
-        let utxo_iter = stmt.query_map([], |row| {
-            let hash_vec: Vec<u8> = row.get(0)?;
-            let mut hash = [0u8; 32];
-            hash.copy_from_slice(&hash_vec);
-            let triangle_json: String = row.get(1)?;
-            let triangle: Triangle = serde_json::from_str(&triangle_json)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?;
-            Ok((hash, triangle))
-        }).map_err(|e| ChainError::DatabaseError(format!("Failed to query UTXOs: {}", e)))?;
+        let utxo_iter = stmt
+            .query_map([], |row| {
+                let hash_vec: Vec<u8> = row.get(0)?;
+                let mut hash = [0u8; 32];
+                hash.copy_from_slice(&hash_vec);
+                let triangle_json: String = row.get(1)?;
+                let triangle: Triangle = serde_json::from_str(&triangle_json)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?;
+                Ok((hash, triangle))
+            })
+            .map_err(|e| ChainError::DatabaseError(format!("Failed to query UTXOs: {}", e)))?;
 
         for utxo_result in utxo_iter {
-            let (hash, triangle) = utxo_result.map_err(|e| ChainError::DatabaseError(format!("Failed to load UTXO: {}", e)))?;
+            let (hash, triangle) = utxo_result
+                .map_err(|e| ChainError::DatabaseError(format!("Failed to load UTXO: {}", e)))?;
             utxo_set.insert(hash, triangle);
         }
 
         // Load difficulty from metadata, but verify against actual blocks
-        let metadata_difficulty: u64 = self.conn.query_row(
-            "SELECT value FROM metadata WHERE key = 'difficulty'",
-            [],
-            |row| {
-                let val: String = row.get(0)?;
-                Ok(val.parse::<u64>().unwrap_or(2))
-            }
-        ).unwrap_or(2);
+        let metadata_difficulty: u64 = self
+            .conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = 'difficulty'",
+                [],
+                |row| {
+                    let val: String = row.get(0)?;
+                    Ok(val.parse::<u64>().unwrap_or(2))
+                },
+            )
+            .unwrap_or(2);
 
         // IMPORTANT: Use the difficulty from the most recent block as source of truth
         // The metadata might be stale due to crashes or non-atomic writes
-        let actual_difficulty = blocks.last()
+        let actual_difficulty = blocks
+            .last()
             .map(|block| block.header.difficulty)
             .unwrap_or(2);
 

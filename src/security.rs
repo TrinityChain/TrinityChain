@@ -87,6 +87,12 @@ pub struct NetworkPolicy {
     socks5_proxy: Option<String>,
 }
 
+impl Default for NetworkPolicy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetworkPolicy {
     /// Create a new network policy
     pub fn new() -> Self {
@@ -326,7 +332,7 @@ impl SecurityManager {
         rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
 
         Ok(PeerChallenge {
-            nonce: hex::encode(&nonce_bytes),
+            nonce: hex::encode(nonce_bytes),
             public_key: hex::encode(self.node_keypair.public_key_bytes()),
             timestamp: current_timestamp(),
         })
@@ -369,11 +375,7 @@ impl SecurityManager {
         let signature = hex::decode(&response.signature)
             .map_err(|e| ChainError::AuthenticationError(format!("Invalid signature: {}", e)))?;
 
-        crate::crypto::verify_signature(
-            &public_key_bytes,
-            challenge.nonce.as_bytes(),
-            &signature,
-        )?;
+        crate::crypto::verify_signature(&public_key_bytes, challenge.nonce.as_bytes(), &signature)?;
 
         // Mark peer as authenticated
         let mut peers = self.peers.write();
@@ -467,7 +469,9 @@ mod tests {
 
         // Allow private network
         policy.add_rule(FirewallRule::Allow(
-            "192.168.0.0/16".parse().expect("Failed to parse IP network"),
+            "192.168.0.0/16"
+                .parse()
+                .expect("Failed to parse IP network"),
         ));
 
         // Check IP addresses

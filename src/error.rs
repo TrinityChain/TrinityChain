@@ -19,6 +19,8 @@ pub enum ChainError {
     MempoolFull,
     IoError(String),
     BincodeError(String),
+    ForkNotFound,
+    InvalidBlock(String),
 }
 
 impl fmt::Display for ChainError {
@@ -39,6 +41,8 @@ impl fmt::Display for ChainError {
             ChainError::MempoolFull => write!(f, "Mempool is full"),
             ChainError::IoError(msg) => write!(f, "IO error: {}", msg),
             ChainError::BincodeError(msg) => write!(f, "Bincode error: {}", msg),
+            ChainError::ForkNotFound => write!(f, "Fork not found"),
+            ChainError::InvalidBlock(msg) => write!(f, "Invalid block: {}", msg),
         }
     }
 }

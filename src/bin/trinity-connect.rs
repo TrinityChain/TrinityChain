@@ -1,18 +1,24 @@
-use trinitychain::network::NetworkNode;
-use trinitychain::blockchain::Blockchain;
-use trinitychain::persistence::Database;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use trinitychain::blockchain::Blockchain;
+use trinitychain::network::NetworkNode;
+use trinitychain::persistence::Database;
 
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 { print_usage(); return; }
-    
+    if args.len() < 2 {
+        print_usage();
+        return;
+    }
+
     match args[1].as_str() {
         "peer" => {
-            if args.len() < 3 { eprintln!("Usage: trinity-connect peer <ip:port>"); return; }
+            if args.len() < 3 {
+                eprintln!("Usage: trinity-connect peer <ip:port>");
+                return;
+            }
             connect_peer(&args[2]).await;
         }
         "info" => show_info().await,
@@ -25,13 +31,16 @@ async fn connect_peer(addr: &str) {
     let db = Database::open("trinitychain.db").expect("DB open failed");
     let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
     let node = Arc::new(NetworkNode::new(Arc::new(RwLock::new(blockchain))));
-    
+
     let parts: Vec<&str> = addr.split(':').collect();
-    if parts.len() != 2 { eprintln!("❌ Format: IP:PORT"); return; }
-    
+    if parts.len() != 2 {
+        eprintln!("❌ Format: IP:PORT");
+        return;
+    }
+
     let host = parts[0].to_string();
     let port = parts[1].parse::<u16>().unwrap_or(8334);
-    
+
     match node.clone().connect_peer(host, port).await {
         Ok(_) => println!("✅ Connected! Syncing..."),
         Err(e) => eprintln!("❌ Failed: {}", e),
@@ -41,7 +50,11 @@ async fn connect_peer(addr: &str) {
 async fn show_info() {
     println!("🔺 TrinityChain Network Info");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    if let Ok(output) = std::process::Command::new("sh").arg("-c").arg("ip addr show | grep 'inet ' | awk '{print $2}' | cut -d/ -f1").output() {
+    if let Ok(output) = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("ip addr show | grep 'inet ' | awk '{print $2}' | cut -d/ -f1")
+        .output()
+    {
         let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !ip.is_empty() {
             println!("📡 Your IP: {}", ip);

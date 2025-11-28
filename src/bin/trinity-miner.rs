@@ -1,14 +1,10 @@
 //! Miner CLI for TrinityChain - Clean TUI edition!
 
-use trinitychain::blockchain::{Blockchain, Block};
-use trinitychain::persistence::Database;
-use trinitychain::transaction::{Transaction, CoinbaseTx};
-use trinitychain::network::NetworkNode;
-use std::env;
-use std::time::{Duration, Instant};
-use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
-use tokio::time::sleep;
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -17,12 +13,16 @@ use ratatui::{
     widgets::{Block as TuiBlock, Borders, Gauge, Paragraph, Sparkline},
     Terminal,
 };
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use std::env;
 use std::io;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, RwLock};
+use tokio::time::sleep;
+use trinitychain::blockchain::{Block, Blockchain};
+use trinitychain::network::NetworkNode;
+use trinitychain::persistence::Database;
+use trinitychain::transaction::{CoinbaseTx, Transaction};
 
 #[derive(Clone)]
 struct MiningStats {
@@ -43,7 +43,7 @@ struct MiningStats {
     last_block_hash: String,
     last_block_time: f64,
     recent_blocks: Vec<(u64, String, String)>, // (height, hash, parent_hash)
-    hashrate_history: Vec<u64>, // Last 20 hashrate samples
+    hashrate_history: Vec<u64>,                // Last 20 hashrate samples
 }
 
 impl Default for MiningStats {
@@ -77,7 +77,7 @@ fn format_number(num: u64) -> String {
     let chars: Vec<char> = num_str.chars().collect();
 
     for (i, &ch) in chars.iter().enumerate() {
-        if i > 0 && (chars.len() - i) % 3 == 0 {
+        if i > 0 && (chars.len() - i).is_multiple_of(3) {
             result.push(',');
         }
         result.push(ch);
@@ -87,7 +87,7 @@ fn format_number(num: u64) -> String {
 
 fn format_hash(hash: &str) -> String {
     if hash.len() > 20 {
-        format!("{}...{}", &hash[..10], &hash[hash.len()-10..])
+        format!("{}...{}", &hash[..10], &hash[hash.len() - 10..])
     } else {
         hash.to_string()
     }
@@ -112,14 +112,21 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
         .split(size);
 
     // Title - Centered and bold
-    let title = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("⛏️   ", Style::default().fg(Color::Yellow)),
-            Span::styled("TRINITY CHAIN MINER", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::styled("   ⛏️", Style::default().fg(Color::Yellow)),
-        ]),
-    ])
-    .block(TuiBlock::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)))
+    let title = Paragraph::new(vec![Line::from(vec![
+        Span::styled("⛏️   ", Style::default().fg(Color::Yellow)),
+        Span::styled(
+            "TRINITY CHAIN MINER",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("   ⛏️", Style::default().fg(Color::Yellow)),
+    ])])
+    .block(
+        TuiBlock::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    )
     .style(Style::default().fg(Color::White))
     .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);
@@ -128,7 +135,12 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
     let status_text = vec![
         Line::from(vec![
             Span::styled("Status: ", Style::default().fg(Color::Gray)),
-            Span::styled(&stats.mining_status, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                &stats.mining_status,
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Beneficiary: ", Style::default().fg(Color::Gray)),
@@ -136,26 +148,39 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
         ]),
         Line::from(vec![
             Span::styled("Hashrate: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{:.2} H/s", stats.current_hash_rate), Style::default().fg(Color::Magenta)),
+            Span::styled(
+                format!("{:.2} H/s", stats.current_hash_rate),
+                Style::default().fg(Color::Magenta),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Last Block: ", Style::default().fg(Color::Gray)),
-            Span::styled(format_hash(&stats.last_block_hash), Style::default().fg(Color::Green)),
+            Span::styled(
+                format_hash(&stats.last_block_hash),
+                Style::default().fg(Color::Green),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Last Block Time: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{:.2}s", stats.last_block_time), Style::default().fg(Color::Blue)),
+            Span::styled(
+                format!("{:.2}s", stats.last_block_time),
+                Style::default().fg(Color::Blue),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Network Peers: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{}", stats.network_peers), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                format!("{}", stats.network_peers),
+                Style::default().fg(Color::Cyan),
+            ),
         ]),
     ];
-    let status = Paragraph::new(status_text)
-        .block(TuiBlock::default()
+    let status = Paragraph::new(status_text).block(
+        TuiBlock::default()
             .borders(Borders::ALL)
             .title("⚡ Mining Status")
-            .border_style(Style::default().fg(Color::Green)));
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(status, chunks[1]);
 
     // Stats Box - Bigger numbers
@@ -163,41 +188,72 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
         Line::from(""),
         Line::from(vec![
             Span::styled("     Blocks Mined: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!(" {} ", stats.blocks_mined), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+            Span::styled(
+                format!(" {} ", stats.blocks_mined),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ),
             Span::styled("   Chain Height: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!(" {} ", stats.chain_height), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+            Span::styled(
+                format!(" {} ", stats.chain_height),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("     Total Earned: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!(" {:.0} TRC ", stats.total_earned), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+            Span::styled(
+                format!(" {:.0} TRC ", stats.total_earned),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("     Difficulty: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{}", stats.difficulty), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", stats.difficulty),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  │  ", Style::default().fg(Color::DarkGray)),
             Span::styled("Reward: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{}", stats.current_reward), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", stats.current_reward),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  │  ", Style::default().fg(Color::DarkGray)),
             Span::styled("Era: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{}", stats.halving_era), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", stats.halving_era),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
     ];
-    let stats_widget = Paragraph::new(stats_text)
-        .block(TuiBlock::default()
+    let stats_widget = Paragraph::new(stats_text).block(
+        TuiBlock::default()
             .borders(Borders::ALL)
             .title("📊 Statistics")
-            .border_style(Style::default().fg(Color::Blue)));
+            .border_style(Style::default().fg(Color::Blue)),
+    );
     f.render_widget(stats_widget, chunks[2]);
 
     // Supply Progress
     let supply_pct = (stats.current_supply as f64 / stats.max_supply as f64) * 100.0;
     let gauge = Gauge::default()
-        .block(TuiBlock::default()
-            .borders(Borders::ALL)
-            .title("💎 Token Supply Progress")
-            .border_style(Style::default().fg(Color::Magenta)))
+        .block(
+            TuiBlock::default()
+                .borders(Borders::ALL)
+                .title("💎 Token Supply Progress")
+                .border_style(Style::default().fg(Color::Magenta)),
+        )
         .gauge_style(Style::default().fg(Color::Magenta).bg(Color::Black))
         .percent(supply_pct.min(100.0) as u16)
         .label(format!(
@@ -210,61 +266,90 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
 
     // Hashrate Graph
     let hashrate_sparkline = Sparkline::default()
-        .block(TuiBlock::default()
-            .borders(Borders::ALL)
-            .title(format!("⚡ Hashrate Monitor: {:.2} H/s (Last 20 samples)", stats.current_hash_rate))
-            .border_style(Style::default().fg(Color::Yellow)))
+        .block(
+            TuiBlock::default()
+                .borders(Borders::ALL)
+                .title(format!(
+                    "⚡ Hashrate Monitor: {:.2} H/s (Last 20 samples)",
+                    stats.current_hash_rate
+                ))
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
         .data(&stats.hashrate_history)
-        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+        .style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
     f.render_widget(hashrate_sparkline, chunks[4]);
 
     // Blockchain Tree - Real Parent-Child Relationships
     let mut tree_lines = vec![Line::from("")];
 
     if stats.recent_blocks.is_empty() {
-        tree_lines.push(Line::from(vec![
-            Span::styled("   Waiting for blocks...", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
-        ]));
+        tree_lines.push(Line::from(vec![Span::styled(
+            "   Waiting for blocks...",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )]));
     } else {
         // Show last 5 blocks in tree format
         let blocks_to_show = stats.recent_blocks.iter().rev().take(5).collect::<Vec<_>>();
 
         for (i, (height, hash, parent_hash)) in blocks_to_show.iter().enumerate() {
             let is_latest = i == 0;
-            let color = if is_latest { Color::Green } else if i == 1 { Color::Cyan } else { Color::Gray };
+            let color = if is_latest {
+                Color::Green
+            } else if i == 1 {
+                Color::Cyan
+            } else {
+                Color::Gray
+            };
 
             // Block node
             tree_lines.push(Line::from(vec![
                 Span::styled("      ", Style::default()),
                 Span::styled("▲", Style::default().fg(color).add_modifier(Modifier::BOLD)),
-                Span::styled(format!(" #{}", height), Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" #{}", height),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ),
             ]));
 
             // Hash
             tree_lines.push(Line::from(vec![
                 Span::styled("     ", Style::default()),
                 Span::styled("╱ ╲", Style::default().fg(color)),
-                Span::styled(format!("  {}", format_hash(hash)), Style::default().fg(color)),
+                Span::styled(
+                    format!("  {}", format_hash(hash)),
+                    Style::default().fg(color),
+                ),
             ]));
 
             if i < blocks_to_show.len() - 1 {
                 // Connection to parent
+                tree_lines.push(Line::from(vec![Span::styled(
+                    "      │",
+                    Style::default().fg(Color::DarkGray),
+                )]));
                 tree_lines.push(Line::from(vec![
                     Span::styled("      │", Style::default().fg(Color::DarkGray)),
-                ]));
-                tree_lines.push(Line::from(vec![
-                    Span::styled("      │", Style::default().fg(Color::DarkGray)),
-                    Span::styled(format!("  parent: {}", format_hash(parent_hash)), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        format!("  parent: {}", format_hash(parent_hash)),
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]));
             }
         }
     }
 
-    let tree = Paragraph::new(tree_lines)
-        .block(TuiBlock::default()
+    let tree = Paragraph::new(tree_lines).block(
+        TuiBlock::default()
             .borders(Borders::ALL)
             .title("🌳 Blockchain Tree (Parent → Child)")
-            .border_style(Style::default().fg(Color::Magenta)));
+            .border_style(Style::default().fg(Color::Magenta)),
+    );
     f.render_widget(tree, chunks[5]);
 
     // Footer
@@ -273,13 +358,14 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(chunks[6]);
 
-    let help = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Press ", Style::default().fg(Color::DarkGray)),
-            Span::styled("'q'", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-            Span::styled(" to quit", Style::default().fg(Color::DarkGray)),
-        ]),
-    ]);
+    let help = Paragraph::new(vec![Line::from(vec![
+        Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "'q'",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" to quit", Style::default().fg(Color::DarkGray)),
+    ])]);
     f.render_widget(help, footer_chunks[0]);
 }
 
@@ -320,7 +406,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and start network node
     let db_for_network = Database::open("trinitychain.db").expect("Failed to open database");
-    let chain_for_network = db_for_network.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let chain_for_network = db_for_network
+        .load_blockchain()
+        .unwrap_or_else(|_| Blockchain::new());
     let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
 
@@ -351,9 +439,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Draw UI
         let stats_lock = stats.lock().await.clone();
-        terminal.draw(|f| {
-            draw_ui(f, &stats_lock, &beneficiary_address);
-        }).ok();
+        terminal
+            .draw(|f| {
+                draw_ui(f, &stats_lock, &beneficiary_address);
+            })
+            .ok();
 
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
@@ -368,7 +458,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mutex<MiningStats>>, network: Option<Arc<NetworkNode>>) {
+async fn mining_loop(
+    beneficiary_address: String,
+    _threads: usize,
+    stats: Arc<Mutex<MiningStats>>,
+    network: Option<Arc<NetworkNode>>,
+) {
     let db = Database::open("trinitychain.db").expect("Failed to open database");
     let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
 
@@ -394,12 +489,7 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
             beneficiary_address: beneficiary_address.clone(),
         });
 
-        let mut new_block = Block::new(
-            new_height,
-            last_block.hash,
-            difficulty,
-            vec![coinbase_tx],
-        );
+        let mut new_block = Block::new(new_height, last_block.hash, difficulty, vec![coinbase_tx]);
 
         if new_block.header.timestamp <= last_block.header.timestamp {
             new_block.header.timestamp = last_block.header.timestamp + 1;
@@ -422,16 +512,20 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
             hash_count += 1;
 
             // Update hashrate every 1000 hashes OR every 500ms, whichever comes first
-            if hash_count % 1000 == 0 || last_update.elapsed() > Duration::from_millis(500) {
+            if hash_count.is_multiple_of(1000) || last_update.elapsed() > Duration::from_millis(500) {
                 let elapsed = mine_start.elapsed().as_secs_f64();
-                let hashrate = if elapsed > 0.0 { hash_count as f64 / elapsed } else { 0.0 };
+                let hashrate = if elapsed > 0.0 {
+                    hash_count as f64 / elapsed
+                } else {
+                    0.0
+                };
 
                 {
                     let mut s = stats.lock().await;
                     s.current_hash_rate = hashrate;
 
                     // Update hashrate history every 5000 hashes to avoid too frequent updates
-                    if hash_count % 5000 == 0 {
+                    if hash_count.is_multiple_of(5000) {
                         s.hashrate_history.remove(0);
                         s.hashrate_history.push(hashrate as u64);
                     }
@@ -498,7 +592,8 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
             s.last_block_time = mine_duration;
 
             // Add to blockchain tree
-            s.recent_blocks.push((current_height, hash_hex, parent_hash_hex));
+            s.recent_blocks
+                .push((current_height, hash_hex, parent_hash_hex));
             // Keep only last 10 blocks
             if s.recent_blocks.len() > 10 {
                 s.recent_blocks.remove(0);

@@ -30,13 +30,19 @@ impl AddressBook {
     }
 
     /// Add an address to the book
-    pub fn add(&mut self, label: String, address: String, notes: Option<String>) -> Result<(), ChainError> {
+    pub fn add(
+        &mut self,
+        label: String,
+        address: String,
+        notes: Option<String>,
+    ) -> Result<(), ChainError> {
         let key = label.to_lowercase();
 
         if self.entries.contains_key(&key) {
-            return Err(ChainError::WalletError(
-                format!("Label '{}' already exists", label)
-            ));
+            return Err(ChainError::WalletError(format!(
+                "Label '{}' already exists",
+                label
+            )));
         }
 
         let entry = AddressEntry {
@@ -54,7 +60,8 @@ impl AddressBook {
     pub fn remove(&mut self, label: &str) -> Result<AddressEntry, ChainError> {
         let key = label.to_lowercase();
 
-        self.entries.remove(&key)
+        self.entries
+            .remove(&key)
             .ok_or_else(|| ChainError::WalletError(format!("Label '{}' not found", label)))
     }
 
@@ -68,11 +75,16 @@ impl AddressBook {
     pub fn search(&self, query: &str) -> Vec<&AddressEntry> {
         let query_lower = query.to_lowercase();
 
-        self.entries.values()
+        self.entries
+            .values()
             .filter(|entry| {
-                entry.label.to_lowercase().contains(&query_lower) ||
-                entry.address.to_lowercase().contains(&query_lower) ||
-                entry.notes.as_ref().map(|n| n.to_lowercase().contains(&query_lower)).unwrap_or(false)
+                entry.label.to_lowercase().contains(&query_lower)
+                    || entry.address.to_lowercase().contains(&query_lower)
+                    || entry
+                        .notes
+                        .as_ref()
+                        .map(|n| n.to_lowercase().contains(&query_lower))
+                        .unwrap_or(false)
             })
             .collect()
     }
@@ -86,8 +98,9 @@ impl AddressBook {
 
     /// Save address book to file
     pub fn save(&self, path: &PathBuf) -> Result<(), ChainError> {
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| ChainError::WalletError(format!("Failed to serialize address book: {}", e)))?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| {
+            ChainError::WalletError(format!("Failed to serialize address book: {}", e))
+        })?;
 
         fs::write(path, json)
             .map_err(|e| ChainError::WalletError(format!("Failed to write address book: {}", e)))?;
@@ -114,7 +127,9 @@ impl AddressBook {
 /// Get the default address book path
 pub fn get_addressbook_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".trinitychain").join("addressbook.json")
+    PathBuf::from(home)
+        .join(".trinitychain")
+        .join("addressbook.json")
 }
 
 /// Load the default address book
@@ -146,8 +161,9 @@ mod tests {
         book.add(
             "Alice".to_string(),
             "abc123".to_string(),
-            Some("Friend".to_string())
-        ).unwrap();
+            Some("Friend".to_string()),
+        )
+        .unwrap();
 
         let entry = book.get("alice").unwrap();
         assert_eq!(entry.label, "Alice");
@@ -157,7 +173,8 @@ mod tests {
     #[test]
     fn test_addressbook_remove() {
         let mut book = AddressBook::new();
-        book.add("Bob".to_string(), "def456".to_string(), None).unwrap();
+        book.add("Bob".to_string(), "def456".to_string(), None)
+            .unwrap();
 
         let removed = book.remove("bob").unwrap();
         assert_eq!(removed.label, "Bob");
@@ -167,8 +184,18 @@ mod tests {
     #[test]
     fn test_addressbook_search() {
         let mut book = AddressBook::new();
-        book.add("Alice".to_string(), "abc123".to_string(), Some("Friend".to_string())).unwrap();
-        book.add("Bob".to_string(), "def456".to_string(), Some("Colleague".to_string())).unwrap();
+        book.add(
+            "Alice".to_string(),
+            "abc123".to_string(),
+            Some("Friend".to_string()),
+        )
+        .unwrap();
+        book.add(
+            "Bob".to_string(),
+            "def456".to_string(),
+            Some("Colleague".to_string()),
+        )
+        .unwrap();
 
         let results = book.search("friend");
         assert_eq!(results.len(), 1);

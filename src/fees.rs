@@ -165,14 +165,14 @@ mod tests {
         // Use a larger base fee to show congestion multiplier effect
         let mut estimator = FeeEstimator::new(100); // 100 satoshi base fee
         let base_fee = estimator.estimate_fee(100); // 100 byte tx
-        
+
         // base_fee = (100 * 100 / 1000) * 1.0 = 10 satoshis
 
         // Simulate high congestion (2.5x multiplier)
         estimator.congestion_multiplier = 2.5;
         let congested_fee = estimator.estimate_fee(100);
         // congested_fee = (100 * 100 / 1000) * 2.5 = 25 satoshis
-        
+
         assert!(congested_fee > base_fee);
         assert_eq!(base_fee, 10);
         assert_eq!(congested_fee, 25);

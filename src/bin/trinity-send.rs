@@ -1,17 +1,17 @@
 //! Send triangles to another address - Beautiful edition!
 
-use trinitychain::persistence::Database;
-use trinitychain::transaction::{Transaction, TransferTx};
-use trinitychain::network::NetworkNode;
-use std::env;
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::time::Duration;
-use trinitychain::wallet;
 use std::collections::HashSet;
-use trinitychain::geometry::Coord;
+use std::env;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
+use trinitychain::geometry::Coord;
+use trinitychain::network::NetworkNode;
+use trinitychain::persistence::Database;
+use trinitychain::transaction::{Transaction, TransferTx};
+use trinitychain::wallet;
 
 const LOGO: &str = r#"
 ╔═══════════════════════════════════════════════════════════════╗
@@ -31,18 +31,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.len() < 3 {
         println!("{}", LOGO.bright_cyan());
-        println!("{}", "╔══════════════════════════════════════════════════════════╗".bright_yellow());
-        println!("{}", "║                      📖 Usage Guide                      ║".bright_yellow().bold());
-        println!("{}", "╠══════════════════════════════════════════════════════════╣".bright_yellow());
-        println!("{}", "║                                                          ║".bright_yellow());
-        println!("{}", "║  Usage:                                                  ║".bright_yellow());
-        println!("{}", "║    send <to_address> <amount> [--from <wallet_name>] [memo] ║".white());
-        println!("{}", "║                                                          ║".bright_yellow());
-        println!("{}", "║  Examples:                                               ║".bright_yellow());
-        println!("{}", "║    send abc123... 100                                    ║".white());
-        println!("{}", "║    send abc123... 100 --from alice \"Payment for services\" ║".white());
-        println!("{}", "║                                                          ║".bright_yellow());
-        println!("{}", "╚══════════════════════════════════════════════════════════╝".bright_yellow());
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════╗".bright_yellow()
+        );
+        println!(
+            "{}",
+            "║                      📖 Usage Guide                      ║"
+                .bright_yellow()
+                .bold()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════╣".bright_yellow()
+        );
+        println!(
+            "{}",
+            "║                                                          ║".bright_yellow()
+        );
+        println!(
+            "{}",
+            "║  Usage:                                                  ║".bright_yellow()
+        );
+        println!(
+            "{}",
+            "║    send <to_address> <amount> [--from <wallet_name>] [memo] ║".white()
+        );
+        println!(
+            "{}",
+            "║                                                          ║".bright_yellow()
+        );
+        println!(
+            "{}",
+            "║  Examples:                                               ║".bright_yellow()
+        );
+        println!(
+            "{}",
+            "║    send abc123... 100                                    ║".white()
+        );
+        println!(
+            "{}",
+            "║    send abc123... 100 --from alice \"Payment for services\" ║".white()
+        );
+        println!(
+            "{}",
+            "║                                                          ║".bright_yellow()
+        );
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════╝".bright_yellow()
+        );
         println!();
         std::process::exit(1);
     }
@@ -67,9 +105,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("{}", "┌─────────────────────────────────────────────────────────────┐".bright_magenta());
-    println!("{}", "│                  💸 INITIATING TRANSFER                     │".bright_magenta().bold());
-    println!("{}", "└─────────────────────────────────────────────────────────────┘".bright_magenta());
+    println!(
+        "{}",
+        "┌─────────────────────────────────────────────────────────────┐".bright_magenta()
+    );
+    println!(
+        "{}",
+        "│                  💸 INITIATING TRANSFER                     │"
+            .bright_magenta()
+            .bold()
+    );
+    println!(
+        "{}",
+        "└─────────────────────────────────────────────────────────────┘".bright_magenta()
+    );
     println!();
 
     let pb = ProgressBar::new_spinner();
@@ -77,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ProgressStyle::default_spinner()
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
             .template("{spinner:.cyan} {msg}")
-            .unwrap()
+            .unwrap(),
     );
 
     pb.set_message("Loading wallet...");
@@ -97,7 +146,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open("trinitychain.db")?;
     let mut chain = db.load_blockchain()?;
 
-
     // Track locked triangles from pending transactions
     let mut locked_triangles = HashSet::new();
 
@@ -106,15 +154,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let transactions: Result<Vec<Transaction>, _> = serde_json::from_str(&mempool_data);
         if let Ok(txs) = transactions {
             let txs_clone = txs.clone();
-            
+
             for tx in txs {
                 let _ = chain.mempool.add_transaction(tx);
             }
-            
-            if chain.mempool.len() > 0 {
-                pb.println(format!("📬 {} pending transaction(s) already in mempool", chain.mempool.len()));
+
+            if !chain.mempool.is_empty() {
+                pb.println(format!(
+                    "📬 {} pending transaction(s) already in mempool",
+                    chain.mempool.len()
+                ));
             }
-            
+
             // Collect locked UTXOs from pending transfers
             for tx in txs_clone {
                 if let Transaction::Transfer(transfer_tx) = tx {
@@ -129,25 +180,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .state
         .utxo_set
         .iter()
-        .find(|(hash, triangle)| triangle.owner == from_address && triangle.effective_value() >= amount_coord && !locked_triangles.contains(*hash))
+        .find(|(hash, triangle)| {
+            triangle.owner == from_address
+                && triangle.effective_value() >= amount_coord
+                && !locked_triangles.contains(*hash)
+        })
         .ok_or("No single triangle with sufficient value found for the transfer")?;
 
     pb.finish_and_clear();
 
     let from_display = if from_address.len() > 20 {
-        format!("{}...{}", &from_address[..10], &from_address[from_address.len()-10..])
+        format!(
+            "{}...{}",
+            &from_address[..10],
+            &from_address[from_address.len() - 10..]
+        )
     } else {
         from_address.clone()
     };
     let to_display = if to_address.len() > 20 {
-        format!("{}...{}", &to_address[..10], &to_address[to_address.len()-10..])
+        format!(
+            "{}...{}",
+            &to_address[..10],
+            &to_address[to_address.len() - 10..]
+        )
     } else {
         to_address.to_string()
     };
 
-    println!("{}", "╔══════════════════════════════════════════════════════════╗".bright_cyan());
-    println!("{}", "║              🔍 TRANSACTION DETAILS                      ║".bright_cyan().bold());
-    println!("{}", "╠══════════════════════════════════════════════════════════╣".bright_cyan());
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════╗".bright_cyan()
+    );
+    println!(
+        "{}",
+        "║              🔍 TRANSACTION DETAILS                      ║"
+            .bright_cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════╣".bright_cyan()
+    );
     println!("{}", format!("║  👤 From: {:<47} ║", from_display).cyan());
     println!("{}", format!("║  🎯 To: {:<49} ║", to_display).cyan());
     println!("{}", format!("║  💸 Amount: {:<45} ║", amount).cyan());
@@ -159,7 +233,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         println!("{}", format!("║  📝 Memo: {:<47} ║", memo_display).cyan());
     }
-    println!("{}", "╚══════════════════════════════════════════════════════════╝".bright_cyan());
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════╝".bright_cyan()
+    );
     println!();
 
     let pb = ProgressBar::new_spinner();
@@ -167,7 +244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ProgressStyle::default_spinner()
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
             .template("{spinner:.green} {msg}")
-            .unwrap()
+            .unwrap(),
     );
     pb.enable_steady_tick(Duration::from_millis(100));
 
@@ -208,14 +285,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.finish_and_clear();
 
-    println!("{}", "╔══════════════════════════════════════════════════════════╗".bright_green());
-    println!("{}", "║              ✅ TRANSACTION SUCCESSFUL!                  ║".bright_green().bold());
-    println!("{}", "╠══════════════════════════════════════════════════════════╣".bright_green());
-    println!("{}", "║  Your transaction has been broadcasted to the network   ║".green());
-    println!("{}", "║  and will be included in the next block!                ║".green());
-    println!("{}", "╚══════════════════════════════════════════════════════════╝".bright_green());
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════╗".bright_green()
+    );
+    println!(
+        "{}",
+        "║              ✅ TRANSACTION SUCCESSFUL!                  ║"
+            .bright_green()
+            .bold()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════╣".bright_green()
+    );
+    println!(
+        "{}",
+        "║  Your transaction has been broadcasted to the network   ║".green()
+    );
+    println!(
+        "{}",
+        "║  and will be included in the next block!                ║".green()
+    );
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════╝".bright_green()
+    );
     println!();
-    println!("{}", "🎉 Transfer complete! The triangle is on its way!".bright_blue());
+    println!(
+        "{}",
+        "🎉 Transfer complete! The triangle is on its way!".bright_blue()
+    );
     println!();
 
     Ok(())
