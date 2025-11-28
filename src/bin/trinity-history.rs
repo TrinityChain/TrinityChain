@@ -1,11 +1,11 @@
 //! View transaction history for your wallet - Beautiful edition!
 
-use trinitychain::persistence::Database;
-use trinitychain::transaction::Transaction;
 use colored::*;
-use comfy_table::{Table, Cell, ContentArrangement, Attribute};
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::Color as TableColor;
+use comfy_table::{Attribute, Cell, ContentArrangement, Table};
+use trinitychain::persistence::Database;
+use trinitychain::transaction::Transaction;
 
 const LOGO: &str = r#"
 ╔═══════════════════════════════════════════════════════════════╗
@@ -25,36 +25,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
     let wallet_file = format!("{}/.trinitychain/wallet.json", home);
 
-    let wallet_content = std::fs::read_to_string(&wallet_file)
-        .map_err(|e| {
-            eprintln!("{}", "╔══════════════════════════════════════════╗".red());
-            eprintln!("{}", "║         ❌ Wallet Not Found!            ║".red().bold());
-            eprintln!("{}", "╚══════════════════════════════════════════╝".red());
-            eprintln!();
-            eprintln!("{}", "💡 Run 'wallet new' to create a wallet".yellow());
-            format!("No wallet found at {}: {}", wallet_file, e)
-        })?;
+    let wallet_content = std::fs::read_to_string(&wallet_file).map_err(|e| {
+        eprintln!("{}", "╔══════════════════════════════════════════╗".red());
+        eprintln!(
+            "{}",
+            "║         ❌ Wallet Not Found!            ║".red().bold()
+        );
+        eprintln!("{}", "╚══════════════════════════════════════════╝".red());
+        eprintln!();
+        eprintln!("{}", "💡 Run 'wallet new' to create a wallet".yellow());
+        format!("No wallet found at {}: {}", wallet_file, e)
+    })?;
 
     let wallet_data: serde_json::Value = serde_json::from_str(&wallet_content)
         .map_err(|e| format!("Failed to parse wallet: {}", e))?;
 
-    let my_address = wallet_data["address"].as_str()
+    let my_address = wallet_data["address"]
+        .as_str()
         .ok_or("Wallet address not found in wallet file")?;
 
-    let db = Database::open("trinitychain.db")
-        .map_err(|e| format!("Failed to open database: {}", e))?;
-    let chain = db.load_blockchain()
+    let db =
+        Database::open("trinitychain.db").map_err(|e| format!("Failed to open database: {}", e))?;
+    let chain = db
+        .load_blockchain()
         .map_err(|e| format!("Failed to load blockchain: {}", e))?;
 
     let addr_display = if my_address.len() > 40 {
-        format!("{}...{}", &my_address[..20], &my_address[my_address.len()-16..])
+        format!(
+            "{}...{}",
+            &my_address[..20],
+            &my_address[my_address.len() - 16..]
+        )
     } else {
         my_address.to_string()
     };
 
-    println!("{}", "┌─────────────────────────────────────────────────────────────┐".bright_cyan());
-    println!("{}", "│                  📜 TRANSACTION HISTORY                     │".bright_cyan().bold());
-    println!("{}", "└─────────────────────────────────────────────────────────────┘".bright_cyan());
+    println!(
+        "{}",
+        "┌─────────────────────────────────────────────────────────────┐".bright_cyan()
+    );
+    println!(
+        "{}",
+        "│                  📜 TRANSACTION HISTORY                     │"
+            .bright_cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "└─────────────────────────────────────────────────────────────┘".bright_cyan()
+    );
     println!();
     println!("{}", format!("📍 Address: {}", addr_display).cyan());
     println!();
@@ -106,14 +125,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let other_party = if is_sender {
                             let addr = &transfer_tx.new_owner;
                             if addr.len() > 20 {
-                                format!("To: {}...{}", &addr[..8], &addr[addr.len()-8..])
+                                format!("To: {}...{}", &addr[..8], &addr[addr.len() - 8..])
                             } else {
                                 format!("To: {}", addr)
                             }
                         } else {
                             let addr = &transfer_tx.sender;
                             if addr.len() > 20 {
-                                format!("From: {}...{}", &addr[..8], &addr[addr.len()-8..])
+                                format!("From: {}...{}", &addr[..8], &addr[addr.len() - 8..])
                             } else {
                                 format!("From: {}", addr)
                             }
@@ -181,11 +200,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if transactions.is_empty() {
-        println!("{}", "╔══════════════════════════════════════════════════════════╗".yellow());
-        println!("{}", "║              📭 No Transactions Found                    ║".yellow());
-        println!("{}", "╠══════════════════════════════════════════════════════════╣".yellow());
-        println!("{}", "║  No transaction history yet. Start using your wallet!   ║".yellow());
-        println!("{}", "╚══════════════════════════════════════════════════════════╝".yellow());
+        println!(
+            "{}",
+            "╔══════════════════════════════════════════════════════════╗".yellow()
+        );
+        println!(
+            "{}",
+            "║              📭 No Transactions Found                    ║".yellow()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════╣".yellow()
+        );
+        println!(
+            "{}",
+            "║  No transaction history yet. Start using your wallet!   ║".yellow()
+        );
+        println!(
+            "{}",
+            "╚══════════════════════════════════════════════════════════╝".yellow()
+        );
         println!();
         return Ok(());
     }
@@ -198,11 +232,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(vec![
-            Cell::new("Block").fg(TableColor::Cyan).add_attribute(Attribute::Bold),
-            Cell::new("Type").fg(TableColor::Cyan).add_attribute(Attribute::Bold),
-            Cell::new("Direction").fg(TableColor::Cyan).add_attribute(Attribute::Bold),
-            Cell::new("Details").fg(TableColor::Cyan).add_attribute(Attribute::Bold),
-            Cell::new("Date").fg(TableColor::Cyan).add_attribute(Attribute::Bold),
+            Cell::new("Block")
+                .fg(TableColor::Cyan)
+                .add_attribute(Attribute::Bold),
+            Cell::new("Type")
+                .fg(TableColor::Cyan)
+                .add_attribute(Attribute::Bold),
+            Cell::new("Direction")
+                .fg(TableColor::Cyan)
+                .add_attribute(Attribute::Bold),
+            Cell::new("Details")
+                .fg(TableColor::Cyan)
+                .add_attribute(Attribute::Bold),
+            Cell::new("Date")
+                .fg(TableColor::Cyan)
+                .add_attribute(Attribute::Bold),
         ]);
 
     for tx in &transactions {
@@ -218,14 +262,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", table);
     println!();
 
-    println!("{}", "╔══════════════════════════════════════════════════════════╗".bright_blue());
-    println!("{}", "║                    📊 TRANSACTION SUMMARY                ║".bright_blue().bold());
-    println!("{}", "╠══════════════════════════════════════════════════════════╣".bright_blue());
-    println!("{}", format!("║  📝 Total Transactions: {:<33} ║", tx_count).blue());
-    println!("{}", format!("║  📥 Received: {:<43} ║", received_count).green());
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════╗".bright_blue()
+    );
+    println!(
+        "{}",
+        "║                    📊 TRANSACTION SUMMARY                ║"
+            .bright_blue()
+            .bold()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════╣".bright_blue()
+    );
+    println!(
+        "{}",
+        format!("║  📝 Total Transactions: {:<33} ║", tx_count).blue()
+    );
+    println!(
+        "{}",
+        format!("║  📥 Received: {:<43} ║", received_count).green()
+    );
     println!("{}", format!("║  📤 Sent: {:<47} ║", sent_count).red());
-    println!("{}", format!("║  ⛏️  Mining Rewards: {:<36} ║", mining_count).cyan());
-    println!("{}", "╚══════════════════════════════════════════════════════════╝".bright_blue());
+    println!(
+        "{}",
+        format!("║  ⛏️  Mining Rewards: {:<36} ║", mining_count).cyan()
+    );
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════╝".bright_blue()
+    );
     println!();
 
     Ok(())

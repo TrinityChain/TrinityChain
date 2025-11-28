@@ -24,14 +24,16 @@ impl HDWallet {
         let mut entropy = vec![0u8; entropy_bytes];
         rand::thread_rng().fill_bytes(&mut entropy);
 
-        let m = Mnemonic::from_entropy(&entropy).map_err(|e| format!("mnemonic generation failed: {}", e))?;
+        let m = Mnemonic::from_entropy(&entropy)
+            .map_err(|e| format!("mnemonic generation failed: {}", e))?;
         Ok(m.to_string())
     }
 
     /// Derive the BIP-39 seed bytes from a mnemonic phrase and optional passphrase.
     /// The returned Vec<u8> is the 64-byte seed produced by PBKDF2 as defined in BIP-39.
     pub fn seed_from_mnemonic(phrase: &str, passphrase: Option<&str>) -> Result<Vec<u8>, String> {
-        let m = Mnemonic::parse_normalized(phrase).map_err(|e| format!("invalid mnemonic phrase: {}", e))?;
+        let m = Mnemonic::parse_normalized(phrase)
+            .map_err(|e| format!("invalid mnemonic phrase: {}", e))?;
         let pass = passphrase.unwrap_or("");
         Ok(m.to_seed_normalized(pass).to_vec())
     }
@@ -48,7 +50,8 @@ mod tests {
         assert!(!m.is_empty());
 
         // Derive seed from the generated mnemonic
-        let seed = HDWallet::seed_from_mnemonic(&m, Some("my_passphrase")).expect("seed derivation");
+        let seed =
+            HDWallet::seed_from_mnemonic(&m, Some("my_passphrase")).expect("seed derivation");
         assert_eq!(seed.len(), 64); // BIP-39 seed is 64 bytes
     }
 

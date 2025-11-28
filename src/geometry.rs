@@ -1,10 +1,10 @@
 //! Core geometric primitives and triangle logic for TrinityChain.
 //! Defines the Point and Triangle structs, subdivision logic, and validation.
 
+use crate::blockchain::Sha256Hash;
 use fixed::types::I32F32;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use crate::blockchain::Sha256Hash;
 
 /// Coordinate type for deterministic geometric calculations.
 pub type Coord = I32F32;
@@ -24,7 +24,7 @@ pub struct Point {
 
 impl Point {
     /// Maximum allowed coordinate value to prevent overflow/precision issues
-    pub const MAX_COORDINATE: Coord = I32F32::from_bits(i64::MAX as i64);
+    pub const MAX_COORDINATE: Coord = I32F32::from_bits(i64::MAX);
 
     /// Creates a new Point.
     #[inline]
@@ -170,7 +170,7 @@ impl Triangle {
             "genesis_owner".to_string(),
         )
     }
-    
+
     // ------------------------------------------------------------------------
     // 1.7 Subdivision Algorithm
     // ------------------------------------------------------------------------
@@ -215,7 +215,6 @@ impl Triangle {
         self.area() > GEOMETRIC_TOLERANCE
     }
 }
-
 
 // ----------------------------------------------------------------------------
 // Testing

@@ -85,7 +85,10 @@ fn remove_address(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Address removed successfully!");
     println!("📌 Label: {}", entry.label);
-    println!("📍 Address: {}...", &entry.address[..42.min(entry.address.len())]);
+    println!(
+        "📍 Address: {}...",
+        &entry.address[..42.min(entry.address.len())]
+    );
 
     Ok(())
 }

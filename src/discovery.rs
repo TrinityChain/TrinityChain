@@ -36,9 +36,10 @@ impl DnsSeed {
                     .collect();
                 Ok(nodes)
             }
-            Err(_) => Err(ChainError::NetworkError(
-                format!("Failed to resolve DNS seed: {}", self.hostname),
-            )),
+            Err(_) => Err(ChainError::NetworkError(format!(
+                "Failed to resolve DNS seed: {}",
+                self.hostname
+            ))),
         }
     }
 }

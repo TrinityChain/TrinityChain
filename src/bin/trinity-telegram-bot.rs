@@ -1,15 +1,18 @@
-use teloxide::{prelude::*, utils::command::BotCommands};
 use log::{info, warn};
-use trinitychain::persistence::Database;
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
+use teloxide::{prelude::*, utils::command::BotCommands};
 use tokio::sync::{Mutex, RwLock};
 use trinitychain::network::NetworkNode;
+use trinitychain::persistence::Database;
 
 type RateLimiter = Arc<Mutex<HashMap<i64, std::time::Instant>>>;
 
 #[derive(BotCommands, Clone)]
-#[command(rename_rule = "lowercase", description = "These commands are supported:")]
+#[command(
+    rename_rule = "lowercase",
+    description = "These commands are supported:"
+)]
 enum Command {
     #[command(description = "start the bot and see welcome message")]
     Start,
@@ -64,7 +67,8 @@ async fn answer(
             info!("Handled /start command for user: {:?}", message.from());
         }
         Command::Help => {
-            bot.send_message(message.chat.id, Command::descriptions().to_string()).await?;
+            bot.send_message(message.chat.id, Command::descriptions().to_string())
+                .await?;
             info!("Handled /help command for user: {:?}", message.from());
         }
         Command::Stats => {
@@ -72,8 +76,10 @@ async fn answer(
                 Ok(db) => match db.load_blockchain() {
                     Ok(chain) => {
                         let height = chain.blocks.last().map_or(0, |b| b.header.height);
-                        let total_supply = trinitychain::blockchain::Blockchain::calculate_current_supply(height);
-                        let current_reward = trinitychain::blockchain::Blockchain::calculate_block_reward(height);
+                        let total_supply =
+                            trinitychain::blockchain::Blockchain::calculate_current_supply(height);
+                        let current_reward =
+                            trinitychain::blockchain::Blockchain::calculate_block_reward(height);
                         let triangles = chain.state.count();
 
                         format!(
@@ -100,7 +106,10 @@ async fn answer(
                         let pool_size = chain.mempool.len();
                         let txs = chain.mempool.get_all_transactions();
                         let top_fees: Vec<_> = txs.iter().take(5).map(|tx| tx.fee()).collect();
-                        format!("📥 Mempool: {} transactions\nTop fees (sample): {:?}", pool_size, top_fees)
+                        format!(
+                            "📥 Mempool: {} transactions\nTop fees (sample): {:?}",
+                            pool_size, top_fees
+                        )
                     }
                     Err(_) => "Could not load blockchain data.".to_string(),
                 },
@@ -115,7 +124,11 @@ async fn answer(
                 let response = format!("🌐 Connected peers: {}", peers_count);
                 bot.send_message(message.chat.id, response).await?;
             } else {
-                bot.send_message(message.chat.id, "🌐 Network node not initialized on this bot.").await?;
+                bot.send_message(
+                    message.chat.id,
+                    "🌐 Network node not initialized on this bot.",
+                )
+                .await?;
             }
             info!("Handled /node command for user: {:?}", message.from());
         }
@@ -123,14 +136,23 @@ async fn answer(
             if let Some(node) = node_opt.as_ref() {
                 let peers = node.list_peers().await;
                 if peers.is_empty() {
-                    bot.send_message(message.chat.id, "📋 No connected peers yet.").await?;
+                    bot.send_message(message.chat.id, "📋 No connected peers yet.")
+                        .await?;
                 } else {
-                    let peer_list = peers.iter().map(|p| format!("• {}", p.addr())).collect::<Vec<_>>().join("\n");
+                    let peer_list = peers
+                        .iter()
+                        .map(|p| format!("• {}", p.addr()))
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     let response = format!("📋 Connected Peers ({})\n\n{}", peers.len(), peer_list);
                     bot.send_message(message.chat.id, response).await?;
                 }
             } else {
-                bot.send_message(message.chat.id, "📋 Network node not initialized on this bot.").await?;
+                bot.send_message(
+                    message.chat.id,
+                    "📋 Network node not initialized on this bot.",
+                )
+                .await?;
             }
             info!("Handled /peers command for user: {:?}", message.from());
         }
@@ -146,7 +168,7 @@ async fn answer(
                         };
                         let mempool_size = chain.mempool.len();
                         let utxo_count = chain.state.count();
-                        
+
                         format!(
                             "📊 Node Status:\n\n\
                             🏔️ Height: {}\n\
@@ -170,7 +192,11 @@ async fn answer(
                 let mut rl = rate_limiter.lock().await;
                 if let Some(last) = rl.get(&uid) {
                     if last.elapsed() < std::time::Duration::from_secs(60) {
-                        bot.send_message(message.chat.id, "⏳ Rate limit: please wait before broadcasting again.").await?;
+                        bot.send_message(
+                            message.chat.id,
+                            "⏳ Rate limit: please wait before broadcasting again.",
+                        )
+                        .await?;
                         return Ok(());
                     }
                 }
@@ -181,7 +207,7 @@ async fn answer(
             let mut hex_part = txhex.as_str();
             if let Some(pos) = txhex.find(':') {
                 provided_token = Some(&txhex[..pos]);
-                hex_part = &txhex[pos+1..];
+                hex_part = &txhex[pos + 1..];
             }
 
             if let Some(cfg_token) = admin_token.as_ref() {
@@ -189,7 +215,11 @@ async fn answer(
                     Some(t) if t == cfg_token => {}
                     _ => {
                         warn!("Unauthorized broadcast attempt from {:?}", message.from());
-                        bot.send_message(message.chat.id, "❌ Unauthorized: missing or invalid admin token for /broadcast").await?;
+                        bot.send_message(
+                            message.chat.id,
+                            "❌ Unauthorized: missing or invalid admin token for /broadcast",
+                        )
+                        .await?;
                         return Ok(());
                     }
                 }
@@ -201,24 +231,39 @@ async fn answer(
                         Ok(tx) => {
                             if let Some(node) = node_opt.as_ref() {
                                 node.broadcast_transaction(&tx).await;
-                                let msg = format!("✅ Broadcasted transaction {} to peers", tx.hash_str());
+                                let msg = format!(
+                                    "✅ Broadcasted transaction {} to peers",
+                                    tx.hash_str()
+                                );
                                 bot.send_message(message.chat.id, msg).await?;
                             } else {
-                                bot.send_message(message.chat.id, "❌ Network node not initialized; cannot broadcast.").await?;
+                                bot.send_message(
+                                    message.chat.id,
+                                    "❌ Network node not initialized; cannot broadcast.",
+                                )
+                                .await?;
                             }
                         }
                         Err(_) => {
-                            bot.send_message(message.chat.id, "Invalid transaction bytes; could not deserialize.").await?;
+                            bot.send_message(
+                                message.chat.id,
+                                "Invalid transaction bytes; could not deserialize.",
+                            )
+                            .await?;
                         }
                     }
                 }
-                Err(_) => { bot.send_message(message.chat.id, "Invalid hex provided.").await?; }
+                Err(_) => {
+                    bot.send_message(message.chat.id, "Invalid hex provided.")
+                        .await?;
+                }
             }
 
             info!("Handled /broadcast command for user: {:?}", message.from());
         }
         _ => {
-            bot.send_message(message.chat.id, "Command not implemented yet.").await?;
+            bot.send_message(message.chat.id, "Command not implemented yet.")
+                .await?;
         }
     }
     Ok(())
@@ -250,12 +295,17 @@ async fn main() {
         }
     };
 
-    Dispatcher::builder(bot, Update::filter_message().filter_command::<Command>().endpoint(answer))
-        .dependencies(dptree::deps![node_opt, admin_token, rate_limiter])
-        .enable_ctrlc_handler()
-        .build()
-        .dispatch()
-        .await;
+    Dispatcher::builder(
+        bot,
+        Update::filter_message()
+            .filter_command::<Command>()
+            .endpoint(answer),
+    )
+    .dependencies(dptree::deps![node_opt, admin_token, rate_limiter])
+    .enable_ctrlc_handler()
+    .build()
+    .dispatch()
+    .await;
 
     info!("TrinityChain Telegram Bot stopped.");
 }

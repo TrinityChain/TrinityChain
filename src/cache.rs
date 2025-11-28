@@ -22,7 +22,8 @@ pub struct BlockCache {
 impl BlockCache {
     /// Create a new block cache with specified capacity
     pub fn new(capacity: usize) -> Self {
-        let cache = LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(100).unwrap()));
+        let cache =
+            LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(100).unwrap()));
         Self {
             cache: Arc::new(RwLock::new(cache)),
         }
@@ -69,7 +70,8 @@ pub struct UtxoCache {
 impl UtxoCache {
     /// Create a new UTXO cache with specified capacity
     pub fn new(capacity: usize) -> Self {
-        let cache = LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(10000).unwrap()));
+        let cache =
+            LruCache::new(NonZeroUsize::new(capacity).unwrap_or(NonZeroUsize::new(10000).unwrap()));
         Self {
             cache: Arc::new(RwLock::new(cache)),
         }

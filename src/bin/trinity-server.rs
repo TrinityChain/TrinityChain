@@ -1,19 +1,12 @@
 //! Combined API Server + Telegram Bot for TrinityChain
 //! Runs both services in one process for efficiency
 
-use trinitychain::blockchain::Blockchain;
-use trinitychain::persistence::Database;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use std::env;
-use axum::{
-    Router,
-    routing::get,
-    extract::State as AxumState,
-    Json,
-    http::StatusCode,
+use axum::{extract::State as AxumState, http::StatusCode, routing::get, Json, Router};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tower_http::cors::{CorsLayer, Any};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -22,13 +15,14 @@ use ratatui::{
     widgets::{Block as TuiBlock, Borders, Paragraph, Sparkline},
     Terminal,
 };
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use std::io;
 use serde_json::{json, Value};
+use std::env;
+use std::io;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use tower_http::cors::{Any, CorsLayer};
+use trinitychain::blockchain::Blockchain;
+use trinitychain::persistence::Database;
 
 #[derive(Clone)]
 struct ServerStats {
@@ -64,9 +58,21 @@ struct ServerData {
     stats: ServerStats,
 }
 
-async fn get_stats(AxumState(state): AxumState<AppState>) -> Result<Json<Value>, (StatusCode, String)> {
-    let data = state.lock().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to acquire lock".to_string()))?;
-    let chain = data.db.load_blockchain().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load blockchain".to_string()))?;
+async fn get_stats(
+    AxumState(state): AxumState<AppState>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let data = state.lock().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to acquire lock".to_string(),
+        )
+    })?;
+    let chain = data.db.load_blockchain().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to load blockchain".to_string(),
+        )
+    })?;
 
     Ok(Json(json!({
         "chainHeight": chain.blocks.last().map(|b| b.header.height).unwrap_or(0),
@@ -77,21 +83,39 @@ async fn get_stats(AxumState(state): AxumState<AppState>) -> Result<Json<Value>,
     })))
 }
 
-async fn get_blocks(AxumState(state): AxumState<AppState>) -> Result<Json<Value>, (StatusCode, String)> {
-    let data = state.lock().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to acquire lock".to_string()))?;
-    let chain = data.db.load_blockchain().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load blockchain".to_string()))?;
+async fn get_blocks(
+    AxumState(state): AxumState<AppState>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let data = state.lock().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to acquire lock".to_string(),
+        )
+    })?;
+    let chain = data.db.load_blockchain().map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to load blockchain".to_string(),
+        )
+    })?;
 
-    let blocks: Vec<_> = chain.blocks.iter().rev().take(50).map(|b| {
-        json!({
-            "index": b.header.height,
-            "hash": hex::encode(b.hash),
-            "previousHash": hex::encode(b.header.previous_hash),
-            "timestamp": b.header.timestamp,
-            "difficulty": b.header.difficulty,
-            "nonce": b.header.nonce,
-            "transactions": b.transactions.len(),
+    let blocks: Vec<_> = chain
+        .blocks
+        .iter()
+        .rev()
+        .take(50)
+        .map(|b| {
+            json!({
+                "index": b.header.height,
+                "hash": hex::encode(b.hash),
+                "previousHash": hex::encode(b.header.previous_hash),
+                "timestamp": b.header.timestamp,
+                "difficulty": b.header.difficulty,
+                "nonce": b.header.nonce,
+                "transactions": b.transactions.len(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({"blocks": blocks})))
 }
@@ -113,15 +137,22 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &ServerStats) {
 
     // Title
     let port_info = format!("  API:{} + Bot", stats.api_port);
-    let title = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("🚀  ", Style::default().fg(Color::Green)),
-            Span::styled("TRINITY SERVER", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::styled(&port_info, Style::default().fg(Color::Yellow)),
-            Span::styled("  🚀", Style::default().fg(Color::Green)),
-        ]),
-    ])
-    .block(TuiBlock::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)))
+    let title = Paragraph::new(vec![Line::from(vec![
+        Span::styled("🚀  ", Style::default().fg(Color::Green)),
+        Span::styled(
+            "TRINITY SERVER",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(&port_info, Style::default().fg(Color::Yellow)),
+        Span::styled("  🚀", Style::default().fg(Color::Green)),
+    ])])
+    .block(
+        TuiBlock::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    )
     .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);
 
@@ -130,7 +161,12 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &ServerStats) {
         Line::from(""),
         Line::from(vec![
             Span::styled("   API Status: ", Style::default().fg(Color::Gray)),
-            Span::styled(&stats.status, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                &stats.status,
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("   Telegram Bot: ", Style::default().fg(Color::Gray)),
@@ -139,19 +175,34 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &ServerStats) {
         Line::from(""),
         Line::from(vec![
             Span::styled("   Uptime: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{}h {}m", stats.uptime_secs / 3600, (stats.uptime_secs % 3600) / 60), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!(
+                    "{}h {}m",
+                    stats.uptime_secs / 3600,
+                    (stats.uptime_secs % 3600) / 60
+                ),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("   Chain Height: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!(" {} ", stats.chain_height), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+            Span::styled(
+                format!(" {} ", stats.chain_height),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ),
         ]),
     ];
 
-    let status = Paragraph::new(status_text)
-        .block(TuiBlock::default()
+    let status = Paragraph::new(status_text).block(
+        TuiBlock::default()
             .borders(Borders::ALL)
             .title("⚡ Server Status")
-            .border_style(Style::default().fg(Color::Green)));
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(status, chunks[1]);
 
     // Stats
@@ -159,43 +210,62 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &ServerStats) {
         Line::from(""),
         Line::from(vec![
             Span::styled("   Total API Requests: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!(" {} ", stats.total_requests), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+            Span::styled(
+                format!(" {} ", stats.total_requests),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("   Telegram Users: ", Style::default().fg(Color::Gray)),
-            Span::styled(format!("{}", stats.telegram_users), Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", stats.telegram_users),
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
     ];
 
-    let stats_widget = Paragraph::new(stats_text)
-        .block(TuiBlock::default()
+    let stats_widget = Paragraph::new(stats_text).block(
+        TuiBlock::default()
             .borders(Borders::ALL)
             .title("📊 Service Stats")
-            .border_style(Style::default().fg(Color::Blue)));
+            .border_style(Style::default().fg(Color::Blue)),
+    );
     f.render_widget(stats_widget, chunks[2]);
 
     // Request Graph
     let sparkline = Sparkline::default()
-        .block(TuiBlock::default()
-            .borders(Borders::ALL)
-            .title("📈 Requests/Minute (Last 20min)")
-            .border_style(Style::default().fg(Color::Magenta)))
+        .block(
+            TuiBlock::default()
+                .borders(Borders::ALL)
+                .title("📈 Requests/Minute (Last 20min)")
+                .border_style(Style::default().fg(Color::Magenta)),
+        )
         .data(&stats.requests_per_minute)
         .style(Style::default().fg(Color::Yellow));
     f.render_widget(sparkline, chunks[3]);
 
     // Footer
     let url = format!("http://0.0.0.0:{}", stats.api_port);
-    let footer = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Press ", Style::default().fg(Color::DarkGray)),
-            Span::styled("'q'", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-            Span::styled(" to quit  │  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Serving at ", Style::default().fg(Color::DarkGray)),
-            Span::styled(&url, Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED)),
-        ]),
-    ]);
+    let footer = Paragraph::new(vec![Line::from(vec![
+        Span::styled("Press ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "'q'",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" to quit  │  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Serving at ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            &url,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
+        ),
+    ])]);
     f.render_widget(footer, chunks[4]);
 }
 
@@ -230,7 +300,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/api/stats", get(get_stats))
         .route("/api/blocks", get(get_blocks))
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
         .with_state(Arc::clone(&state));
 
     // Spawn API server
@@ -255,7 +330,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Update chain height
                 if let Ok(chain) = data.db.load_blockchain() {
-                    data.stats.chain_height = chain.blocks.last().map(|b| b.header.height).unwrap_or(0);
+                    data.stats.chain_height =
+                        chain.blocks.last().map(|b| b.header.height).unwrap_or(0);
                 }
             }
             tokio::time::sleep(Duration::from_secs(1)).await;

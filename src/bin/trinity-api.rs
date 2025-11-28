@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use trinitychain::api::{run_api_server, Node};
-use trinitychain::persistence::Database;
 use trinitychain::blockchain::Blockchain;
+use trinitychain::persistence::Database;
 
 #[tokio::main]
 async fn main() {
@@ -22,7 +22,8 @@ async fn main() {
     // Start the P2P server in the background
     let network_node = node.network.clone();
     tokio::spawn(async move {
-        if let Err(e) = network_node.start_server(8333).await { // Default port
+        if let Err(e) = network_node.start_server(8333).await {
+            // Default port
             eprintln!("P2P server error: {}", e);
         }
     });

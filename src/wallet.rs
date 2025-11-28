@@ -64,9 +64,9 @@ impl Wallet {
             .map_err(|e| ChainError::WalletError(format!("Failed to create temp file: {}", e)))?;
         write!(temp_file, "{}", json)
             .map_err(|e| ChainError::WalletError(format!("Failed to write to temp file: {}", e)))?;
-        temp_file
-            .persist(path)
-            .map_err(|e| ChainError::WalletError(format!("Failed to persist wallet file: {}", e)))?;
+        temp_file.persist(path).map_err(|e| {
+            ChainError::WalletError(format!("Failed to persist wallet file: {}", e))
+        })?;
 
         Ok(())
     }
@@ -100,8 +100,9 @@ pub fn get_named_wallet_path(name: &str) -> Result<PathBuf, ChainError> {
 /// Create the wallet directory if it doesn't exist
 pub fn ensure_wallet_dir() -> Result<(), ChainError> {
     let wallet_dir = get_wallet_dir()?;
-    fs::create_dir_all(&wallet_dir)
-        .map_err(|e| ChainError::WalletError(format!("Failed to create wallet directory: {}", e)))?;
+    fs::create_dir_all(&wallet_dir).map_err(|e| {
+        ChainError::WalletError(format!("Failed to create wallet directory: {}", e))
+    })?;
     Ok(())
 }
 
@@ -215,9 +216,9 @@ use argon2::{
 pub struct EncryptedWallet {
     pub name: Option<String>,
     pub address: String,
-    pub encrypted_secret_key: String,  // Base64 encoded encrypted data
-    pub password_hash: String, // Argon2 password hash
-    pub nonce: String, // Base64 encoded nonce
+    pub encrypted_secret_key: String, // Base64 encoded encrypted data
+    pub password_hash: String,        // Argon2 password hash
+    pub nonce: String,                // Base64 encoded nonce
     pub created: String,
 }
 
@@ -259,14 +260,14 @@ impl EncryptedWallet {
             .encrypt(&nonce, wallet.secret_key_hex.as_bytes())
             .map_err(|e| ChainError::CryptoError(format!("Encryption failed: {}", e)))?;
 
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
 
         Ok(EncryptedWallet {
             name: wallet.name.clone(),
             address: wallet.address.clone(),
             encrypted_secret_key: general_purpose::STANDARD.encode(&ciphertext),
             password_hash,
-            nonce: general_purpose::STANDARD.encode(&nonce),
+            nonce: general_purpose::STANDARD.encode(nonce),
             created: wallet.created.clone(),
         })
     }
@@ -280,14 +281,19 @@ impl EncryptedWallet {
             .map_err(|e| ChainError::CryptoError(format!("Invalid password hash: {}", e)))?;
         Argon2::default()
             .verify_password(password.as_bytes(), &parsed_hash)
-            .map_err(|_| ChainError::CryptoError("Decryption failed - wrong password?".to_string()))?;
+            .map_err(|_| {
+                ChainError::CryptoError("Decryption failed - wrong password?".to_string())
+            })?;
 
         // Re-derive the key for decryption (must use same params)
-        let salt = parsed_hash.salt.ok_or(ChainError::CryptoError("Salt not found in password hash".to_string()))?;
+        let salt = parsed_hash.salt.ok_or(ChainError::CryptoError(
+            "Salt not found in password hash".to_string(),
+        ))?;
         let argon2 = Argon2::new(
             argon2::Algorithm::Argon2id,
             Version::V0x13,
-            Params::new(19456, 2, 1, None).map_err(|e| ChainError::CryptoError(format!("Argon2 params error: {}", e)))?,
+            Params::new(19456, 2, 1, None)
+                .map_err(|e| ChainError::CryptoError(format!("Argon2 params error: {}", e)))?,
         );
         let hash_bytes = argon2
             .hash_password(password.as_bytes(), salt)
@@ -302,19 +308,21 @@ impl EncryptedWallet {
             .map_err(|e| ChainError::CryptoError(format!("Failed to create cipher: {}", e)))?;
 
         // Decode nonce and ciphertext
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
 
-        let nonce_bytes = general_purpose::STANDARD.decode(&self.nonce)
+        let nonce_bytes = general_purpose::STANDARD
+            .decode(&self.nonce)
             .map_err(|e| ChainError::CryptoError(format!("Invalid nonce: {}", e)))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let ciphertext = general_purpose::STANDARD.decode(&self.encrypted_secret_key)
+        let ciphertext = general_purpose::STANDARD
+            .decode(&self.encrypted_secret_key)
             .map_err(|e| ChainError::CryptoError(format!("Invalid ciphertext: {}", e)))?;
 
         // Decrypt
-        let plaintext = cipher
-            .decrypt(nonce, ciphertext.as_ref())
-            .map_err(|_| ChainError::CryptoError("Decryption failed - wrong password?".to_string()))?;
+        let plaintext = cipher.decrypt(nonce, ciphertext.as_ref()).map_err(|_| {
+            ChainError::CryptoError("Decryption failed - wrong password?".to_string())
+        })?;
 
         let secret_key_hex = String::from_utf8(plaintext)
             .map_err(|e| ChainError::CryptoError(format!("Invalid UTF-8: {}", e)))?;
@@ -344,17 +352,23 @@ impl EncryptedWallet {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = temp_file.as_file().metadata()
-                .map_err(|e| ChainError::WalletError(format!("Failed to get file metadata: {}", e)))?
+            let mut perms = temp_file
+                .as_file()
+                .metadata()
+                .map_err(|e| {
+                    ChainError::WalletError(format!("Failed to get file metadata: {}", e))
+                })?
                 .permissions();
             perms.set_mode(0o600); // rw-------
-            fs::set_permissions(temp_file.path(), perms)
-                .map_err(|e| ChainError::WalletError(format!("Failed to set file permissions: {}", e)))?;
+            fs::set_permissions(temp_file.path(), perms).map_err(|e| {
+                ChainError::WalletError(format!("Failed to set file permissions: {}", e))
+            })?;
         }
 
         // Atomically move the file to the final destination
-        temp_file.persist(path)
-            .map_err(|e| ChainError::WalletError(format!("Failed to persist wallet file: {}", e)))?;
+        temp_file.persist(path).map_err(|e| {
+            ChainError::WalletError(format!("Failed to persist wallet file: {}", e))
+        })?;
 
         Ok(())
     }
@@ -364,8 +378,9 @@ impl EncryptedWallet {
         let contents = fs::read_to_string(path)
             .map_err(|e| ChainError::WalletError(format!("Failed to read wallet: {}", e)))?;
 
-        let wallet: EncryptedWallet = serde_json::from_str(&contents)
-            .map_err(|e| ChainError::WalletError(format!("Failed to parse encrypted wallet: {}", e)))?;
+        let wallet: EncryptedWallet = serde_json::from_str(&contents).map_err(|e| {
+            ChainError::WalletError(format!("Failed to parse encrypted wallet: {}", e))
+        })?;
 
         Ok(wallet)
     }

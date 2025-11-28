@@ -1,12 +1,12 @@
 //! P2P Networking for TrinityChain
 
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use crate::blockchain::Blockchain;
 use crate::error::ChainError;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::RwLock;
 
 /// Maximum message size to prevent DoS attacks (10MB)
 const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
@@ -21,7 +21,7 @@ impl Node {
     pub fn new(host: String, port: u16) -> Self {
         Node { host, port }
     }
-    
+
     pub fn addr(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
@@ -77,7 +77,9 @@ impl ConnectionPool {
 
     /// Get a list of all peer nodes
     async fn list_peers(&self) -> Vec<Node> {
-        self.connections.read().await
+        self.connections
+            .read()
+            .await
             .keys()
             .map(|addr| {
                 let parts: Vec<&str> = addr.split(':').collect();
@@ -99,16 +101,19 @@ impl NetworkNode {
             pool: Arc::new(ConnectionPool::new()),
         }
     }
-    
+
     pub async fn start_server(self: Arc<Self>, port: u16) -> Result<(), ChainError> {
         let addr = format!("0.0.0.0:{}", port);
-        let listener = TcpListener::bind(&addr).await
+        let listener = TcpListener::bind(&addr)
+            .await
             .map_err(|e| ChainError::NetworkError(format!("Failed to bind: {}", e)))?;
-        
+
         println!("🌐 Node listening on {}", addr);
-        
+
         loop {
-            let (socket, peer_addr) = listener.accept().await
+            let (socket, peer_addr) = listener
+                .accept()
+                .await
                 .map_err(|e| ChainError::NetworkError(format!("Accept error: {}", e)))?;
 
             println!("📡 New connection from {}", peer_addr);
@@ -124,12 +129,13 @@ impl NetworkNode {
             });
         }
     }
-    
+
     pub async fn connect_peer(self: Arc<Self>, host: String, port: u16) -> Result<(), ChainError> {
         let addr = format!("{}:{}", host, port);
         println!("🔗 Connecting to peer: {}", addr);
 
-        let stream = TcpStream::connect(&addr).await
+        let stream = TcpStream::connect(&addr)
+            .await
             .map_err(|e| ChainError::NetworkError(format!("Failed to connect: {}", e)))?;
 
         let node = Node::new(host, port);
@@ -147,7 +153,13 @@ impl NetworkNode {
     }
 
     async fn handle_connection(&self, node: &Node) -> Result<(), ChainError> {
-        let stream_lock = self.pool.connections.read().await.get(&node.addr()).cloned()
+        let stream_lock = self
+            .pool
+            .connections
+            .read()
+            .await
+            .get(&node.addr())
+            .cloned()
             .ok_or_else(|| ChainError::NetworkError("Connection not in pool".to_string()))?;
 
         loop {
@@ -168,7 +180,12 @@ impl NetworkNode {
             match message {
                 NetworkMessage::GetBlockHeaders { after_height } => {
                     let chain = self.blockchain.read().await;
-                    let headers = chain.blocks.iter().filter(|b| b.header.height > after_height).map(|b| b.header.clone()).collect();
+                    let headers = chain
+                        .blocks
+                        .iter()
+                        .filter(|b| b.header.height > after_height)
+                        .map(|b| b.header.clone())
+                        .collect();
                     let response = NetworkMessage::BlockHeaders(headers);
                     self.send_message(node, &response).await?;
                 }
@@ -195,7 +212,13 @@ impl NetworkNode {
     }
 
     async fn send_message(&self, node: &Node, message: &NetworkMessage) -> Result<(), ChainError> {
-        let stream_lock = self.pool.connections.read().await.get(&node.addr()).cloned()
+        let stream_lock = self
+            .pool
+            .connections
+            .read()
+            .await
+            .get(&node.addr())
+            .cloned()
             .ok_or_else(|| ChainError::NetworkError("Connection not in pool".to_string()))?;
 
         let data = bincode::serialize(message)?;

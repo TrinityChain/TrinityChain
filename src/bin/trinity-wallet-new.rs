@@ -1,6 +1,6 @@
 //! Create a new named wallet
 
-use trinitychain::wallet::{create_named_wallet};
+use trinitychain::wallet::create_named_wallet;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

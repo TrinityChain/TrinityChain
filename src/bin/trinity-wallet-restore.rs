@@ -1,8 +1,8 @@
 //! Restore wallet from encrypted backup
 
-use trinitychain::wallet::{self, EncryptedWallet};
 use std::io::{self, Write};
 use std::path::PathBuf;
+use trinitychain::wallet::{self, EncryptedWallet};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -27,7 +27,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load encrypted backup
     let encrypted = EncryptedWallet::load(&backup_path)?;
 
-    println!("📍 Wallet Address: {}...\n", &encrypted.address[..42.min(encrypted.address.len())]);
+    println!(
+        "📍 Wallet Address: {}...\n",
+        &encrypted.address[..42.min(encrypted.address.len())]
+    );
 
     // Get password
     print!("Enter backup password: ");
@@ -64,7 +67,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Wallet restored successfully!");
     println!("📁 Wallet location: {}", wallet_path.display());
-    println!("📍 Address: {}...", &wallet.address[..42.min(wallet.address.len())]);
+    println!(
+        "📍 Address: {}...",
+        &wallet.address[..42.min(wallet.address.len())]
+    );
     println!();
 
     Ok(())

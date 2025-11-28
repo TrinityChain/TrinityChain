@@ -1,7 +1,7 @@
 //! Backup wallet with password encryption
 
-use trinitychain::wallet::{self, EncryptedWallet};
 use std::io::{self, Write};
+use trinitychain::wallet::{self, EncryptedWallet};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔐 Wallet Backup Tool\n");
@@ -9,7 +9,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load current wallet
     let wallet = wallet::load_default_wallet()?;
 
-    println!("📍 Wallet Address: {}...\n", &wallet.address[..42.min(wallet.address.len())]);
+    println!(
+        "📍 Wallet Address: {}...\n",
+        &wallet.address[..42.min(wallet.address.len())]
+    );
 
     // Get password (twice for confirmation)
     print!("Enter backup password: ");
