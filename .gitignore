@@ -1,11 +1,33 @@
+# Rust
 /target
 *.db
-.env
+*.db-journal
 
-.gemini/
-gha-creds-*.json
+# Node.js / Dashboard
+dashboard/node_modules/
+dashboard/dist/
+dashboard/public/static/
+.npm/
 
-# Ignore API log files
+# Logs
+*.log
 api-server.log
 api-server.err
-*.log
+
+# Environment
+.env*
+!.env.example
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Gemini
+.gemini/
+gha-creds-*.json

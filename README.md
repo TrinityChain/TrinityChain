@@ -1,5 +1,17 @@
 <p align="center">
-  <img src="assets/logo.png" alt="TrinityChain Logo" width="200"/>
+  <a href="https://github.com/TrinityChain/TrinityChain/actions/workflows/rust.yml">
+    <img src="https://github.com/TrinityChain/TrinityChain/actions/workflows/rust.yml/badge.svg" alt="Build Status">
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT">
+  </a>
+  <a href="https://www.rust-lang.org/">
+    <img src="https://img.shields.io/badge/rust-1.70%2B-orange.svg" alt="Rust 1.70+">
+  </a>
+</p>
+
+<p align="center">
+  <img src="documentation/assets/logo.png" alt="TrinityChain Logo" width="200"/>
 </p>
 
 <h1 align="center">TrinityChain</h1>
@@ -12,8 +24,9 @@
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#architecture">Architecture</a> •
+  <a href="#project-structure">Project Structure</a> •
   <a href="#api">API</a> •
+  <a href="#deployment">Deployment</a> •
   <a href="#contributing">Contributing</a>
 </p>
 
@@ -128,7 +141,7 @@ cargo test --lib
 ## Architecture
 
 <p align="center">
-  <img src="assets/architecture.svg" alt="Architecture Diagram" width="600"/>
+  <img src="documentation/assets/architecture.svg" alt="Architecture Diagram" width="600"/>
 </p>
 
 ### Module Structure
@@ -160,6 +173,28 @@ Wallet → Transaction → Mempool → Miner → Block → Blockchain → Persis
 - **Fixed-Point Determinism**: All geometric and financial calculations use a deterministic `I32F32` fixed-point number representation to ensure consensus across all nodes.
 - **Concurrency**: `Arc<RwLock<T>>` for P2P, `Arc<Mutex<T>>` for API
 - **Atomic mining**: `AtomicBool` + `AtomicU64` with `SeqCst` ordering
+
+---
+
+## Project Structure
+
+The repository is organized to separate concerns, making it easier to navigate, develop, and deploy the project.
+
+```
+.
+├── .github/         # GitHub Actions CI/CD workflows
+├── dashboard/       # React frontend application and its assets
+├── deployment/      # Deployment configurations (e.g., Render, Vercel)
+├── documentation/   # Detailed technical and architectural documents
+├── scripts/         # Utility and automation scripts
+├── src/             # Core Rust source code for the blockchain node
+├── .gitignore       # Specifies intentionally untracked files to ignore
+├── Cargo.toml       # Rust package manager configuration
+├── LICENSE          # Project software license
+└── README.md        # You are here!
+```
+
+This structure clearly delineates the backend (`src`), frontend (`dashboard`), documentation, and deployment configurations.
 
 ---
 
@@ -233,12 +268,23 @@ Supply follows a geometric series with halvings, similar to Bitcoin's emission s
 
 Detailed architecture documents are available:
 
-- [`ARCHITECTURE_MOC.md`](ARCHITECTURE_MOC.md) - Visual component map with ASCII diagrams
-- [`ARCHITECTURE_AUDIT.md`](ARCHITECTURE_AUDIT.md) - Data flow and component analysis
-- [`SAFETY_AUDIT.md`](SAFETY_AUDIT.md) - Mutability, concurrency, error handling
-- [`TRIANGLE_UTXO_AUDIT.md`](TRIANGLE_UTXO_AUDIT.md) - Triangle UTXO model deep dive
-- [`API_ENDPOINTS.md`](API_ENDPOINTS.md) - Full API reference
-- [`NODE_SETUP.md`](NODE_SETUP.md) - Production node deployment guide
+- [`ARCHITECTURE_MOC.md`](documentation/ARCHITECTURE_MOC.md) - Visual component map with ASCII diagrams
+- [`ARCHITECTURE_AUDIT.md`](documentation/ARCHITECTURE_AUDIT.md) - Data flow and component analysis
+- [`SAFETY_AUDIT.md`](documentation/SAFETY_AUDIT.md) - Mutability, concurrency, error handling
+- [`TRIANGLE_UTXO_AUDIT.md`](documentation/TRIANGLE_UTXO_AUDIT.md) - Triangle UTXO model deep dive
+- [`API_ENDPOINTS.md`](documentation/API_ENDPOINTS.md) - Full API reference
+- [`NODE_SETUP.md`](documentation/NODE_SETUP.md) - Production node deployment guide
+
+---
+
+## Deployment
+
+Deployment configurations for services like Render and Vercel are located in the `deployment/` directory.
+
+- **`deployment/render.yaml`**: Configuration for deploying the `trinity-node` and `trinity-api` services on Render.
+- **`deployment/vercel.json`**: Configuration for deploying the `dashboard` frontend on Vercel.
+
+Refer to the [Node Setup Guide](documentation/NODE_SETUP.md) for detailed instructions on deploying a production node.
 
 ---
 
