@@ -1,6 +1,6 @@
-# TrinityChain
-
 <div align="center">
+
+![Trinity Chain Logo](documentation/assets/trinitychain_logo.png)
 
 [![Build Status](https://github.com/TrinityChain/TrinityChain/actions/workflows/rust.yml/badge.svg)](https://github.com/TrinityChain/TrinityChain/actions/workflows/rust.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -61,15 +61,13 @@ Triangle { area: 99.9,  vertices: [(0,0), (10,0), (5,10)] }
 
 ### Technical Stack
 
-```
-┌─────────────────────────────────────────────────┐
-│  Consensus      │  SHA-256 PoW + Difficulty      │
-│  Crypto         │  secp256k1 + BIP-39/BIP-32     │
-│  Storage        │  SQLite (deterministic)        │
-│  Networking     │  TCP P2P + WebSocket bridge    │
-│  Precision      │  I32F32 fixed-point (consensus)│
-└─────────────────────────────────────────────────┘
-```
+| Component | Implementation |
+|-----------|----------------|
+| Consensus | SHA-256 PoW + Difficulty |
+| Crypto | secp256k1 + BIP-39/BIP-32 |
+| Storage | SQLite (deterministic) |
+| Networking | TCP P2P + WebSocket bridge |
+| Precision | I32F32 fixed-point (consensus) |
 
 ---
 
@@ -253,15 +251,13 @@ Access at `http://localhost:3000/dashboard`
 
 ## Tokenomics
 
-```
-┌──────────────────────────────────────────────────┐
-│  Initial Reward       │  1,000 TRC               │
-│  Halving Interval     │  210,000 blocks          │
-│  Max Supply           │  420,000,000 TRC         │
-│  Block Time (target)  │  ~10 seconds             │
-│  Current Difficulty   │  Dynamic (2016-block avg)│
-└──────────────────────────────────────────────────┘
-```
+| Parameter | Value |
+|-----------|-------|
+| Initial Reward | 1,000 TRC |
+| Halving Interval | 210,000 blocks |
+| Max Supply | 420,000,000 TRC |
+| Block Time (target) | ~10 seconds |
+| Current Difficulty | Dynamic (2016-block avg) |
 
 Supply curve follows geometric decay with periodic halvings.
 
