@@ -157,7 +157,7 @@ Wallet → Transaction → Mempool → Miner → Block → Blockchain → Persis
 
 ### Precision & Safety
 
-- **Floating-point**: IEEE 754 `f64` with `GEOMETRIC_TOLERANCE = 1e-9`
+- **Fixed-Point Determinism**: All geometric and financial calculations use a deterministic `I32F32` fixed-point number representation to ensure consensus across all nodes.
 - **Concurrency**: `Arc<RwLock<T>>` for P2P, `Arc<Mutex<T>>` for API
 - **Atomic mining**: `AtomicBool` + `AtomicU64` with `SeqCst` ordering
 

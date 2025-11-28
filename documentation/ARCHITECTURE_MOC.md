@@ -68,7 +68,7 @@
 │    │                          Triangle                                  │    │
 │    ├───────────────────────────────────────────────────────────────────┤    │
 │    │  a: Point ─────────────────┐                                      │    │
-│    │  b: Point ─────────────────┼──► Geometric Vertices (f64 coords)   │    │
+│    │  b: Point ─────────────────┼──► Geometric Vertices (I32F32 coords) │    │
 │    │  c: Point ─────────────────┘                                      │    │
 │    │                                                                   │    │
 │    │  parent_hash: Option<Sha256Hash>  ──► Lineage tracking            │    │
@@ -85,7 +85,7 @@
 │                                                                             │
 │    Key Methods:                                                             │
 │    ┌────────────────────────┐  ┌────────────────────────┐                   │
-│    │ area() -> f64          │  │ effective_value() -> f64│                  │
+│    │ area() -> I32F32       │  │ effective_value() -> I32F32│               │
 │    │ Shoelace formula       │  │ value.unwrap_or(area()) │                  │
 │    │ Pure geometry          │  │ Spendable value         │                  │
 │    └────────────────────────┘  └────────────────────────┘                   │
@@ -158,7 +158,7 @@
 │  │  TransferTx::new(input_hash, new_owner, sender, fee_area, nonce)    │   │
 │  │                                              ▲                       │   │
 │  │                                              │                       │   │
-│  │                                     fee_area: Coord (f64)            │   │
+│  │                                     fee_area: Coord (I32F32)         │   │
 │  │                                     Geometric fee in area units      │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │           │                                                                 │
@@ -341,7 +341,7 @@
 │   │ • Point     │           │ • TransferTx│           │ • Blockchain│       │
 │   │ • Triangle  │           │   fee_area  │           │ • Block     │       │
 │   │   + value   │           │ • Subdiv.   │           │ • Mempool   │       │
-│   │ • Coord=f64 │           │ • Coinbase  │           │ • TriState  │       │
+│   │ • Coord=I32F32│           │ • Coinbase  │           │ • TriState  │       │
 │   └─────────────┘           └──────┬──────┘           └──────┬──────┘       │
 │          ▲                         │                         │              │
 │          │                         │                         │              │
@@ -373,62 +373,35 @@
 
 ---
 
-## 6. Floating-Point Precision Safeguards
+## 6. Fixed-Point Precision
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    FLOATING-POINT PRECISION MODEL                            │
+│                      FIXED-POINT PRECISION MODEL                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   Type: Coord = f64 (IEEE 754 double-precision)                             │
-│   Precision: ~15-17 significant decimal digits                              │
-│   Machine Epsilon: 2.22e-16                                                 │
+│   Type: Coord = I32F32 (from the `fixed` crate)                             │
+│   - 32 integer bits, 32 fractional bits                                     │
+│   - Fully deterministic, essential for blockchain consensus                 │
 │                                                                             │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │                    TOLERANCE CONSTANTS                              │   │
+│   │                    TOLERANCE CONSTANT                               │   │
 │   ├─────────────────────────────────────────────────────────────────────┤   │
 │   │                                                                     │   │
-│   │   geometry.rs:    GEOMETRIC_TOLERANCE = 1e-9                        │   │
-│   │   transaction.rs: GEOMETRIC_TOLERANCE = 1e-9                        │   │
+│   │   geometry.rs: GEOMETRIC_TOLERANCE = I32F32::from_bits(1)            │   │
 │   │                                                                     │   │
-│   │   Used for:                                                         │   │
-│   │   • Point::equals() - vertex comparison                             │   │
-│   │   • Triangle::is_valid() - degenerate check                         │   │
-│   │   • TransferTx::validate_with_state() - fee balance check           │   │
+│   │   - Represents the smallest possible value.                         │   │
+│   │   - Used for degeneracy checks, not for floating-point error margins.│   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │                    ERROR ACCUMULATION ANALYSIS                      │   │
+│   │                    DETERMINISTIC OPERATIONS                         │   │
 │   ├─────────────────────────────────────────────────────────────────────┤   │
 │   │                                                                     │   │
-│   │   Per fee deduction:                                                │   │
-│   │   • Operations: 1 subtraction                                       │   │
-│   │   • Max relative error: ~2.22e-16                                   │   │
-│   │                                                                     │   │
-│   │   After 1,000 transfers:                                            │   │
-│   │   • Accumulated error: ~2.22e-13                                    │   │
-│   │   • Still 4 orders of magnitude below tolerance                     │   │
-│   │                                                                     │   │
-│   │   Conclusion: SAFE for practical use                                │   │
+│   │   - All arithmetic (addition, subtraction, multiplication, division)│   │
+│   │     is deterministic.                                               │   │
+│   │   - No error accumulation, ensuring all nodes get the same results. │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │                    VALIDATION GUARDS                                │   │
-│   ├─────────────────────────────────────────────────────────────────────┤   │
-│   │                                                                     │   │
-│   │   TransferTx::validate():                                           │   │
-│   │   ├── fee_area.is_finite()  → Rejects NaN, Infinity                 │   │
-│   │   └── fee_area >= 0.0       → Rejects negative fees                 │   │
-│   │                                                                     │   │
-│   │   TransferTx::validate_with_state():                                │   │
-│   │   └── remaining_value >= TOLERANCE                                  │   │
-│   │       └── Ensures non-zero value after fee                          │   │
-│   │                                                                     │   │
-│   │   Point::is_valid():                                                │   │
-│   │   └── coords.abs() < MAX_COORDINATE (1e10)                          │   │
-│   │       └── Prevents overflow in area calculations                    │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -479,7 +452,7 @@
 │           │                                                                 │
 │           │    Triangle.hash() ──► Point.hash() ──► (x,y).to_le_bytes()    │
 │           │                                                                 │
-│           │    Geometric coordinates (f64) are embedded in the PoW          │
+│           │    Geometric coordinates (I32F32) are embedded in the PoW       │
 │           │    through the transaction merkle tree                          │
 │           │                                                                 │
 └───────────┴─────────────────────────────────────────────────────────────────┘
@@ -517,8 +490,8 @@
 │                                                                             │
 │  FEE CALCULATIONS                                                           │
 │  ────────────────                                                           │
-│  blockchain.rs:1012-1019 calculate_total_fees() → f64                       │
-│  transaction.rs:39-46    Transaction::fee_area() → f64                      │
+│  blockchain.rs:1012-1019 calculate_total_fees() → I32F32                    │
+│  transaction.rs:39-46    Transaction::fee_area() → I32F32                   │
 │                                                                             │
 │  CONCURRENCY                                                                │
 │  ───────────                                                                │
