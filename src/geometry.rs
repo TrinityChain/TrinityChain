@@ -175,21 +175,29 @@ impl Triangle {
     // 1.7 Subdivision Algorithm
     // ------------------------------------------------------------------------
 
-    /// Subdivides the current triangle into three smaller, valid triangles.
+    /// Calculates the centroid of the triangle.
+    #[inline]
+    fn centroid(&self) -> Point {
+        Point::new(
+            (self.a.x + self.b.x + self.c.x) / 3,
+            (self.a.y + self.b.y + self.c.y) / 3,
+        )
+    }
+
+    /// Subdivides the current triangle into three smaller, valid triangles of equal area
+    /// whose areas sum to the parent's area. This is done by connecting
+    /// the vertices to the triangle's centroid.
     #[inline]
     pub fn subdivide(&self) -> [Triangle; 3] {
-        let mid_ab = self.a.midpoint(&self.b);
-        let mid_bc = self.b.midpoint(&self.c);
-        let mid_ca = self.c.midpoint(&self.a);
-
+        let centroid = self.centroid();
         let parent_hash = Some(self.hash());
         let child_value = self.value.map(|v| v / 3);
 
-        let mut t1 = Triangle::new(self.a, mid_ab, mid_ca, parent_hash, self.owner.clone());
+        let mut t1 = Triangle::new(self.a, self.b, centroid, parent_hash, self.owner.clone());
         t1.value = child_value;
-        let mut t2 = Triangle::new(mid_ab, self.b, mid_bc, parent_hash, self.owner.clone());
+        let mut t2 = Triangle::new(self.b, self.c, centroid, parent_hash, self.owner.clone());
         t2.value = child_value;
-        let mut t3 = Triangle::new(mid_ca, mid_bc, self.c, parent_hash, self.owner.clone());
+        let mut t3 = Triangle::new(self.c, self.a, centroid, parent_hash, self.owner.clone());
         t3.value = child_value;
 
         [t1, t2, t3]
@@ -280,7 +288,9 @@ mod tests {
         let children = parent.subdivide();
         let total_child_area: Coord = children.iter().map(|t| t.area()).sum();
 
-        assert_eq!(total_child_area, parent_area * Coord::from_num(0.75));
+        // The total area of the children must equal the parent's area.
+        // A failure here indicates a loss of value in the subdivision process.
+        assert_eq!(total_child_area, parent_area);
     }
 
     #[test]
