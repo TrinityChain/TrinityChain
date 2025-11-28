@@ -65,7 +65,7 @@ Blockchain::calculate_current_supply(height) -> u64
 blockchain.calculate_remaining_supply() -> u64
 
 // Get percentage of max supply mined
-blockchain.supply_percentage() -> f64
+blockchain.supply_percentage() -> I32F32
 
 // Get current halving era (0, 1, 2, ...)
 blockchain.current_halving_era() -> u64

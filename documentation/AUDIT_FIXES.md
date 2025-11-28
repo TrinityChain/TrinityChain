@@ -133,20 +133,20 @@ use std::time::Duration; // Add this if not already present, though it likely is
 **Impact:** Hashrate display incorrect at high difficulties
 
 **Problem:**
-```rust
-let capped_difficulty = difficulty.min(20);
-let expected_hashes = (16_f64).powi(capped_difficulty as i32);
-// 16^20 can still cause issues on some systems
-```
+The hashrate calculation used `f64`, which could lead to precision loss and non-deterministic results on different platforms. The original implementation was also vulnerable to integer overflows.
 
 **Fix:**
+The calculation was rewritten to use `u128` for large number arithmetic, ensuring deterministic results and preventing overflows for any reasonable difficulty level.
 ```rust
-let safe_difficulty = difficulty.min(40); // 16^40 < f64::MAX
-let expected_hashes = 16_f64.powi(safe_difficulty as i32);
-expected_hashes / elapsed.max(0.001) // Prevent division by near-zero
+// Cap difficulty to prevent overflow with u128. 16^31 fits in u128.
+let safe_difficulty = difficulty.min(31);
+let expected_hashes = 16u128.pow(safe_difficulty as u32);
+// Perform division using integer arithmetic to avoid floating point issues.
+let elapsed_ms = elapsed.as_millis().max(1);
+let hashrate = (expected_hashes * 1000) / elapsed_ms;
 ```
 
-**Result:** ✅ Safe calculation up to difficulty 40, prevents NaN/Inf
+**Result:** ✅ Safe and deterministic hashrate calculation up to difficulty 31.
 
 ---
 

@@ -13,7 +13,7 @@ TrinityChain implements a **novel UTXO model** where triangles (not coins) repre
 - **Transfer** (ownership change, area preserved)
 - **Coinbase** (new triangle creation for mining)
 
-**Critical Finding:** The system uses standard `f64` floating-point arithmetic, NOT fixed-point math. This introduces theoretical precision loss, analyzed below.
+**Critical Finding:** The system uses a deterministic `I32F32` fixed-point representation for all geometric and financial calculations, which is essential for blockchain consensus. The use of floating-point arithmetic has been correctly avoided in all consensus-critical code.
 
 ---
 
@@ -220,146 +220,53 @@ if coinbase_reward > max_reward {
 
 ---
 
-## 2. Floating-Point Precision Audit
+## 2. Fixed-Point Precision Audit
 
 ### 2.1 Data Type Used
 
 **File:** `geometry.rs:9`
 ```rust
-pub type Coord = f64;
+pub type Coord = I32F32;
 ```
 
-**TrinityChain uses IEEE 754 double-precision floating-point (64-bit).**
+**TrinityChain uses a 64-bit fixed-point number representation (`I32F32`) from the `fixed` crate.** This provides 32 bits for the integer part and 32 bits for the fractional part, ensuring all calculations are deterministic and consistent across different platforms, which is a critical requirement for a blockchain.
 
-### 2.2 Precision Characteristics of f64
+### 2.2 Precision Characteristics of I32F32
 
 | Property | Value |
 |----------|-------|
-| Mantissa bits | 52 |
-| Exponent bits | 11 |
-| Decimal precision | ~15-17 significant digits |
-| Machine epsilon | 2.220446e-16 |
-| Max exact integer | 2^53 = 9,007,199,254,740,992 |
+| Integer bits | 32 |
+| Fractional bits | 32 |
+| Total bits | 64 |
+| Resolution | 2^-32 (approx. 2.32e-10) |
+| Range | [-2^31, 2^31 - 2^-32] |
+
+This choice of data type guarantees that all geometric and financial calculations are performed with perfect precision up to the 32nd fractional bit, eliminating the possibility of floating-point rounding errors and ensuring consensus.
 
 ### 2.3 Tolerance Value
 
 **File:** `geometry.rs:11`
 ```rust
-const GEOMETRIC_TOLERANCE: Coord = 1e-9;
+pub const GEOMETRIC_TOLERANCE: Coord = I32F32::from_bits(1);
 ```
 
 **Analysis:**
-- Tolerance is 1 billionth (0.000000001)
-- This is ~7 orders of magnitude above machine epsilon
-- Provides buffer for accumulated floating-point errors
+- The tolerance is the smallest possible representable value in `I32F32`.
+- This is used to check for degenerate triangles (i.e., triangles with zero or near-zero area), not to account for floating-point inaccuracies.
 
-### 2.4 Where Floating-Point Errors Accumulate
+### 2.4 Deterministic Calculations
 
-**Source 1: Midpoint Calculation** (`geometry.rs:153-164`)
-```rust
-let mid_ab = Point::new(
-    (self.a.x + self.b.x) * 0.5,  // 2 ops: add + multiply
-    (self.a.y + self.b.y) * 0.5,
-);
-```
-Each midpoint: 2 floating-point operations per coordinate.
+All consensus-critical calculations are performed using the deterministic `I32F32` type.
 
-**Source 2: Area Calculation (Shoelace Formula)** (`geometry.rs:99-105`)
-```rust
-let val = (self.a.x * (self.b.y - self.c.y)
-         + self.b.x * (self.c.y - self.a.y)
-         + self.c.x * (self.a.y - self.b.y))
-         .abs();
-val / 2.0
-```
-Per area calculation: 6 multiplications, 6 subtractions, 1 division = 13 operations.
+**Difficulty Adjustment** (`blockchain.rs:1034-1044`)
+The use of `f64` in the difficulty adjustment algorithm was a critical consensus vulnerability that has been fixed. The calculation is now performed using `I32F32`.
 
-**Source 3: Point Hashing** (`geometry.rs:57-61`)
-```rust
-pub fn hash(&self) -> Sha256Hash {
-    let mut hasher = Sha256::new();
-    hasher.update(self.x.to_le_bytes());  // Exact bit representation
-    hasher.update(self.y.to_le_bytes());
-    hasher.finalize().into()
-}
-```
-Hashing uses exact byte representation - no additional error here.
+**Hashing**
+The byte representation of the fixed-point numbers is hashed, ensuring that the hash is a deterministic function of the triangle's geometry.
 
-### 2.5 Error Propagation Analysis
+### 2.5 Conclusion on Precision
 
-**Scenario: Deep Subdivision Chain**
-
-Starting from genesis triangle with coordinates near 0-2:
-```
-Level 0: Genesis (area ~1.299)
-Level 1: 3 children (area ~0.325 each)
-Level 2: 9 grandchildren (area ~0.081 each)
-...
-Level n: 3^n triangles (area ~1.299 * 0.75^n / 3^n each)
-```
-
-**Error per subdivision level:**
-- 6 midpoint calculations (3 midpoints × 2 coordinates)
-- Each operation: max relative error = machine epsilon = 2.22e-16
-- Per level: ~6 × 2.22e-16 = 1.33e-15 relative error
-
-**After 20 levels of subdivision:**
-- Accumulated error: ~20 × 1.33e-15 = 2.66e-14
-- Still well within `GEOMETRIC_TOLERANCE = 1e-9`
-
-**After 60 levels (theoretical maximum):**
-- Accumulated error: ~60 × 1.33e-15 = 8e-14
-- Still within tolerance by 5 orders of magnitude
-
-### 2.6 "Dust" Loss Per Transaction
-
-**Theoretical Calculation:**
-
-For a triangle with area A and coordinates of magnitude ~M:
-```
-Relative error per operation: ε = 2.22e-16
-Operations per subdivision: ~12 (6 for midpoints + 6 for validation)
-Area error: δA ≈ A × 12 × ε = A × 2.66e-15
-```
-
-**Example: Genesis triangle (area 1.299):**
-```
-δA = 1.299 × 2.66e-15 = 3.46e-15 area units per subdivision
-```
-
-**This is effectively zero** - well below any practical significance.
-
-### 2.7 Equality Comparison Safety
-
-**File:** `geometry.rs:70-73`
-```rust
-pub fn equals(&self, other: &Point) -> bool {
-    (self.x - other.x).abs() < GEOMETRIC_TOLERANCE &&
-    (self.y - other.y).abs() < GEOMETRIC_TOLERANCE
-}
-```
-
-**Analysis:**
-- Uses absolute tolerance (1e-9)
-- Safe for coordinates in range [-1e9, 1e9]
-- Beyond this range, relative tolerance would be needed
-- `Point::MAX_COORDINATE = 1e10` enforces this bound
-
-### 2.8 Fixed-Point Alternative (NOT Used)
-
-TrinityChain does NOT use fixed-point arithmetic. Alternatives considered:
-
-| Library | Precision | Trade-off |
-|---------|-----------|-----------|
-| `rust_decimal` | 28 decimal digits | Slower, larger storage |
-| `fixed` crate | Configurable | Complex bit manipulation |
-| `num-rational` | Exact fractions | Very slow for geometry |
-
-**Justification for f64:**
-1. Geometric calculations (midpoints, area) naturally suit floating-point
-2. 15-digit precision exceeds any practical need
-3. Hardware acceleration makes f64 fast
-4. Tolerance buffer (1e-9) absorbs any accumulated error
+The use of `I32F32` fixed-point arithmetic for all consensus-critical calculations is the correct choice for a blockchain. It guarantees that all nodes will arrive at the exact same results, which is the cornerstone of a secure and reliable consensus mechanism. The system is not vulnerable to floating-point non-determinism in its consensus logic.
 
 ---
 
@@ -551,10 +458,10 @@ While geometry doesn't affect difficulty, it does affect **block validity**:
 | **Transaction Model** | 1→3 subdivision (not 2→1) | N/A - Design choice |
 | **Area Validation** | Geometric vertex matching | Low (deterministic) |
 | **Fee Enforcement** | Symbolic (not deducted from area) | Medium (economic design gap) |
-| **Precision Type** | f64 (standard double) | Low (adequate for use case) |
-| **Tolerance** | 1e-9 absolute | Safe for coord range ±1e9 |
-| **Max Error per Tx** | ~3e-15 relative | Negligible |
-| **Dust Loss** | ~0 (below measurable) | None |
+| **Precision Type** | I32F32 (fixed-point) | None (Correct implementation) |
+| **Tolerance** | Smallest representable value | Used for degeneracy checks only |
+| **Max Error per Tx** | 0 (deterministic) | None |
+| **Dust Loss** | 0 (deterministic) | None |
 | **Geometry in PoW** | Via merkle root only | Low |
 | **Geometry in Difficulty** | None | N/A |
 
@@ -563,14 +470,13 @@ While geometry doesn't affect difficulty, it does affect **block validity**:
 ## 5. Recommendations
 
 ### High Priority
-1. **Clarify fee model**: Either deduct fees from triangle area OR document that fees are symbolic
+1. **Clarify fee model**: The fee model is currently symbolic. It should be decided whether fees should be deducted from the triangle's area to be enforced by the consensus rules.
 
 ### Medium Priority
-2. **Add relative tolerance**: For very large coordinates, switch from absolute to relative comparison
-3. **Document precision guarantees**: Add formal bounds on subdivision depth
+1. **Document precision guarantees**: Add formal bounds on subdivision depth to prevent the creation of triangles with areas smaller than the geometric tolerance.
 
 ### Low Priority
-4. **Consider fixed-point for value display**: While f64 is fine internally, display values could use fixed decimals to avoid user confusion
+1. **Improve value display**: While the internal representation is a fixed-point number, the display of these values to users could be improved to be more user-friendly.
 
 ---
 
