@@ -2,6 +2,8 @@ use trinitychain::network::NetworkNode;
 use trinitychain::blockchain::Blockchain;
 use trinitychain::persistence::Database;
 use std::env;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() {
@@ -21,8 +23,8 @@ async fn main() {
 async fn connect_peer(addr: &str) {
     println!("🔗 Connecting to peer: {}", addr);
     let db = Database::open("trinitychain.db").expect("DB open failed");
-    let blockchain = db.load_blockchain().expect("Load failed");
-    let node = NetworkNode::new(blockchain, "trinitychain.db".to_string());
+    let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let node = Arc::new(NetworkNode::new(Arc::new(RwLock::new(blockchain))));
     
     let parts: Vec<&str> = addr.split(':').collect();
     if parts.len() != 2 { eprintln!("❌ Format: IP:PORT"); return; }
@@ -30,7 +32,7 @@ async fn connect_peer(addr: &str) {
     let host = parts[0].to_string();
     let port = parts[1].parse::<u16>().unwrap_or(8334);
     
-    match node.connect_peer(host, port).await {
+    match node.clone().connect_peer(host, port).await {
         Ok(_) => println!("✅ Connected! Syncing..."),
         Err(e) => eprintln!("❌ Failed: {}", e),
     }

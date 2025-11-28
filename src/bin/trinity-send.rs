@@ -10,6 +10,8 @@ use std::time::Duration;
 use trinitychain::wallet;
 use std::collections::HashSet;
 use trinitychain::geometry::Coord;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 const LOGO: &str = r#"
 ╔═══════════════════════════════════════════════════════════════╗
@@ -201,8 +203,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.set_message("Broadcasting to network...");
 
-    let network_node = NetworkNode::new(chain, "trinitychain.db".to_string());
-    network_node.broadcast_transaction(&transaction).await?;
+    let network_node = NetworkNode::new(Arc::new(RwLock::new(chain)));
+    network_node.broadcast_transaction(&transaction).await;
 
     pb.finish_and_clear();
 

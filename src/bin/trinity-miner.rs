@@ -6,7 +6,8 @@ use trinitychain::transaction::{Transaction, CoinbaseTx};
 use trinitychain::network::NetworkNode;
 use std::env;
 use std::time::{Duration, Instant};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use ratatui::{
     backend::CrosstermBackend,
@@ -320,7 +321,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and start network node
     let db_for_network = Database::open("trinitychain.db").expect("Failed to open database");
     let chain_for_network = db_for_network.load_blockchain().unwrap_or_else(|_| Blockchain::new());
-    let network = Arc::new(NetworkNode::new(chain_for_network, "trinitychain.db".to_string()));
+    let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
 
     // Start network server in background
@@ -349,7 +350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Draw UI
-        let stats_lock = stats.lock().unwrap().clone();
+        let stats_lock = stats.lock().await.clone();
         terminal.draw(|f| {
             draw_ui(f, &stats_lock, &beneficiary_address);
         }).ok();
@@ -375,7 +376,7 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
     let mut blocks_mined = 0;
 
     loop {
-        chain = db.load_blockchain().unwrap_or_else(|_| chain);
+        chain = db.load_blockchain().unwrap_or_else(|_| chain.clone());
 
         let last_block = match chain.blocks.last() {
             Some(block) => block,
@@ -406,7 +407,7 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
 
         // Update status
         {
-            let mut s = stats.lock().unwrap();
+            let mut s = stats.lock().await;
             s.mining_status = format!("Mining block #{}...", new_height);
             s.difficulty = difficulty;
         }
@@ -426,7 +427,7 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
                 let hashrate = if elapsed > 0.0 { hash_count as f64 / elapsed } else { 0.0 };
 
                 {
-                    let mut s = stats.lock().unwrap();
+                    let mut s = stats.lock().await;
                     s.current_hash_rate = hashrate;
 
                     // Update hashrate history every 5000 hashes to avoid too frequent updates
@@ -438,8 +439,8 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
 
                 // Update network stats after releasing lock
                 if let Some(ref net) = network {
-                    let peer_count = net.peers_count().await;
-                    let mut s = stats.lock().unwrap();
+                    let peer_count = net.list_peers().await.len();
+                    let mut s = stats.lock().await;
                     s.network_peers = peer_count;
                 }
 
@@ -455,16 +456,14 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
         let mine_duration = mine_start.elapsed().as_secs_f64();
         let hash_hex = hex::encode(new_block.hash);
 
-        if let Err(_e) = chain.apply_block(new_block.clone()) {
+        if chain.apply_block(new_block.clone()).is_err() {
             sleep(Duration::from_secs(10)).await;
             continue;
         }
 
         // Broadcast block to network
         if let Some(ref network) = network {
-            if let Err(e) = network.broadcast_block(&new_block).await {
-                eprintln!("⚠️  Failed to broadcast block: {}", e);
-            }
+            network.broadcast_block(&new_block).await;
         }
 
         if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty) {
@@ -484,7 +483,7 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
 
             let parent_hash_hex = hex::encode(new_block.header.previous_hash);
 
-            let mut s = stats.lock().unwrap();
+            let mut s = stats.lock().await;
             s.blocks_mined = blocks_mined;
             s.chain_height = current_height;
             s.uptime_secs = elapsed.as_secs();
