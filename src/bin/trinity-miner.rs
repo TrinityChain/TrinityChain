@@ -3,6 +3,7 @@
 use trinitychain::blockchain::{Blockchain, Block};
 use trinitychain::persistence::Database;
 use trinitychain::transaction::{Transaction, CoinbaseTx};
+use trinitychain::network::NetworkNode;
 use std::env;
 use std::time::{Duration, Instant};
 use std::sync::{Arc, Mutex};
@@ -37,6 +38,7 @@ struct MiningStats {
     halving_era: u64,
     current_hash_rate: f64,
     mining_status: String,
+    network_peers: usize,
     last_block_hash: String,
     last_block_time: f64,
     recent_blocks: Vec<(u64, String, String)>, // (height, hash, parent_hash)
@@ -59,6 +61,7 @@ impl Default for MiningStats {
             halving_era: 0,
             current_hash_rate: 0.0,
             mining_status: "Starting...".to_string(),
+            network_peers: 0,
             last_block_hash: "N/A".to_string(),
             last_block_time: 0.0,
             recent_blocks: Vec::new(),
@@ -98,7 +101,7 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
         .margin(1)
         .constraints([
             Constraint::Length(3),  // Title
-            Constraint::Length(7),  // Mining Status
+            Constraint::Length(8),  // Mining Status (increased for network peers)
             Constraint::Length(10), // Stats
             Constraint::Length(6),  // Supply Progress
             Constraint::Length(6),  // Hashrate Graph
@@ -141,6 +144,10 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
         Line::from(vec![
             Span::styled("Last Block Time: ", Style::default().fg(Color::Gray)),
             Span::styled(format!("{:.2}s", stats.last_block_time), Style::default().fg(Color::Blue)),
+        ]),
+        Line::from(vec![
+            Span::styled("Network Peers: ", Style::default().fg(Color::Gray)),
+            Span::styled(format!("{}", stats.network_peers), Style::default().fg(Color::Cyan)),
         ]),
     ];
     let status = Paragraph::new(status_text)
@@ -310,9 +317,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stats_clone = Arc::clone(&stats);
     let beneficiary_clone = beneficiary_address.clone();
 
+    // Create and start network node
+    let db_for_network = Database::open("trinitychain.db").expect("Failed to open database");
+    let chain_for_network = db_for_network.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let network = Arc::new(NetworkNode::new(chain_for_network, "trinitychain.db".to_string()));
+    let network_clone = network.clone();
+
+    // Start network server in background
+    tokio::spawn(async move {
+        let port = 8333; // Default P2P port
+        println!("🌐 Starting P2P network on port {}...", port);
+        if let Err(e) = network_clone.start_server(port).await {
+            eprintln!("❌ Network error: {}", e);
+        }
+    });
+
     // Spawn mining task
     let mining_handle = tokio::spawn(async move {
-        mining_loop(beneficiary_clone, threads, stats_clone).await;
+        mining_loop(beneficiary_clone, threads, stats_clone, Some(network)).await;
     });
 
     // UI loop
@@ -345,7 +367,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mutex<MiningStats>>) {
+async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mutex<MiningStats>>, network: Option<Arc<NetworkNode>>) {
     let db = Database::open("trinitychain.db").expect("Failed to open database");
     let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
 
@@ -403,13 +425,22 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
                 let elapsed = mine_start.elapsed().as_secs_f64();
                 let hashrate = if elapsed > 0.0 { hash_count as f64 / elapsed } else { 0.0 };
 
-                let mut s = stats.lock().unwrap();
-                s.current_hash_rate = hashrate;
+                {
+                    let mut s = stats.lock().unwrap();
+                    s.current_hash_rate = hashrate;
 
-                // Update hashrate history every 5000 hashes to avoid too frequent updates
-                if hash_count % 5000 == 0 {
-                    s.hashrate_history.remove(0);
-                    s.hashrate_history.push(hashrate as u64);
+                    // Update hashrate history every 5000 hashes to avoid too frequent updates
+                    if hash_count % 5000 == 0 {
+                        s.hashrate_history.remove(0);
+                        s.hashrate_history.push(hashrate as u64);
+                    }
+                } // Lock dropped here
+
+                // Update network stats after releasing lock
+                if let Some(ref net) = network {
+                    let peer_count = net.peers_count().await;
+                    let mut s = stats.lock().unwrap();
+                    s.network_peers = peer_count;
                 }
 
                 last_update = Instant::now();
@@ -427,6 +458,13 @@ async fn mining_loop(beneficiary_address: String, _threads: usize, stats: Arc<Mu
         if let Err(_e) = chain.apply_block(new_block.clone()) {
             sleep(Duration::from_secs(10)).await;
             continue;
+        }
+
+        // Broadcast block to network
+        if let Some(ref network) = network {
+            if let Err(e) = network.broadcast_block(&new_block).await {
+                eprintln!("⚠️  Failed to broadcast block: {}", e);
+            }
         }
 
         if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty) {
