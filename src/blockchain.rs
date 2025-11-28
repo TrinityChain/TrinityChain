@@ -361,7 +361,7 @@ impl Blockchain {
                 height: 0,
                 previous_hash: [0; 32],
                 timestamp: genesis_timestamp,
-                difficulty: 2,
+                difficulty: 1,
                 nonce: 0,
                 merkle_root: [0; 32],
                 headline: Some(
@@ -383,7 +383,7 @@ impl Blockchain {
             block_index,
             forks: HashMap::new(),
             state,
-            difficulty: 2,
+            difficulty: 1,
             mempool: Mempool::new(),
         }
     }
@@ -1242,31 +1242,34 @@ mod tests {
     #[test]
     fn test_difficulty_adjustment_increase() {
         let mut chain = Blockchain::new();
+        let initial_difficulty = chain.difficulty;
 
-        for i in 1..=10 {
+        // Add enough blocks to trigger a difficulty adjustment
+        for i in 1..=DIFFICULTY_ADJUSTMENT_WINDOW {
+            let last_block = chain.blocks.last().unwrap();
             let block = Block {
                 header: BlockHeader {
                     height: i,
-                    previous_hash: chain
-                        .blocks
-                        .last()
-                        .expect("Test setup should ensure this exists")
-                        .hash,
-                    timestamp: Utc::now().timestamp() + (i as i64 * 10),
+                    previous_hash: last_block.hash,
+                    // Simulate blocks being mined very quickly (10 seconds apart)
+                    timestamp: last_block.header.timestamp + 10,
                     difficulty: chain.difficulty,
                     nonce: 0,
                     merkle_root: [0; 32],
                     headline: None,
                 },
+                // Not a real hash, but fine for this test
                 hash: [i as u8; 32],
                 transactions: vec![],
             };
-
             chain.blocks.push(block);
-            chain.adjust_difficulty();
         }
 
-        assert!(chain.difficulty >= 2);
+        // Now, call adjust_difficulty.
+        chain.adjust_difficulty();
+
+        // With blocks being mined much faster than the target, difficulty should increase.
+        assert!(chain.difficulty > initial_difficulty);
     }
 
     #[test]
