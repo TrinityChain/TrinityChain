@@ -216,7 +216,6 @@ impl Triangle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fixed::types::I32F32;
 
     fn setup_test_triangle() -> Triangle {
         Triangle::new(

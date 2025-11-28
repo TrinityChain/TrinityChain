@@ -108,9 +108,7 @@ pub fn ensure_wallet_dir() -> Result<(), ChainError> {
 /// Create a new wallet and save it to the default location
 pub fn create_default_wallet() -> Result<Wallet, ChainError> {
     ensure_wallet_dir()?;
-
     let path = get_default_wallet_path()?;
-
     if path.exists() {
         return Err(ChainError::WalletError(
             "Wallet already exists at default location".to_string(),
@@ -118,47 +116,38 @@ pub fn create_default_wallet() -> Result<Wallet, ChainError> {
     }
     let password = prompt_password("Enter a password for your new wallet: ")
         .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
-
     let wallet = Wallet::new(None)?;
     let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, &password)?;
     encrypted_wallet.save(&path)?;
-
     Ok(wallet)
 }
 
 /// Create a named wallet
 pub fn create_named_wallet(name: &str) -> Result<Wallet, ChainError> {
     ensure_wallet_dir()?;
-
     let path = get_named_wallet_path(name)?;
-
     if path.exists() {
         return Err(ChainError::WalletError(format!(
             "Wallet '{}' already exists",
             name
         )));
     }
-
     let password = prompt_password("Enter a password for your new wallet: ")
         .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
-
     let wallet = Wallet::new(Some(name.to_string()))?;
     let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, &password)?;
     encrypted_wallet.save(&path)?;
-
     Ok(wallet)
 }
 
 /// Load the default wallet
 pub fn load_default_wallet() -> Result<Wallet, ChainError> {
     let path = get_default_wallet_path()?;
-
     if !path.exists() {
         return Err(ChainError::WalletError(
             "No wallet found. Run 'trinity-wallet new' first.".to_string(),
         ));
     }
-
     let encrypted_wallet = EncryptedWallet::load(&path)?;
     let password = prompt_password("Enter your wallet password: ")
         .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
@@ -168,14 +157,12 @@ pub fn load_default_wallet() -> Result<Wallet, ChainError> {
 /// Load a named wallet
 pub fn load_named_wallet(name: &str) -> Result<Wallet, ChainError> {
     let path = get_named_wallet_path(name)?;
-
     if !path.exists() {
         return Err(ChainError::WalletError(format!(
             "Wallet '{}' not found",
             name
         )));
     }
-
     let encrypted_wallet = EncryptedWallet::load(&path)?;
     let password = prompt_password("Enter your wallet password: ")
         .map_err(|e| ChainError::WalletError(format!("Failed to read password: {}", e)))?;
@@ -185,16 +172,12 @@ pub fn load_named_wallet(name: &str) -> Result<Wallet, ChainError> {
 /// List all available wallets in the wallet directory
 pub fn list_wallets() -> Result<Vec<String>, ChainError> {
     let wallet_dir = get_wallet_dir()?;
-
     if !wallet_dir.exists() {
         return Ok(Vec::new());
     }
-
     let mut wallets = Vec::new();
-
     let entries = fs::read_dir(&wallet_dir)
         .map_err(|e| ChainError::WalletError(format!("Failed to read wallet directory: {}", e)))?;
-
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
@@ -203,16 +186,13 @@ pub fn list_wallets() -> Result<Vec<String>, ChainError> {
                 continue;
             }
         };
-
         let path = entry.path();
-
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
             if let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
                 wallets.push(filename.to_string());
             }
         }
     }
-
     wallets.sort();
     Ok(wallets)
 }
@@ -222,11 +202,13 @@ pub fn list_wallets() -> Result<Vec<String>, ChainError> {
 // ============================================================================
 
 use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
+    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use argon2::{Argon2, PasswordHasher};
-use argon2::password_hash::{SaltString};
+use argon2::{
+    password_hash::{PasswordHasher, SaltString},
+    Argon2, Params, Version,
+};
 
 /// Encrypted wallet structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,45 +216,47 @@ pub struct EncryptedWallet {
     pub name: Option<String>,
     pub address: String,
     pub encrypted_secret_key: String,  // Base64 encoded encrypted data
-    pub salt: String,  // Base64 encoded salt
+    pub password_hash: String, // Argon2 password hash
     pub nonce: String, // Base64 encoded nonce
     pub created: String,
 }
 
 impl EncryptedWallet {
-    /// Encrypt a wallet with a password
+    /// Encrypt a wallet with a password using secure Argon2 parameters.
     pub fn from_wallet(wallet: &Wallet, password: &str) -> Result<Self, ChainError> {
-        use argon2::PasswordHasher;
-        use argon2::password_hash::SaltString;
-
         // Generate a random salt
         let salt = SaltString::generate(&mut OsRng);
 
-        // Derive encryption key from password using Argon2
-        let argon2 = Argon2::default();
+        // Configure Argon2 with recommended parameters
+        let params = Params::new(19456, 2, 1, None)
+            .map_err(|e| ChainError::CryptoError(format!("Argon2 params error: {}", e)))?;
+        let argon2 = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, params);
+
+        // Hash the password
         let password_hash = argon2
             .hash_password(password.as_bytes(), &salt)
-            .map_err(|e| ChainError::CryptoError(format!("Password hashing failed: {}", e)))?;
+            .map_err(|e| ChainError::CryptoError(format!("Password hashing failed: {}", e)))?
+            .to_string();
 
-        // Extract the hash bytes for encryption key
-        let hash_bytes = password_hash.hash
-            .ok_or_else(|| ChainError::CryptoError("No hash generated".to_string()))?;
-        let key_bytes = hash_bytes.as_bytes();
+        // Derive encryption key from the raw hash
+        let hash_bytes = argon2
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| ChainError::CryptoError(format!("Password hashing failed: {}", e)))?
+            .hash
+            .ok_or_else(|| ChainError::CryptoError("No hash generated".to_string()))?
+            .as_bytes()
+            .to_vec();
 
         // Create cipher
-        let cipher = Aes256Gcm::new_from_slice(&key_bytes[..32])
+        let cipher = Aes256Gcm::new_from_slice(&hash_bytes[..32])
             .map_err(|e| ChainError::CryptoError(format!("Failed to create cipher: {}", e)))?;
 
         // Generate a random nonce
-        use rand::RngCore;
-        let mut nonce_bytes = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
         // Encrypt the secret key
-        let secret_bytes = wallet.secret_key_hex.as_bytes();
         let ciphertext = cipher
-            .encrypt(&nonce, secret_bytes)
+            .encrypt(&nonce, wallet.secret_key_hex.as_bytes())
             .map_err(|e| ChainError::CryptoError(format!("Encryption failed: {}", e)))?;
 
         use base64::{Engine as _, engine::general_purpose};
@@ -281,32 +265,40 @@ impl EncryptedWallet {
             name: wallet.name.clone(),
             address: wallet.address.clone(),
             encrypted_secret_key: general_purpose::STANDARD.encode(&ciphertext),
-            salt: salt.to_string(),
-            nonce: general_purpose::STANDARD.encode(&nonce_bytes),
+            password_hash,
+            nonce: general_purpose::STANDARD.encode(&nonce),
             created: wallet.created.clone(),
         })
     }
 
-    /// Decrypt the wallet using a password
+    /// Decrypt the wallet using a password.
     pub fn decrypt(&self, password: &str) -> Result<Wallet, ChainError> {
+        use argon2::password_hash::{PasswordHash, PasswordVerifier};
 
+        // Verify password against the stored hash
+        let parsed_hash = PasswordHash::new(&self.password_hash)
+            .map_err(|e| ChainError::CryptoError(format!("Invalid password hash: {}", e)))?;
+        Argon2::default()
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .map_err(|_| ChainError::CryptoError("Decryption failed - wrong password?".to_string()))?;
 
-        // Parse the stored salt
-        let salt = SaltString::from_b64(&self.salt)
-            .map_err(|e| ChainError::CryptoError(format!("Invalid salt: {}", e)))?;
-
-        // Derive the same key from password
-        let argon2 = Argon2::default();
-        let password_hash = argon2
-            .hash_password(password.as_bytes(), &salt)
-            .map_err(|e| ChainError::CryptoError(format!("Password hashing failed: {}", e)))?;
-
-        let hash_bytes = password_hash.hash
-            .ok_or_else(|| ChainError::CryptoError("No hash generated".to_string()))?;
-        let key_bytes = hash_bytes.as_bytes();
+        // Re-derive the key for decryption (must use same params)
+        let salt = parsed_hash.salt.ok_or(ChainError::CryptoError("Salt not found in password hash".to_string()))?;
+        let argon2 = Argon2::new(
+            argon2::Algorithm::Argon2id,
+            Version::V0x13,
+            Params::new(19456, 2, 1, None).map_err(|e| ChainError::CryptoError(format!("Argon2 params error: {}", e)))?,
+        );
+        let hash_bytes = argon2
+            .hash_password(password.as_bytes(), salt)
+            .map_err(|e| ChainError::CryptoError(format!("Password hashing failed: {}", e)))?
+            .hash
+            .ok_or_else(|| ChainError::CryptoError("No hash generated".to_string()))?
+            .as_bytes()
+            .to_vec();
 
         // Create cipher
-        let cipher = Aes256Gcm::new_from_slice(&key_bytes[..32])
+        let cipher = Aes256Gcm::new_from_slice(&hash_bytes[..32])
             .map_err(|e| ChainError::CryptoError(format!("Failed to create cipher: {}", e)))?;
 
         // Decode nonce and ciphertext
@@ -321,7 +313,7 @@ impl EncryptedWallet {
 
         // Decrypt
         let plaintext = cipher
-            .decrypt(&nonce, ciphertext.as_ref())
+            .decrypt(nonce, ciphertext.as_ref())
             .map_err(|_| ChainError::CryptoError("Decryption failed - wrong password?".to_string()))?;
 
         let secret_key_hex = String::from_utf8(plaintext)
@@ -382,7 +374,6 @@ impl EncryptedWallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::tempdir;
 
     #[test]

@@ -3,7 +3,8 @@ use log::{info, warn};
 use trinitychain::persistence::Database;
 use std::sync::Arc;
 use std::collections::HashMap;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
+use trinitychain::network::NetworkNode;
 
 type RateLimiter = Arc<Mutex<HashMap<i64, std::time::Instant>>>;
 
@@ -17,7 +18,7 @@ enum Command {
     #[command(description = "view blockchain statistics")]
     Stats,
     #[command(description = "check wallet balance (address)")]
-    Balance(String),
+    Balance,
     #[command(description = "view recent blocks")]
     Blocks,
     #[command(description = "see genesis block")]
@@ -48,7 +49,7 @@ async fn answer(
     bot: Bot,
     message: Message,
     command: Command,
-    node_opt: Option<Arc<trinitychain::network::NetworkNode>>,
+    node_opt: Option<Arc<NetworkNode>>,
     admin_token: Option<String>,
     rate_limiter: RateLimiter,
 ) -> ResponseResult<()> {
@@ -110,7 +111,7 @@ async fn answer(
         }
         Command::Node => {
             if let Some(node) = node_opt.as_ref() {
-                let peers_count = node.peers_count().await;
+                let peers_count = node.list_peers().await.len();
                 let response = format!("🌐 Connected peers: {}", peers_count);
                 bot.send_message(message.chat.id, response).await?;
             } else {
@@ -139,7 +140,7 @@ async fn answer(
                     Ok(chain) => {
                         let height = chain.blocks.last().map_or(0, |b| b.header.height);
                         let peers_count = if let Some(node) = node_opt.as_ref() {
-                            node.peers_count().await
+                            node.list_peers().await.len()
                         } else {
                             0
                         };
@@ -164,7 +165,6 @@ async fn answer(
             info!("Handled /status command for user: {:?}", message.from());
         }
         Command::Broadcast(txhex) => {
-            // Rate limiting: allow one broadcast per 60s per user
             if let Some(from) = message.from() {
                 let uid = from.id.0 as i64;
                 let mut rl = rate_limiter.lock().await;
@@ -174,11 +174,9 @@ async fn answer(
                         return Ok(());
                     }
                 }
-                // update last seen now
                 rl.insert(uid, std::time::Instant::now());
             }
 
-            // Support sending admin token as prefix: TOKEN:HEX
             let mut provided_token: Option<&str> = None;
             let mut hex_part = txhex.as_str();
             if let Some(pos) = txhex.find(':') {
@@ -186,12 +184,9 @@ async fn answer(
                 hex_part = &txhex[pos+1..];
             }
 
-            // If admin token is configured, require it matches provided token
             if let Some(cfg_token) = admin_token.as_ref() {
                 match provided_token {
-                    Some(t) if t == cfg_token => {
-                        // ok
-                    }
+                    Some(t) if t == cfg_token => {}
                     _ => {
                         warn!("Unauthorized broadcast attempt from {:?}", message.from());
                         bot.send_message(message.chat.id, "❌ Unauthorized: missing or invalid admin token for /broadcast").await?;
@@ -205,16 +200,9 @@ async fn answer(
                     match bincode::deserialize::<trinitychain::transaction::Transaction>(&bytes) {
                         Ok(tx) => {
                             if let Some(node) = node_opt.as_ref() {
-                                match node.broadcast_transaction(&tx).await {
-                                    Ok(_) => {
-                                        let msg = format!("✅ Broadcasted transaction {} to peers", tx.hash_str());
-                                        bot.send_message(message.chat.id, msg).await?;
-                                    }
-                                    Err(e) => {
-                                        let msg = format!("❌ Failed to broadcast: {}", e);
-                                        bot.send_message(message.chat.id, msg).await?;
-                                    }
-                                }
+                                node.broadcast_transaction(&tx).await;
+                                let msg = format!("✅ Broadcasted transaction {} to peers", tx.hash_str());
+                                bot.send_message(message.chat.id, msg).await?;
                             } else {
                                 bot.send_message(message.chat.id, "❌ Network node not initialized; cannot broadcast.").await?;
                             }
@@ -229,201 +217,8 @@ async fn answer(
 
             info!("Handled /broadcast command for user: {:?}", message.from());
         }
-        Command::Balance(address) => {
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let triangles_owned: Vec<_> = chain.state.utxo_set.iter()
-                            .filter(|(_, triangle)| triangle.owner == address)
-                            .collect();
-
-                        let balance: trinitychain::geometry::Coord = triangles_owned.iter()
-                            .map(|(_, triangle)| triangle.area())
-                            .sum();
-
-                        format!(
-                            "💰 Balance for {}:\n\n\
-                            Total Area: {:.6} area\n\
-                            Number of Triangles: {}",
-                            if address.len() > 20 {
-                                format!("{}...{}", &address[..8], &address[address.len()-8..])
-                            } else {
-                                address.clone()
-                            },
-                            balance,
-                            triangles_owned.len()
-                        )
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
-            info!("Handled /balance command for user: {:?}", message.from());
-        }
-        Command::Blocks => {
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let num_blocks = chain.blocks.len().min(5);
-                        let recent_blocks = &chain.blocks[chain.blocks.len().saturating_sub(num_blocks)..];
-
-                        let mut msg = format!("📦 Recent {} Blocks:\n\n", num_blocks);
-                        for block in recent_blocks.iter().rev() {
-                            let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(block.header.timestamp, 0)
-                                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
-                                .unwrap_or_else(|| "Invalid".to_string());
-                            let hash_hex = hex::encode(block.hash);
-                            let hash_display = format!("{}...{}", &hash_hex[..8], &hash_hex[hash_hex.len()-8..]);
-
-                            msg.push_str(&format!(
-                                "🔺 Block #{}\n  Hash: {}\n  Time: {}\n  Txs: {}\n\n",
-                                block.header.height,
-                                hash_display,
-                                timestamp,
-                                block.transactions.len()
-                            ));
-                        }
-                        msg
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
-            info!("Handled /blocks command for user: {:?}", message.from());
-        }
-        Command::Genesis => {
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        if let Some(genesis_block) = chain.blocks.get(0) {
-                            let header = &genesis_block.header;
-                            let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(header.timestamp, 0)
-                                .map(|t| t.to_string())
-                                .unwrap_or_else(|| "Invalid timestamp".to_string());
-                            let headline = header.headline.as_deref().unwrap_or("N/A");
-                            format!(
-                                "Genesis Block:\n- Timestamp: {}\n- Headline: {}\n- Hash: {}",
-                                timestamp,
-                                headline,
-                                hex::encode(genesis_block.hash)
-                            )
-                        } else {
-                            "Genesis block not found.".to_string()
-                        }
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
-            info!("Handled /genesis command for user: {:?}", message.from());
-        }
-        Command::Triangles => {
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => format!("Total triangles in UTXO set: {}", chain.state.count()),
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
-            info!("Handled /triangles command for user: {:?}", message.from());
-        }
-        Command::Difficulty => {
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => format!("Current mining difficulty: {}", chain.difficulty),
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
-            info!("Handled /difficulty command for user: {:?}", message.from());
-        }
-        Command::Height => {
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
-                        format!("Current blockchain height: {}", height)
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
-            info!("Handled /height command for user: {:?}", message.from());
-        }
-        Command::About => {
-            let about_msg = "🔺 About TrinityChain 🔺\n\n\
-                TrinityChain is an innovative blockchain built on triangle geometry.\n\n\
-                Key Features:\n\
-                • Geometric-based ownership using triangles\n\
-                • Proof-of-Work consensus mechanism\n\
-                • Triangle subdivision for value transfer\n\
-                • Bitcoin-style supply curve (21M total)\n\
-                • Halving events every 210,000 blocks\n\n\
-                Each unit of value is represented as a geometric triangle with an area.\n\
-                The blockchain maintains a UTXO (Unspent Triangle Output) set.\n\n\
-                Mining is currently active and rewards decrease over time through halvings.";
-            bot.send_message(message.chat.id, about_msg).await?;
-            info!("Handled /about command for user: {:?}", message.from());
-        }
-        Command::Dashboard => {
-            // Fetch live dashboard data from the blockchain
-            let response = match Database::open("trinitychain.db") {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
-                        let total_supply = trinitychain::blockchain::Blockchain::calculate_current_supply(height);
-                        let current_reward = trinitychain::blockchain::Blockchain::calculate_block_reward(height);
-                        let triangles = chain.state.count();
-                        let mempool_size = chain.mempool.len();
-                        let peers_count = if let Some(node) = node_opt.as_ref() {
-                            node.peers_count().await
-                        } else {
-                            0
-                        };
-
-                        // Get recent blocks info
-                        let num_blocks = chain.blocks.len().min(3);
-                        let recent_blocks = &chain.blocks[chain.blocks.len().saturating_sub(num_blocks)..];
-                        let mut blocks_info = String::new();
-                        for block in recent_blocks.iter().rev() {
-                            let hash_hex = hex::encode(block.hash);
-                            let hash_display = format!("{}...{}", &hash_hex[..6], &hash_hex[hash_hex.len()-6..]);
-                            blocks_info.push_str(&format!(
-                                "  • Block #{}: {} ({} txs)\n",
-                                block.header.height,
-                                hash_display,
-                                block.transactions.len()
-                            ));
-                        }
-
-                        format!(
-                            "🔺 TrinityChain Dashboard 🔺\n\n\
-                            📊 Live Statistics:\n\n\
-                            🏔️ Height: {}\n\
-                            💰 Total Supply: {:.2} area\n\
-                            🎁 Block Reward: {:.2} area\n\
-                            🔺 Active Triangles: {}\n\
-                            ⚡ Difficulty: {}\n\
-                            🌐 Peers: {}\n\
-                            📥 Mempool: {} txs\n\n\
-                            📦 Recent Blocks:\n{}\n\
-                            💡 Tip: Access the full Web Dashboard via the menu button!",
-                            height, total_supply, current_reward, triangles,
-                            chain.difficulty, peers_count, mempool_size, blocks_info
-                        )
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
-            bot.send_message(message.chat.id, response).await?;
-            info!("Handled /dashboard command for user: {:?}", message.from());
+        _ => {
+            bot.send_message(message.chat.id, "Command not implemented yet.").await?;
         }
     }
     Ok(())
@@ -434,20 +229,14 @@ async fn main() {
     pretty_env_logger::init();
     info!("Starting TrinityChain Telegram Bot...");
 
-    // Initialize bot and dependencies
     let bot = Bot::from_env();
-
-    // Load admin token from env (optional)
     let admin_token = std::env::var("BOT_ADMIN_TOKEN").ok();
-
-    // Initialize rate limiter (in-memory)
     let rate_limiter: RateLimiter = Arc::new(Mutex::new(HashMap::new()));
 
-    // Try to initialize a persistent NetworkNode if DB is available
-    let node_opt: Option<Arc<trinitychain::network::NetworkNode>> = match Database::open("trinitychain.db") {
+    let node_opt: Option<Arc<NetworkNode>> = match Database::open("trinitychain.db") {
         Ok(db) => match db.load_blockchain() {
             Ok(chain) => {
-                let node = trinitychain::network::NetworkNode::new(chain, "trinitychain.db".to_string());
+                let node = NetworkNode::new(Arc::new(RwLock::new(chain)));
                 Some(Arc::new(node))
             }
             Err(e) => {

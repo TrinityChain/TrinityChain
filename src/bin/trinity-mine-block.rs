@@ -7,8 +7,8 @@ use trinitychain::miner::{mine_block, mine_block_parallel};
 use std::env;
 use trinitychain::wallet;
 use secp256k1::SecretKey;
-
 use std::collections::HashSet;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
 
@@ -61,7 +61,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret_bytes = hex::decode(secret_hex)?;
     let secret_key = SecretKey::from_slice(&secret_bytes)?;
     let keypair = KeyPair::from_secret_key(secret_key);
-    // Get pending transactions from mempool EARLY to check for conflicts
     let mempool_txs = chain.mempool.get_transactions_by_fee(100);
     
     // Collect locked triangles from pending transfers

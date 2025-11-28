@@ -17,6 +17,8 @@ pub enum ChainError {
     ApiError(String),
     AuthenticationError(String),
     MempoolFull,
+    IoError(String),
+    BincodeError(String),
 }
 
 impl fmt::Display for ChainError {
@@ -35,8 +37,22 @@ impl fmt::Display for ChainError {
             ChainError::ApiError(msg) => write!(f, "API error: {}", msg),
             ChainError::AuthenticationError(msg) => write!(f, "Authentication error: {}", msg),
             ChainError::MempoolFull => write!(f, "Mempool is full"),
+            ChainError::IoError(msg) => write!(f, "IO error: {}", msg),
+            ChainError::BincodeError(msg) => write!(f, "Bincode error: {}", msg),
         }
     }
 }
 
 impl std::error::Error for ChainError {}
+
+impl From<std::io::Error> for ChainError {
+    fn from(err: std::io::Error) -> Self {
+        ChainError::IoError(err.to_string())
+    }
+}
+
+impl From<Box<bincode::ErrorKind>> for ChainError {
+    fn from(err: Box<bincode::ErrorKind>) -> Self {
+        ChainError::BincodeError(err.to_string())
+    }
+}
