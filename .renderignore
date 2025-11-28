@@ -1,17 +1,39 @@
-# Ignore unnecessary files during Render deployment
+# Ignore unnecessary files and directories during Render deployment
+# See deployment/render.yaml for build and start commands.
+
+# Rust build artifacts
 target/debug/
+
+# Database files
 *.db
 *.db-shm
 *.db-wal
+
+# Version control and CI/CD
 .git/
 .github/
+
+# Logs
 *.log
+
+# OS-specific files
 .DS_Store
+
+# Node.js dependencies and build output
 node_modules/
 dashboard/node_modules/
 dashboard/.vite/
+dashboard/dist/
+
+# Documentation and scripts
+documentation/
+scripts/
+
+# Editor swap files
 *.swp
 *.swo
 *~
+
+# Local environment files
 .env.local
 .env.*.local
