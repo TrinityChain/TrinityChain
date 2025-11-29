@@ -1,12 +1,12 @@
 //! Core blockchain implementation for TrinityChain
 
+use crate::error::ChainError;
+use crate::geometry::{Coord, Point, Triangle};
+use crate::mempool::Mempool;
+use crate::transaction::{CoinbaseTx, SubdivisionTx, Transaction};
+use chrono::Utc;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use crate::geometry::{Coord, Triangle, Point};
-use crate::transaction::{Transaction, SubdivisionTx, CoinbaseTx};
-use crate::error::ChainError;
-use crate::mempool::Mempool;
-use chrono::Utc;
 
 pub type Sha256Hash = [u8; 32];
 pub type BlockHeight = u64;
@@ -47,7 +47,7 @@ impl TriangleState {
         for (hash, triangle) in &self.utxo_set {
             self.address_index
                 .entry(triangle.owner.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(*hash);
         }
     }
@@ -104,7 +104,7 @@ impl TriangleState {
             // Update address index: add child hash
             self.address_index
                 .entry(child.owner.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(child_hash);
         }
 
@@ -143,7 +143,7 @@ impl TriangleState {
         // Update address index
         self.address_index
             .entry(tx.beneficiary_address.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(hash);
 
         Ok(())
@@ -265,13 +265,13 @@ impl Block {
         }
 
         while hashes.len() > 1 {
-            if hashes.len() % 2 != 0 {
+            if !hashes.len().is_multiple_of(2) {
                 // Duplicate last hash for odd-length trees
                 hashes.push(hashes[hashes.len() - 1]);
             }
 
             // Reuse the same vec for parent hashes to reduce allocations
-            let mut new_hashes = Vec::with_capacity((hashes.len() + 1) / 2);
+            let mut new_hashes = Vec::with_capacity(hashes.len().div_ceil(2));
             for i in (0..hashes.len()).step_by(2) {
                 let mut hasher = Sha256::new();
                 hasher.update(hashes[i]);
@@ -321,10 +321,19 @@ const REWARD_HALVING_INTERVAL: BlockHeight = 210_000;
 /// Maximum number of halvings before reward becomes 0 (64 halvings)
 const MAX_HALVINGS: u64 = 64;
 
+/// Maximum depth for a blockchain reorganization to prevent instability (e.g. 100 blocks)
+const MAX_REORG_DEPTH: BlockHeight = 100;
+
 /// Calculate maximum supply: sum of geometric series
 /// Max supply = INITIAL_REWARD * HALVING_INTERVAL * (1 + 1/2 + 1/4 + ... ≈ 2)
 /// = 1000 * 210,000 * 2 = 420,000,000 area units
 pub const MAX_SUPPLY: u64 = INITIAL_MINING_REWARD * REWARD_HALVING_INTERVAL * 2;
+
+impl Default for Blockchain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Blockchain {
     /// Calculate the block reward for a given block height (with halving)
@@ -352,10 +361,12 @@ impl Blockchain {
                 height: 0,
                 previous_hash: [0; 32],
                 timestamp: genesis_timestamp,
-                difficulty: 2,
+                difficulty: 1,
                 nonce: 0,
                 merkle_root: [0; 32],
-                headline: Some("TrinityChain Genesis Block - Sierpinski Triangle Blockchain".to_string()),
+                headline: Some(
+                    "TrinityChain Genesis Block - Sierpinski Triangle Blockchain".to_string(),
+                ),
             },
             hash: [0; 32], // Will be calculated based on header content
             transactions: vec![],
@@ -372,59 +383,16 @@ impl Blockchain {
             block_index,
             forks: HashMap::new(),
             state,
-            difficulty: 2,
+            difficulty: 1,
             mempool: Mempool::new(),
         }
     }
 
-    /// Recalculate difficulty based on recent block times
-    /// This is useful when loading an old chain or after parameter changes
-    pub fn recalculate_difficulty(&mut self) {
-        // Need at least 10 blocks for a meaningful difficulty calculation
-        // (Too few blocks gives wildly inaccurate results)
-        if self.blocks.len() < 11 {
-            return;
-        }
-
-        // If we don't have enough blocks for a full window, use what we have (min 10 blocks)
-        let window_size = (self.blocks.len() - 1).min(DIFFICULTY_ADJUSTMENT_WINDOW as usize).max(10);
-
-        let start_idx = self.blocks.len() - window_size - 1;
-        let window = &self.blocks[start_idx..];
-
-        let (last_block, first_block) = match (window.last(), window.first()) {
-            (Some(last), Some(first)) => (last, first),
-            _ => return, // Should be unreachable due to the length check above
-        };
-        let actual_time = last_block.header.timestamp - first_block.header.timestamp;
-        if actual_time <= 0 {
-            return;
-        }
-
-        let expected_time = (window_size as i64) * TARGET_BLOCK_TIME_SECONDS;
-        let adjustment_factor = expected_time as f64 / actual_time as f64;
-
-        const MIN_ADJUSTMENT: f64 = 0.25;
-        const MAX_ADJUSTMENT: f64 = 4.0;
-        let clamped_factor = adjustment_factor.max(MIN_ADJUSTMENT).min(MAX_ADJUSTMENT);
-
-        let old_difficulty = self.difficulty;
-        let new_difficulty = ((self.difficulty as f64 * clamped_factor).round() as u64).max(1);
-
-        if old_difficulty != new_difficulty {
-            self.difficulty = new_difficulty;
-            let avg_block_time = actual_time as f64 / window_size as f64;
-            println!("🔄 Recalculated difficulty: {} -> {} (avg: {:.1}s, target: {}s, window: {} blocks)",
-                     old_difficulty, new_difficulty, avg_block_time, TARGET_BLOCK_TIME_SECONDS, window_size);
-        }
-    }
-
     pub fn validate_block(&self, block: &Block) -> Result<(), ChainError> {
-        if !self.block_index.contains_key(&block.header.previous_hash) {
-            return Err(ChainError::InvalidBlockLinkage);
-        }
-
-        let parent_block = self.block_index.get(&block.header.previous_hash).expect("Parent block should exist as it was checked before");
+        let parent_block = match self.block_index.get(&block.header.previous_hash) {
+            Some(block) => block,
+            None => return Err(ChainError::InvalidBlockLinkage),
+        };
 
         if block.header.height != parent_block.header.height + 1 {
             return Err(ChainError::InvalidBlockLinkage);
@@ -433,7 +401,7 @@ impl Blockchain {
         // Validate timestamp is greater than parent's timestamp (skip for genesis block)
         if block.header.height > 0 && block.header.timestamp <= parent_block.header.timestamp {
             return Err(ChainError::InvalidTransaction(
-                "Block timestamp must be greater than parent timestamp".to_string()
+                "Block timestamp must be greater than parent timestamp".to_string(),
             ));
         }
 
@@ -442,10 +410,10 @@ impl Blockchain {
         const MAX_FUTURE_TIMESTAMP_DRIFT: i64 = 24 * 3600; // 24 hours in seconds
         let current_time = Utc::now().timestamp();
         if block.header.timestamp > current_time + MAX_FUTURE_TIMESTAMP_DRIFT {
-            return Err(ChainError::InvalidTransaction(
-                format!("Block timestamp is too far in the future (block: {}, current: {}, max drift: {}s)",
-                    block.header.timestamp, current_time, MAX_FUTURE_TIMESTAMP_DRIFT)
-            ));
+            return Err(ChainError::InvalidTransaction(format!(
+                "Block timestamp is too far in the future (block: {}, current: {}, max drift: {}s)",
+                block.header.timestamp, current_time, MAX_FUTURE_TIMESTAMP_DRIFT
+            )));
         }
 
         if !block.verify_proof_of_work() {
@@ -467,7 +435,8 @@ impl Blockchain {
                 // Coinbase must be the first transaction
                 if i != 0 {
                     return Err(ChainError::InvalidTransaction(
-                        "Coinbase transaction must be the first transaction in the block".to_string()
+                        "Coinbase transaction must be the first transaction in the block"
+                            .to_string(),
                     ));
                 }
             }
@@ -475,9 +444,10 @@ impl Blockchain {
 
         // Exactly one coinbase transaction per block (or zero for genesis)
         if block.header.height > 0 && coinbase_count != 1 {
-            return Err(ChainError::InvalidTransaction(
-                format!("Block must contain exactly one coinbase transaction, found {}", coinbase_count)
-            ));
+            return Err(ChainError::InvalidTransaction(format!(
+                "Block must contain exactly one coinbase transaction, found {}",
+                coinbase_count
+            )));
         }
 
         // Validate coinbase reward doesn't exceed block reward + fees
@@ -490,10 +460,10 @@ impl Blockchain {
 
             // Use a tolerance for floating point comparison
             if coinbase_reward > max_reward + Coord::from_num(1e-9) {
-                return Err(ChainError::InvalidTransaction(
-                    format!("Coinbase reward {} exceeds maximum allowed {} (block reward: {}, fees: {})",
-                        coinbase_reward, max_reward, block_reward, total_fees)
-                ));
+                return Err(ChainError::InvalidTransaction(format!(
+                    "Coinbase reward {} exceeds maximum allowed {} (block reward: {}, fees: {})",
+                    coinbase_reward, max_reward, block_reward, total_fees
+                )));
             }
         }
 
@@ -501,19 +471,20 @@ impl Blockchain {
             match tx {
                 Transaction::Subdivision(tx) => {
                     if !self.state.utxo_set.contains_key(&tx.parent_hash) {
-                        return Err(ChainError::InvalidTransaction(
-                            format!("Parent triangle {} not in UTXO set", hex::encode(tx.parent_hash))
-                        ));
+                        return Err(ChainError::InvalidTransaction(format!(
+                            "Parent triangle {} not in UTXO set",
+                            hex::encode(tx.parent_hash)
+                        )));
                     }
                     tx.validate(&self.state)?;
-                },
+                }
                 Transaction::Coinbase(cb_tx) => {
                     cb_tx.validate()?;
-                },
+                }
                 Transaction::Transfer(tx) => {
                     // Full validation including UTXO existence and fee_area check
                     tx.validate_with_state(&self.state)?;
-                },
+                }
             }
         }
 
@@ -524,12 +495,17 @@ impl Blockchain {
         self.validate_block(&valid_block)?;
 
         let parent_hash = valid_block.header.previous_hash;
-        let last_block_hash = self.blocks.last().expect("Blockchain should have at least a genesis block").hash;
+        let last_block_hash = match self.blocks.last() {
+            Some(block) => block.hash,
+            None => return Err(ChainError::InvalidBlockLinkage), // Should not happen if genesis exists
+        };
 
         // Case 1: The new block extends the main chain
         if parent_hash == last_block_hash {
             // Collect transaction hashes before applying
-            let tx_hashes: Vec<Sha256Hash> = valid_block.transactions.iter()
+            let tx_hashes: Vec<Sha256Hash> = valid_block
+                .transactions
+                .iter()
                 .map(|tx| tx.hash())
                 .collect();
 
@@ -537,10 +513,11 @@ impl Blockchain {
                 match tx {
                     Transaction::Subdivision(sub_tx) => {
                         self.state.apply_subdivision(sub_tx)?;
-                    },
+                    }
                     Transaction::Coinbase(cb_tx) => {
-                        self.state.apply_coinbase(cb_tx, valid_block.header.height)?;
-                    },
+                        self.state
+                            .apply_coinbase(cb_tx, valid_block.header.height)?;
+                    }
                     Transaction::Transfer(tx) => {
                         // New transfer logic with "change"
                         // 1. Remove input triangle from UTXO set.
@@ -549,10 +526,13 @@ impl Blockchain {
                         // 4. Create a new "change" triangle for the sender with the remaining value.
                         // 5. Add both new triangles to the UTXO set and update address indexes.
 
-                        let input_triangle = self.state.utxo_set.remove(&tx.input_hash)
-                            .ok_or_else(|| ChainError::TriangleNotFound(
-                                format!("Transfer input {} missing from UTXO set", hex::encode(tx.input_hash))
-                            ))?;
+                        let input_triangle =
+                            self.state.utxo_set.remove(&tx.input_hash).ok_or_else(|| {
+                                ChainError::TriangleNotFound(format!(
+                                    "Transfer input {} missing from UTXO set",
+                                    hex::encode(tx.input_hash)
+                                ))
+                            })?;
 
                         let input_value = input_triangle.effective_value();
                         let change_value = input_value - tx.amount - tx.fee_area;
@@ -567,8 +547,14 @@ impl Blockchain {
                             tx.amount,
                         );
                         let recipient_hash = recipient_triangle.hash();
-                        self.state.utxo_set.insert(recipient_hash, recipient_triangle);
-                        self.state.address_index.entry(tx.new_owner.clone()).or_default().push(recipient_hash);
+                        self.state
+                            .utxo_set
+                            .insert(recipient_hash, recipient_triangle);
+                        self.state
+                            .address_index
+                            .entry(tx.new_owner.clone())
+                            .or_default()
+                            .push(recipient_hash);
 
                         // --- Create Sender's Change Triangle ---
                         if change_value >= crate::geometry::GEOMETRIC_TOLERANCE {
@@ -582,7 +568,11 @@ impl Blockchain {
                             );
                             let change_hash = change_triangle.hash();
                             self.state.utxo_set.insert(change_hash, change_triangle);
-                            self.state.address_index.entry(tx.sender.clone()).or_default().push(change_hash);
+                            self.state
+                                .address_index
+                                .entry(tx.sender.clone())
+                                .or_default()
+                                .push(change_hash);
                         }
 
                         // --- Update Sender's Address Index (Remove Old Hash) ---
@@ -598,44 +588,37 @@ impl Blockchain {
 
             let block_height = valid_block.header.height;
             self.blocks.push(valid_block.clone());
-            self.block_index.insert(valid_block.hash, valid_block.clone());
+            self.block_index
+                .insert(valid_block.hash, valid_block.clone());
 
             // Only adjust difficulty every DIFFICULTY_ADJUSTMENT_WINDOW blocks to prevent oscillation
             // Adjust after accumulating enough blocks (at multiples of the window)
-            if block_height > 0 && block_height % DIFFICULTY_ADJUSTMENT_WINDOW == 0 {
+            if block_height > 0 && block_height.is_multiple_of(DIFFICULTY_ADJUSTMENT_WINDOW) {
                 self.adjust_difficulty();
             }
 
             self.mempool.remove_transactions(&tx_hashes);
             self.mempool.prune(&self.state);
-
         } else if self.block_index.contains_key(&parent_hash) {
             // Case 2: The new block creates a fork
             println!("🍴 Fork detected at height {}", valid_block.header.height);
             self.forks.insert(valid_block.hash, valid_block.clone());
-            self.block_index.insert(valid_block.hash, valid_block.clone());
+            self.block_index
+                .insert(valid_block.hash, valid_block.clone());
 
-            // Check if the fork is longer than the main chain
-            let mut fork_chain = vec![valid_block.clone()];
-            let mut current_hash = valid_block.header.previous_hash;
-            while let Some(block) = self.forks.get(&current_hash) {
-                fork_chain.push(block.clone());
-                current_hash = block.header.previous_hash;
-            }
-
-            if fork_chain.len() > self.blocks.len() {
+            // Check if the new fork is longer than the main chain.
+            // Height is 0-indexed, length is 1-indexed.
+            if valid_block.header.height + 1 > self.blocks.len() as u64 {
                 println!("⚠️  Switching to a longer fork! Rebuilding state...");
 
                 // Atomically rebuild state to switch to the new fork
                 match self.reorganize_to_fork(&valid_block) {
                     Ok(_) => {
                         println!("✅ Fork reorganization complete - state rebuilt");
-                    },
+                    }
                     Err(e) => {
                         // If the fork is invalid, we don't switch. Log the error.
                         eprintln!("🔥 Failed to switch to a longer fork: {:?}", e);
-                        // The original `valid_block` is still considered a fork, just not one we switched to.
-                        // So we don't return an error from `apply_block`.
                     }
                 }
             }
@@ -651,6 +634,20 @@ impl Blockchain {
     /// The entire new chain is validated and its state is built in memory.
     /// Only if that process succeeds is the main chain's state replaced.
     fn reorganize_to_fork(&mut self, new_head: &Block) -> Result<(), ChainError> {
+        let (_, ancestor_height) = match self.find_common_ancestor(new_head) {
+            Some(result) => result,
+            None => return Err(ChainError::ForkNotFound),
+        };
+
+        // Prevent excessively deep reorganizations
+        if new_head.header.height - ancestor_height > MAX_REORG_DEPTH {
+            return Err(ChainError::InvalidBlock(format!(
+                "Fork reorganization depth {} exceeds maximum of {}",
+                new_head.header.height - ancestor_height,
+                MAX_REORG_DEPTH
+            )));
+        }
+
         // 1. Build the full chain of the new fork in memory.
         let mut new_chain = Vec::new();
         let mut current_hash = new_head.hash;
@@ -666,12 +663,46 @@ impl Blockchain {
         // 2. Build the new UTXO state from scratch in a temporary variable.
         let new_state = Self::build_state_for_chain(&new_chain)?;
 
-        // 3. ATOMIC SWAP: If state building was successful, replace the old chain and state.
+        // 3. Identify old main chain blocks that are now part of a fork.
+        for old_block in self
+            .blocks
+            .iter()
+            .filter(|b| !new_chain.iter().any(|nb| nb.hash == b.hash))
+        {
+            self.forks.insert(old_block.hash, old_block.clone());
+        }
+
+        // 4. ATOMIC SWAP: If state building was successful, replace the old chain and state.
         self.blocks = new_chain;
         self.state = new_state;
-        // The difficulty is implicitly handled as the new chain's difficulty will be inherited.
+
+        // 5. Clean up forks map: remove blocks that are now on the main chain.
+        for block in &self.blocks {
+            self.forks.remove(&block.hash);
+        }
 
         Ok(())
+    }
+
+    /// Finds the common ancestor block between the main chain and a fork.
+    /// Returns the hash and height of the common ancestor.
+    fn find_common_ancestor(&self, fork_head: &Block) -> Option<(Sha256Hash, BlockHeight)> {
+        let mut current = fork_head.clone();
+        loop {
+            // If the hash is in our main chain's index, we've found the ancestor
+            if self.blocks.iter().any(|b| b.hash == current.hash) {
+                return Some((current.hash, current.header.height));
+            }
+            // If we've reached the genesis of the fork without finding a common point, something is wrong
+            if current.header.height == 0 {
+                return None;
+            }
+            // Move to the previous block in the fork
+            current = match self.block_index.get(&current.header.previous_hash) {
+                Some(block) => block.clone(),
+                None => return None, // Should not happen in a valid fork
+            };
+        }
     }
 
     /// Builds a new TriangleState by replaying all transactions from a given chain of blocks.
@@ -696,10 +727,15 @@ impl Blockchain {
                         // GEOMETRIC FEE DEDUCTION during fork rebuild:
                         // Same logic as apply_block
 
-                        let old_triangle = new_state.utxo_set.remove(&transfer_tx.input_hash)
-                            .ok_or_else(|| ChainError::TriangleNotFound(
-                                format!("During fork rebuild, transfer input {} not found", hex::encode(transfer_tx.input_hash))
-                            ))?;
+                        let old_triangle = new_state
+                            .utxo_set
+                            .remove(&transfer_tx.input_hash)
+                            .ok_or_else(|| {
+                                ChainError::TriangleNotFound(format!(
+                                    "During fork rebuild, transfer input {} not found",
+                                    hex::encode(transfer_tx.input_hash)
+                                ))
+                            })?;
 
                         let old_owner = old_triangle.owner.clone();
                         let old_value = old_triangle.effective_value();
@@ -727,9 +763,10 @@ impl Blockchain {
                         new_state.utxo_set.insert(new_hash, new_triangle);
 
                         // Add to new owner's index
-                        new_state.address_index
+                        new_state
+                            .address_index
                             .entry(transfer_tx.new_owner.clone())
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(new_hash);
                     }
                 }
@@ -759,24 +796,38 @@ impl Blockchain {
 
     /// Calculate remaining supply that can still be mined
     pub fn calculate_remaining_supply(&self) -> u64 {
-        let current = Self::calculate_current_supply(self.blocks.last().expect("Chain cannot be empty").header.height);
+        let height = match self.blocks.last() {
+            Some(block) => block.header.height,
+            None => return MAX_SUPPLY, // Nothing mined yet
+        };
+        let current = Self::calculate_current_supply(height);
         MAX_SUPPLY.saturating_sub(current)
     }
 
     /// Get percentage of total supply mined
     pub fn supply_percentage(&self) -> f64 {
-        let current = Self::calculate_current_supply(self.blocks.last().expect("Chain cannot be empty").header.height);
+        let height = match self.blocks.last() {
+            Some(block) => block.header.height,
+            None => return 0.0,
+        };
+        let current = Self::calculate_current_supply(height);
         (current as f64 / MAX_SUPPLY as f64) * 100.0
     }
 
     /// Get the current halving era (0 = first era, 1 = first halving, etc.)
     pub fn current_halving_era(&self) -> u64 {
-        self.blocks.last().expect("Chain cannot be empty").header.height / REWARD_HALVING_INTERVAL
+        match self.blocks.last() {
+            Some(block) => block.header.height / REWARD_HALVING_INTERVAL,
+            None => 0,
+        }
     }
 
     /// Blocks until next halving
     pub fn blocks_until_next_halving(&self) -> u64 {
-        let current_height = self.blocks.last().expect("Chain cannot be empty").header.height;
+        let current_height = match self.blocks.last() {
+            Some(block) => block.header.height,
+            None => return REWARD_HALVING_INTERVAL,
+        };
         let next_halving_height = (self.current_halving_era() + 1) * REWARD_HALVING_INTERVAL;
         next_halving_height.saturating_sub(current_height)
     }
@@ -784,7 +835,8 @@ impl Blockchain {
     /// Calculate total geometric fee area in a block
     /// Returns the sum of all fee_area values from transfer and subdivision transactions
     pub fn calculate_total_fees(transactions: &[Transaction]) -> Coord {
-        transactions.iter()
+        transactions
+            .iter()
             .filter(|tx| !matches!(tx, Transaction::Coinbase(_)))
             .map(|tx| tx.fee_area())
             .sum()
@@ -828,25 +880,27 @@ impl Blockchain {
         // Bitcoin-style clamping: limit adjustment to 4x in either direction per period
         // This prevents wild swings while still allowing quick convergence
         const MIN_ADJUSTMENT: f64 = 0.25; // Can decrease by up to 4x
-        const MAX_ADJUSTMENT: f64 = 4.0;  // Can increase by up to 4x
+        const MAX_ADJUSTMENT: f64 = 4.0; // Can increase by up to 4x
 
-        let clamped_factor = adjustment_factor.max(MIN_ADJUSTMENT).min(MAX_ADJUSTMENT);
+        let clamped_factor = adjustment_factor.clamp(MIN_ADJUSTMENT, MAX_ADJUSTMENT);
 
         let old_difficulty = self.difficulty;
         let new_difficulty = ((self.difficulty as f64 * clamped_factor).round() as u64).max(1);
         self.difficulty = new_difficulty;
 
         let avg_block_time = actual_time as f64 / (DIFFICULTY_ADJUSTMENT_WINDOW as f64 - 1.0);
-        println!("⚙️  Difficulty adjusted: {} -> {} (avg block time: {:.1}s, target: {}s)",
-                 old_difficulty, new_difficulty, avg_block_time, TARGET_BLOCK_TIME_SECONDS);
+        println!(
+            "⚙️  Difficulty adjusted: {} -> {} (avg block time: {:.1}s, target: {}s)",
+            old_difficulty, new_difficulty, avg_block_time, TARGET_BLOCK_TIME_SECONDS
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transaction::{SubdivisionTx, Transaction};
     use crate::crypto::KeyPair;
+    use crate::transaction::{SubdivisionTx, Transaction};
 
     #[test]
     fn test_genesis_triangle_is_canonical() {
@@ -923,16 +977,34 @@ mod tests {
         let mut chain = Blockchain::new();
         let initial_count = chain.state.count();
 
-        let genesis_hash = *chain.state.utxo_set.keys().next().expect("Test setup should ensure this exists");
-        let genesis_tri = chain.state.utxo_set.get(&genesis_hash).expect("Test setup should ensure this exists").clone();
+        let genesis_hash = *chain
+            .state
+            .utxo_set
+            .keys()
+            .next()
+            .expect("Test setup should ensure this exists");
+        let genesis_tri = chain
+            .state
+            .utxo_set
+            .get(&genesis_hash)
+            .expect("Test setup should ensure this exists")
+            .clone();
         let children = genesis_tri.subdivide();
 
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 1);
+        let mut tx = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address.clone(),
+            Coord::from_num(0),
+            1,
+        );
         let message = tx.signable_message();
-        let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
+        let signature = keypair
+            .sign(&message)
+            .expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature, public_key);
 
@@ -946,7 +1018,10 @@ mod tests {
             Transaction::Subdivision(tx),
         ];
 
-        let last_block = chain.blocks.last().expect("Test setup should ensure this exists");
+        let last_block = chain
+            .blocks
+            .last()
+            .expect("Test setup should ensure this exists");
         let mut new_block = Block::new(
             last_block.header.height + 1,
             last_block.hash,
@@ -963,7 +1038,9 @@ mod tests {
             new_block.hash = new_block.calculate_hash();
         }
 
-        chain.apply_block(new_block).expect("Test setup should ensure this exists");
+        chain
+            .apply_block(new_block)
+            .expect("Test setup should ensure this exists");
 
         // Initial state has 1 triangle (genesis).
         // Subdivision tx consumes 1 and creates 3 (+2).
@@ -975,16 +1052,34 @@ mod tests {
     #[test]
     fn test_block_validation_success() {
         let chain = Blockchain::new();
-        let genesis_hash = *chain.state.utxo_set.keys().next().expect("Test setup should ensure this exists");
-        let genesis_tri = chain.state.utxo_set.get(&genesis_hash).expect("Test setup should ensure this exists").clone();
+        let genesis_hash = *chain
+            .state
+            .utxo_set
+            .keys()
+            .next()
+            .expect("Test setup should ensure this exists");
+        let genesis_tri = chain
+            .state
+            .utxo_set
+            .get(&genesis_hash)
+            .expect("Test setup should ensure this exists")
+            .clone();
         let children = genesis_tri.subdivide();
 
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 1);
+        let mut tx = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address.clone(),
+            Coord::from_num(0),
+            1,
+        );
         let message = tx.signable_message();
-        let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
+        let signature = keypair
+            .sign(&message)
+            .expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature, public_key);
 
@@ -998,7 +1093,10 @@ mod tests {
             Transaction::Subdivision(tx),
         ];
 
-        let last_block = chain.blocks.last().expect("Test setup should ensure this exists");
+        let last_block = chain
+            .blocks
+            .last()
+            .expect("Test setup should ensure this exists");
         let mut new_block = Block::new(
             last_block.header.height + 1,
             last_block.hash,
@@ -1021,7 +1119,10 @@ mod tests {
     #[test]
     fn test_block_validation_failure_linkage() {
         let chain = Blockchain::new();
-        let last_block = chain.blocks.last().expect("Test setup should ensure this exists");
+        let last_block = chain
+            .blocks
+            .last()
+            .expect("Test setup should ensure this exists");
 
         let mut bad_block = Block::new(
             last_block.header.height + 1,
@@ -1043,7 +1144,10 @@ mod tests {
     #[test]
     fn test_block_validation_failure_pow() {
         let chain = Blockchain::new();
-        let last_block = chain.blocks.last().expect("Test setup should ensure this exists");
+        let last_block = chain
+            .blocks
+            .last()
+            .expect("Test setup should ensure this exists");
 
         let bad_block = Block::new(
             last_block.header.height + 1,
@@ -1058,22 +1162,48 @@ mod tests {
     #[test]
     fn test_block_validation_double_spend_in_block() {
         let mut chain = Blockchain::new();
-        let genesis_hash = *chain.state.utxo_set.keys().next().expect("Test setup should ensure this exists");
-        let genesis_tri = chain.state.utxo_set.get(&genesis_hash).expect("Test setup should ensure this exists").clone();
+        let genesis_hash = *chain
+            .state
+            .utxo_set
+            .keys()
+            .next()
+            .expect("Test setup should ensure this exists");
+        let genesis_tri = chain
+            .state
+            .utxo_set
+            .get(&genesis_hash)
+            .expect("Test setup should ensure this exists")
+            .clone();
         let children = genesis_tri.subdivide();
 
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
 
-        let mut tx1 = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 1);
+        let mut tx1 = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address.clone(),
+            Coord::from_num(0),
+            1,
+        );
         let message1 = tx1.signable_message();
-        let signature1 = keypair.sign(&message1).expect("Test setup should ensure this exists");
+        let signature1 = keypair
+            .sign(&message1)
+            .expect("Test setup should ensure this exists");
         let public_key1 = keypair.public_key.serialize().to_vec();
         tx1.sign(signature1, public_key1);
 
-        let mut tx2 = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(0), 2);
+        let mut tx2 = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address.clone(),
+            Coord::from_num(0),
+            2,
+        );
         let message2 = tx2.signable_message();
-        let signature2 = keypair.sign(&message2).expect("Test setup should ensure this exists");
+        let signature2 = keypair
+            .sign(&message2)
+            .expect("Test setup should ensure this exists");
         let public_key2 = keypair.public_key.serialize().to_vec();
         tx2.sign(signature2, public_key2);
 
@@ -1088,7 +1218,10 @@ mod tests {
             Transaction::Subdivision(tx2),
         ];
 
-        let last_block = chain.blocks.last().expect("Test setup should ensure this exists");
+        let last_block = chain
+            .blocks
+            .last()
+            .expect("Test setup should ensure this exists");
         let mut new_block = Block::new(
             last_block.header.height + 1,
             last_block.hash,
@@ -1109,27 +1242,34 @@ mod tests {
     #[test]
     fn test_difficulty_adjustment_increase() {
         let mut chain = Blockchain::new();
+        let initial_difficulty = chain.difficulty;
 
-        for i in 1..=10 {
+        // Add enough blocks to trigger a difficulty adjustment
+        for i in 1..=DIFFICULTY_ADJUSTMENT_WINDOW {
+            let last_block = chain.blocks.last().unwrap();
             let block = Block {
                 header: BlockHeader {
                     height: i,
-                    previous_hash: chain.blocks.last().expect("Test setup should ensure this exists").hash,
-                    timestamp: Utc::now().timestamp() + (i as i64 * 10),
+                    previous_hash: last_block.hash,
+                    // Simulate blocks being mined very quickly (10 seconds apart)
+                    timestamp: last_block.header.timestamp + 10,
                     difficulty: chain.difficulty,
                     nonce: 0,
                     merkle_root: [0; 32],
                     headline: None,
                 },
+                // Not a real hash, but fine for this test
                 hash: [i as u8; 32],
                 transactions: vec![],
             };
-
             chain.blocks.push(block);
-            chain.adjust_difficulty();
         }
 
-        assert!(chain.difficulty >= 2);
+        // Now, call adjust_difficulty.
+        chain.adjust_difficulty();
+
+        // With blocks being mined much faster than the target, difficulty should increase.
+        assert!(chain.difficulty > initial_difficulty);
     }
 
     #[test]
@@ -1140,7 +1280,11 @@ mod tests {
             let block = Block {
                 header: BlockHeader {
                     height: i,
-                    previous_hash: chain.blocks.last().expect("Test setup should ensure this exists").hash,
+                    previous_hash: chain
+                        .blocks
+                        .last()
+                        .expect("Test setup should ensure this exists")
+                        .hash,
                     timestamp: Utc::now().timestamp() + (i as i64 * 200),
                     difficulty: chain.difficulty,
                     nonce: 0,
@@ -1167,7 +1311,11 @@ mod tests {
             let block = Block {
                 header: BlockHeader {
                     height: i,
-                    previous_hash: chain.blocks.last().expect("Test setup should ensure this exists").hash,
+                    previous_hash: chain
+                        .blocks
+                        .last()
+                        .expect("Test setup should ensure this exists")
+                        .hash,
                     timestamp: Utc::now().timestamp() + (i as i64 * 60),
                     difficulty: chain.difficulty,
                     nonce: 0,
@@ -1195,14 +1343,24 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let mut valid_tx = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
         let message = valid_tx.signable_message();
-        let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
+        let signature = keypair
+            .sign(&message)
+            .expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         valid_tx.sign(signature, public_key);
         let tx = Transaction::Subdivision(valid_tx);
 
-        mempool.add_transaction(tx.clone()).expect("Test setup should ensure this exists");
+        mempool
+            .add_transaction(tx.clone())
+            .expect("Test setup should ensure this exists");
         assert_eq!(mempool.len(), 1);
         assert!(!mempool.is_empty());
     }
@@ -1217,15 +1375,25 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let mut valid_tx = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
         let message = valid_tx.signable_message();
-        let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
+        let signature = keypair
+            .sign(&message)
+            .expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         valid_tx.sign(signature, public_key);
         let tx = Transaction::Subdivision(valid_tx);
         let tx_hash = tx.hash();
 
-        mempool.add_transaction(tx.clone()).expect("Test setup should ensure this exists");
+        mempool
+            .add_transaction(tx.clone())
+            .expect("Test setup should ensure this exists");
         assert_eq!(mempool.len(), 1);
 
         mempool.remove_transaction(&tx_hash);
@@ -1242,14 +1410,24 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let mut valid_tx = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
         let message = valid_tx.signable_message();
-        let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
+        let signature = keypair
+            .sign(&message)
+            .expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         valid_tx.sign(signature, public_key);
         let tx = Transaction::Subdivision(valid_tx);
 
-        mempool.add_transaction(tx.clone()).expect("Test setup should ensure this exists");
+        mempool
+            .add_transaction(tx.clone())
+            .expect("Test setup should ensure this exists");
         let result = mempool.add_transaction(tx.clone());
 
         assert!(result.is_err());
@@ -1267,17 +1445,31 @@ mod tests {
         let children = genesis.subdivide();
         let keypair = KeyPair::generate().expect("Test setup should ensure this exists");
         let address = keypair.address();
-        let mut valid_tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let mut valid_tx = SubdivisionTx::new(
+            genesis_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
         let message = valid_tx.signable_message();
-        let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
+        let signature = keypair
+            .sign(&message)
+            .expect("Test setup should ensure this exists");
         let public_key = keypair.public_key.serialize().to_vec();
         valid_tx.sign(signature, public_key);
         let tx = Transaction::Subdivision(valid_tx);
-        chain.mempool.add_transaction(tx.clone()).expect("Test setup should ensure this exists");
+        chain
+            .mempool
+            .add_transaction(tx.clone())
+            .expect("Test setup should ensure this exists");
         assert_eq!(chain.mempool.len(), 1);
 
         // Create and apply a block with that transaction
-        let last_block = chain.blocks.last().expect("Test setup should ensure this exists");
+        let last_block = chain
+            .blocks
+            .last()
+            .expect("Test setup should ensure this exists");
         let coinbase = CoinbaseTx {
             reward_area: Coord::from_num(1000),
             beneficiary_address: "miner_address".to_string(),
@@ -1305,7 +1497,9 @@ mod tests {
             mined_block.header.nonce += 1;
         }
 
-        chain.apply_block(mined_block).expect("Test setup should ensure this exists");
+        chain
+            .apply_block(mined_block)
+            .expect("Test setup should ensure this exists");
 
         // After applying, mempool should be empty
         assert_eq!(chain.mempool.len(), 0);
@@ -1341,7 +1535,13 @@ mod tests {
         let address = "test_address".to_string();
 
         // Test subdivision transaction with fee (still u64 for SubdivisionTx)
-        let sub_tx = SubdivisionTx::new(genesis.hash(), children.to_vec(), address.clone(), Coord::from_num(100), 1);
+        let sub_tx = SubdivisionTx::new(
+            genesis.hash(),
+            children.to_vec(),
+            address.clone(),
+            Coord::from_num(100),
+            1,
+        );
         let tx1 = Transaction::Subdivision(sub_tx);
         assert_eq!(tx1.fee_area(), Coord::from_num(100));
 
@@ -1376,12 +1576,23 @@ mod tests {
 
         // Create transactions with different fees
         for (i, fee) in [10u64, 50, 25, 100, 5].iter().enumerate() {
-            let mut tx = SubdivisionTx::new(genesis_hash, children.to_vec(), address.clone(), Coord::from_num(*fee), i as u64);
+            let mut tx = SubdivisionTx::new(
+                genesis_hash,
+                children.to_vec(),
+                address.clone(),
+                Coord::from_num(*fee),
+                i as u64,
+            );
             let message = tx.signable_message();
-            let signature = keypair.sign(&message).expect("Test setup should ensure this exists");
+            let signature = keypair
+                .sign(&message)
+                .expect("Test setup should ensure this exists");
             let public_key = keypair.public_key.serialize().to_vec();
             tx.sign(signature, public_key);
-            chain.mempool.add_transaction(Transaction::Subdivision(tx)).expect("Test setup should ensure this exists");
+            chain
+                .mempool
+                .add_transaction(Transaction::Subdivision(tx))
+                .expect("Test setup should ensure this exists");
         }
 
         assert_eq!(chain.mempool.len(), 5);
@@ -1459,7 +1670,7 @@ mod tests {
             chain.difficulty,
             vec![
                 Transaction::Coinbase(CoinbaseTx {
-                    reward_area: Coord::from_num(1000) , // Miner gets block reward
+                    reward_area: Coord::from_num(1000), // Miner gets block reward
                     beneficiary_address: "miner".to_string(),
                 }),
                 transaction,

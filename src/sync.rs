@@ -7,7 +7,7 @@
 //! - Sync progress tracking
 //! - Automatic peer discovery
 
-use crate::blockchain::{Blockchain, Block};
+use crate::blockchain::{Block, Blockchain};
 use crate::error::ChainError;
 use crate::network::Node;
 use std::collections::{HashMap, VecDeque};
@@ -94,7 +94,7 @@ pub struct NodeSynchronizer {
 impl NodeSynchronizer {
     pub fn new() -> Self {
         Self {
-            peers: Arc::new(RwLock::new(HashMap::new()),),
+            peers: Arc::new(RwLock::new(HashMap::new())),
             sync_state: Arc::new(RwLock::new(SyncState::Idle)),
             stats: Arc::new(RwLock::new(SyncStats::default())),
             pending_blocks: Arc::new(RwLock::new(VecDeque::new())),
@@ -106,8 +106,8 @@ impl NodeSynchronizer {
         let mut peers = self.peers.write().await;
         let key = node.addr();
 
-        if !peers.contains_key(&key) {
-            peers.insert(key, PeerSyncInfo::new(node, height));
+        if let std::collections::hash_map::Entry::Vacant(e) = peers.entry(key) {
+            e.insert(PeerSyncInfo::new(node, height));
             Ok(())
         } else {
             Err(ChainError::NetworkError(
@@ -125,9 +125,7 @@ impl NodeSynchronizer {
             peer.last_seen = Instant::now();
             Ok(())
         } else {
-            Err(ChainError::NetworkError(
-                "Peer not found".to_string(),
-            ))
+            Err(ChainError::NetworkError("Peer not found".to_string()))
         }
     }
 
@@ -290,12 +288,18 @@ impl NodeSynchronizer {
         local_blockchain: &mut Blockchain,
     ) -> Result<u64, ChainError> {
         let peer_addr = peer.addr();
-        let local_height = local_blockchain.blocks.last().map_or(0, |b| b.header.height);
+        let local_height = local_blockchain
+            .blocks
+            .last()
+            .map_or(0, |b| b.header.height);
 
         self.set_sync_state(SyncState::Syncing).await;
         self.set_peer_syncing(&peer_addr, true).await?;
 
-        println!("🔄 Starting sync from peer {} (local: {}, remote: estimated)", peer_addr, local_height);
+        println!(
+            "🔄 Starting sync from peer {} (local: {}, remote: estimated)",
+            peer_addr, local_height
+        );
 
         // NOTE: This is a state management function only.
         // The actual block fetching and chain synchronization is performed by the NetworkNode
@@ -306,7 +310,10 @@ impl NodeSynchronizer {
         self.set_peer_syncing(&peer_addr, false).await?;
         self.set_sync_state(SyncState::Synced).await;
 
-        let new_height = local_blockchain.blocks.last().map_or(0, |b| b.header.height);
+        let new_height = local_blockchain
+            .blocks
+            .last()
+            .map_or(0, |b| b.header.height);
         Ok(new_height - local_height)
     }
 

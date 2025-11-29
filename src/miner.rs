@@ -26,10 +26,8 @@ pub fn is_hash_valid(hash: &Sha256Hash, difficulty: u64) -> bool {
     let check_nibble = difficulty % 2 == 1;
 
     // Fast check: verify full zero bytes
-    for i in 0..full_zero_bytes {
-        if hash[i] != 0 {
-            return false;
-        }
+    if hash.iter().take(full_zero_bytes).any(|&byte| byte != 0) {
+        return false;
     }
 
     // If we have an odd difficulty, check the upper nibble of the next byte
@@ -47,21 +45,23 @@ pub fn is_hash_valid(hash: &Sha256Hash, difficulty: u64) -> bool {
 pub fn mine_block(mut block: Block) -> Result<Block, ChainError> {
     let difficulty = block.header.difficulty;
     let mut nonce: u64 = 0;
-    
+
     loop {
         block.header.nonce = nonce;
         let hash = block.calculate_hash();
-        
+
         if is_hash_valid(&hash, difficulty) {
             block.hash = hash;
             return Ok(block);
         }
 
-        nonce = nonce.checked_add(1).ok_or(ChainError::InvalidProofOfWork)?; 
+        nonce = nonce.checked_add(1).ok_or(ChainError::InvalidProofOfWork)?;
     }
 }
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
+
+type MiningResult = (u64, Sha256Hash);
 
 /// Mines a new block using multi-threaded parallel nonce searching.
 /// Divides the nonce space among available CPU cores for faster mining.
@@ -69,32 +69,36 @@ pub fn mine_block_parallel(block: Block) -> Result<Block, ChainError> {
     let difficulty = block.header.difficulty;
     let num_threads = rayon::current_num_threads();
     let found = Arc::new(AtomicBool::new(false));
-    let (sender, receiver): (Sender<(u64, Sha256Hash)>, Receiver<(u64, Sha256Hash)>) = unbounded();
+    let (sender, receiver): (Sender<MiningResult>, Receiver<MiningResult>) = unbounded();
 
-    (0..num_threads).into_par_iter().for_each_with(sender, |s, thread_id| {
-        let mut nonce = thread_id as u64;
-        while !found.load(Ordering::Relaxed) {
-            let mut test_block = block.clone();
-            test_block.header.nonce = nonce;
-            let hash = test_block.calculate_hash();
+    (0..num_threads)
+        .into_par_iter()
+        .for_each_with(sender, |s, thread_id| {
+            let mut nonce = thread_id as u64;
+            while !found.load(Ordering::Relaxed) {
+                let mut test_block = block.clone();
+                test_block.header.nonce = nonce;
+                let hash = test_block.calculate_hash();
 
-            if is_hash_valid(&hash, difficulty) {
-                if !found.swap(true, Ordering::SeqCst) {
-                    let _ = s.send((nonce, hash));
+                if is_hash_valid(&hash, difficulty) {
+                    if !found.swap(true, Ordering::SeqCst) {
+                        let _ = s.send((nonce, hash));
+                    }
+                    return;
                 }
-                return;
+                nonce += num_threads as u64;
             }
-            nonce += num_threads as u64;
-        }
-    });
+        });
 
-    match receiver.try_recv() {
+    // Block until a nonce is found by one of the threads
+    match receiver.recv() {
         Ok((nonce, hash)) => {
             let mut mined_block = block;
             mined_block.header.nonce = nonce;
             mined_block.hash = hash;
             Ok(mined_block)
         }
+        // This error occurs if all senders hang up, which means mining was interrupted or failed.
         Err(_) => Err(ChainError::InvalidProofOfWork),
     }
 }

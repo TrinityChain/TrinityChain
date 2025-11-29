@@ -1,9 +1,9 @@
 //! Transaction types for TrinityChain
 
-use sha2::{Digest, Sha256};
 use crate::blockchain::{Sha256Hash, TriangleState};
-use crate::geometry::{Coord, Triangle};
 use crate::error::ChainError;
+use crate::geometry::{Coord, Triangle};
+use sha2::{Digest, Sha256};
 
 pub type Address = String;
 
@@ -29,9 +29,11 @@ impl Transaction {
             .map_err(|e| ChainError::InvalidTransaction(format!("Serialization failed: {}", e)))?;
 
         if serialized.len() > MAX_TRANSACTION_SIZE {
-            return Err(ChainError::InvalidTransaction(
-                format!("Transaction too large: {} bytes (max: {})", serialized.len(), MAX_TRANSACTION_SIZE)
-            ));
+            return Err(ChainError::InvalidTransaction(format!(
+                "Transaction too large: {} bytes (max: {})",
+                serialized.len(),
+                MAX_TRANSACTION_SIZE
+            )));
         }
         Ok(())
     }
@@ -143,18 +145,17 @@ impl SubdivisionTx {
     /// Validates just the signature of the transaction, without access to blockchain state.
     /// This is useful for early validation in the mempool.
     pub fn validate_signature(&self) -> Result<(), ChainError> {
-        if self.signature.is_none() || self.public_key.is_none() {
-            return Err(ChainError::InvalidTransaction(
-                "Transaction not signed".to_string(),
-            ));
-        }
+        let (signature, public_key) = match (&self.signature, &self.public_key) {
+            (Some(sig), Some(pk)) => (sig, pk),
+            _ => {
+                return Err(ChainError::InvalidTransaction(
+                    "Transaction not signed".to_string(),
+                ))
+            }
+        };
 
         let message = self.signable_message();
-        let is_valid = crate::crypto::verify_signature(
-            self.public_key.as_ref().unwrap(),
-            &message,
-            self.signature.as_ref().unwrap(),
-        )?;
+        let is_valid = crate::crypto::verify_signature(public_key, &message, signature)?;
 
         if !is_valid {
             return Err(ChainError::InvalidTransaction(
@@ -171,14 +172,16 @@ impl SubdivisionTx {
         self.validate_signature()?;
 
         // Then, validate against the current state (UTXO set).
-        if !state.utxo_set.contains_key(&self.parent_hash) {
-            return Err(ChainError::TriangleNotFound(format!(
-                "Parent triangle {} not found in UTXO set",
-                hex::encode(self.parent_hash)
-            )));
-        }
+        let parent = match state.utxo_set.get(&self.parent_hash) {
+            Some(triangle) => triangle,
+            None => {
+                return Err(ChainError::TriangleNotFound(format!(
+                    "Parent triangle {} not found in UTXO set",
+                    hex::encode(self.parent_hash)
+                )))
+            }
+        };
 
-        let parent = state.utxo_set.get(&self.parent_hash).unwrap();
         let expected_children = parent.subdivide();
 
         if self.children.len() != 3 {
@@ -189,9 +192,10 @@ impl SubdivisionTx {
 
         for (i, child) in self.children.iter().enumerate() {
             let expected = &expected_children[i];
-            if !child.a.equals(&expected.a) ||
-               !child.b.equals(&expected.b) ||
-               !child.c.equals(&expected.c) {
+            if !child.a.equals(&expected.a)
+                || !child.b.equals(&expected.b)
+                || !child.c.equals(&expected.c)
+            {
                 return Err(ChainError::InvalidTransaction(format!(
                     "Child {} geometry does not match expected subdivision",
                     i
@@ -218,21 +222,22 @@ impl CoinbaseTx {
         // Validate reward area is within acceptable bounds
         if self.reward_area <= Coord::from_num(0) {
             return Err(ChainError::InvalidTransaction(
-                "Coinbase reward area must be greater than zero".to_string()
+                "Coinbase reward area must be greater than zero".to_string(),
             ));
         }
 
         if self.reward_area > Self::MAX_REWARD_AREA {
-            return Err(ChainError::InvalidTransaction(
-                format!("Coinbase reward area {} exceeds maximum {}",
-                    self.reward_area, Self::MAX_REWARD_AREA)
-            ));
+            return Err(ChainError::InvalidTransaction(format!(
+                "Coinbase reward area {} exceeds maximum {}",
+                self.reward_area,
+                Self::MAX_REWARD_AREA
+            )));
         }
 
         // Validate beneficiary address is not empty
         if self.beneficiary_address.is_empty() {
             return Err(ChainError::InvalidTransaction(
-                "Coinbase beneficiary address cannot be empty".to_string()
+                "Coinbase beneficiary address cannot be empty".to_string(),
             ));
         }
 
@@ -261,7 +266,14 @@ pub struct TransferTx {
 impl TransferTx {
     /// Maximum memo length (256 characters)
     pub const MAX_MEMO_LENGTH: usize = 256;
-    pub fn new(input_hash: Sha256Hash, new_owner: Address, sender: Address, amount: crate::geometry::Coord, fee_area: crate::geometry::Coord, nonce: u64) -> Self {
+    pub fn new(
+        input_hash: Sha256Hash,
+        new_owner: Address,
+        sender: Address,
+        amount: crate::geometry::Coord,
+        fee_area: crate::geometry::Coord,
+        nonce: u64,
+    ) -> Self {
         TransferTx {
             input_hash,
             new_owner,
@@ -277,9 +289,10 @@ impl TransferTx {
 
     pub fn with_memo(mut self, memo: String) -> Result<Self, ChainError> {
         if memo.len() > Self::MAX_MEMO_LENGTH {
-            return Err(ChainError::InvalidTransaction(
-                format!("Memo exceeds maximum length of {} characters", Self::MAX_MEMO_LENGTH)
-            ));
+            return Err(ChainError::InvalidTransaction(format!(
+                "Memo exceeds maximum length of {} characters",
+                Self::MAX_MEMO_LENGTH
+            )));
         }
         self.memo = Some(memo);
         Ok(self)
@@ -297,51 +310,82 @@ impl TransferTx {
         message.extend_from_slice(&self.nonce.to_le_bytes());
         message
     }
-    
+
     pub fn sign(&mut self, signature: Vec<u8>, public_key: Vec<u8>) {
         self.signature = Some(signature);
         self.public_key = Some(public_key);
     }
-    
+
     /// Stateless validation: checks signature, addresses, memo, and fee bounds.
     /// Does NOT validate against UTXO state - use validate_with_state() for that.
     pub fn validate(&self) -> Result<(), ChainError> {
         if self.signature.is_none() || self.public_key.is_none() {
-            return Err(ChainError::InvalidTransaction("Transfer not signed".to_string()));
+            return Err(ChainError::InvalidTransaction(
+                "Transfer not signed".to_string(),
+            ));
         }
 
         // Validate addresses are not empty
         if self.sender.is_empty() {
-            return Err(ChainError::InvalidTransaction("Sender address cannot be empty".to_string()));
+            return Err(ChainError::InvalidTransaction(
+                "Sender address cannot be empty".to_string(),
+            ));
         }
-
         if self.new_owner.is_empty() {
-            return Err(ChainError::InvalidTransaction("New owner address cannot be empty".to_string()));
+            return Err(ChainError::InvalidTransaction(
+                "New owner address cannot be empty".to_string(),
+            ));
+        }
+        // Prevent self-sends
+        if self.sender == self.new_owner {
+            return Err(ChainError::InvalidTransaction(
+                "Sender and new owner cannot be the same".to_string(),
+            ));
         }
 
-        // Validate fee_area is non-negative
+        // Validate amount and fee are non-negative and not both zero
+        if self.amount < Coord::from_num(0) {
+            return Err(ChainError::InvalidTransaction(
+                "Transfer amount cannot be negative".to_string(),
+            ));
+        }
         if self.fee_area < Coord::from_num(0) {
-            return Err(ChainError::InvalidTransaction("Fee area cannot be negative".to_string()));
+            return Err(ChainError::InvalidTransaction(
+                "Fee area cannot be negative".to_string(),
+            ));
+        }
+        if self.amount == Coord::from_num(0) && self.fee_area == Coord::from_num(0) {
+            return Err(ChainError::InvalidTransaction(
+                "Amount and fee cannot both be zero".to_string(),
+            ));
         }
 
         // Validate memo length to prevent DoS attacks
         if let Some(ref memo) = self.memo {
             if memo.len() > Self::MAX_MEMO_LENGTH {
-                return Err(ChainError::InvalidTransaction(
-                    format!("Memo exceeds maximum length of {} characters", Self::MAX_MEMO_LENGTH)
-                ));
+                return Err(ChainError::InvalidTransaction(format!(
+                    "Memo exceeds maximum length of {} characters",
+                    Self::MAX_MEMO_LENGTH
+                )));
             }
         }
 
+        let (signature, public_key) = match (&self.signature, &self.public_key) {
+            (Some(sig), Some(pk)) => (sig, pk),
+            _ => {
+                return Err(ChainError::InvalidTransaction(
+                    "Transfer not signed".to_string(),
+                ))
+            }
+        };
+
         let message = self.signable_message();
-        let is_valid = crate::crypto::verify_signature(
-            self.public_key.as_ref().unwrap(),
-            &message,
-            self.signature.as_ref().unwrap(),
-        )?;
+        let is_valid = crate::crypto::verify_signature(public_key, &message, signature)?;
 
         if !is_valid {
-            return Err(ChainError::InvalidTransaction("Invalid signature".to_string()));
+            return Err(ChainError::InvalidTransaction(
+                "Invalid signature".to_string(),
+            ));
         }
 
         Ok(())
@@ -409,7 +453,13 @@ mod tests {
         let keypair = KeyPair::generate().unwrap();
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let mut tx = SubdivisionTx::new(
+            parent_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
         let message = tx.signable_message();
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
@@ -434,7 +484,13 @@ mod tests {
         let children = parent.subdivide();
         let address = "test_address".to_string();
 
-        let tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let tx = SubdivisionTx::new(
+            parent_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
         assert!(tx.validate(&state).is_err());
     }
 
@@ -455,7 +511,13 @@ mod tests {
         let keypair = KeyPair::generate().unwrap();
         let address = keypair.address();
 
-        let mut tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let mut tx = SubdivisionTx::new(
+            parent_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
         let fake_signature = vec![0u8; 64];
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(fake_signature, public_key);
@@ -507,7 +569,13 @@ mod tests {
         let children = parent.subdivide();
 
         let address = "test_address".to_string();
-        let tx = SubdivisionTx::new(parent_hash, children.to_vec(), address, Coord::from_num(0), 1);
+        let tx = SubdivisionTx::new(
+            parent_hash,
+            children.to_vec(),
+            address,
+            Coord::from_num(0),
+            1,
+        );
 
         assert!(tx.validate(&state).is_err());
     }

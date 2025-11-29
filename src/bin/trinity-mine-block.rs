@@ -1,13 +1,13 @@
 //! Mine a new block by subdividing a triangle
 
-use trinitychain::persistence::Database;
-use trinitychain::transaction::{Transaction, SubdivisionTx, CoinbaseTx};
-use trinitychain::crypto::KeyPair;
-use trinitychain::miner::{mine_block, mine_block_parallel};
-use std::env;
-use trinitychain::wallet;
 use secp256k1::SecretKey;
 use std::collections::HashSet;
+use std::env;
+use trinitychain::crypto::KeyPair;
+use trinitychain::miner::{mine_block, mine_block_parallel};
+use trinitychain::persistence::Database;
+use trinitychain::transaction::{CoinbaseTx, SubdivisionTx, Transaction};
+use trinitychain::wallet;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
@@ -38,11 +38,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for tx in txs {
                 let _ = chain.mempool.add_transaction(tx);
             }
-            println!("📬 Loaded {} pending transactions from mempool", chain.mempool.len());
+            println!(
+                "📬 Loaded {} pending transactions from mempool",
+                chain.mempool.len()
+            );
         }
     }
 
-    let current_height = chain.blocks.last()
+    let current_height = chain
+        .blocks
+        .last()
         .map(|b| b.header.height)
         .ok_or("Blockchain is empty")?;
     println!("📊 Current height: {}", current_height);
@@ -62,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret_key = SecretKey::from_slice(&secret_bytes)?;
     let keypair = KeyPair::from_secret_key(secret_key);
     let mempool_txs = chain.mempool.get_transactions_by_fee(100);
-    
+
     // Collect locked triangles from pending transfers
     let mut locked_triangles = HashSet::new();
     for tx in &mempool_txs {
@@ -70,12 +75,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             locked_triangles.insert(transfer_tx.input_hash);
         }
     }
-    
+
     // Select parent triangle, avoiding locked ones
-    let parent_hash = *chain.state.utxo_set.keys()
+    let parent_hash = *chain
+        .state
+        .utxo_set
+        .keys()
         .find(|hash| !locked_triangles.contains(*hash))
         .ok_or("No UTXOs available for subdivision")?;
-    let parent_triangle = chain.state.utxo_set.get(&parent_hash)
+    let parent_triangle = chain
+        .state
+        .utxo_set
+        .get(&parent_hash)
         .ok_or("Parent triangle not found")?
         .clone();
 
@@ -90,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         children.to_vec(),
         address.clone(),
         trinitychain::geometry::Coord::from_num(0),
-        chain.blocks.len() as u64
+        chain.blocks.len() as u64,
     );
     let message = tx.signable_message();
     let signature = keypair.sign(&message)?;
@@ -99,9 +110,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let coinbase = CoinbaseTx {
         reward_area: trinitychain::geometry::Coord::from_num(1000),
-        beneficiary_address: address
+        beneficiary_address: address,
     };
-
 
     let mut transactions = vec![Transaction::Coinbase(coinbase)];
     transactions.extend(mempool_txs);
@@ -109,8 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("⛏️  Mining block (difficulty {})...", chain.difficulty);
 
-    let last_block = chain.blocks.last()
-        .ok_or("Blockchain is empty")?;
+    let last_block = chain.blocks.last().ok_or("Blockchain is empty")?;
     let mut new_block = trinitychain::blockchain::Block::new(
         last_block.header.height + 1,
         last_block.hash,

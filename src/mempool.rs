@@ -1,11 +1,11 @@
 //! Mempool for TrinityChain
 
-use crate::transaction::Transaction;
 use crate::blockchain::Sha256Hash;
 use crate::error::ChainError;
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use crate::transaction::Transaction;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 const MAX_MEMPOOL_SIZE: usize = 10000; // Max transactions in mempool
 const MAX_TX_PER_ADDRESS: usize = 100; // Max transactions per sender address
@@ -20,6 +20,12 @@ pub struct MempoolTransaction {
 pub struct Mempool {
     transactions: HashMap<Sha256Hash, MempoolTransaction>,
     by_sender: HashMap<String, Vec<Sha256Hash>>,
+}
+
+impl Default for Mempool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Mempool {
@@ -45,10 +51,17 @@ impl Mempool {
         let sender = match &tx {
             Transaction::Transfer(tx) => tx.sender.clone(),
             Transaction::Subdivision(tx) => tx.owner_address.clone(),
-            Transaction::Coinbase(_) => return Err(ChainError::InvalidTransaction("Coinbase transactions cannot be in mempool".to_string())),
+            Transaction::Coinbase(_) => {
+                return Err(ChainError::InvalidTransaction(
+                    "Coinbase transactions cannot be in mempool".to_string(),
+                ))
+            }
         };
 
-        let sender_txs = self.by_sender.entry(sender.clone()).or_insert_with(Vec::new);
+        let sender_txs = self
+            .by_sender
+            .entry(sender.clone())
+            .or_default();
         if sender_txs.len() >= MAX_TX_PER_ADDRESS {
             return Err(ChainError::InvalidTransaction(
                 "Exceeded maximum transactions per address".to_string(),
@@ -67,19 +80,26 @@ impl Mempool {
     }
 
     fn evict_lowest_fee(&mut self) -> Result<(), ChainError> {
-        if let Some(eviction_candidate) = self.transactions.values()
+        if let Some(eviction_candidate) = self
+            .transactions
+            .values()
             .min_by_key(|tx| tx.tx.fee_area())
-            .map(|tx| tx.tx.hash()) {
-                self.remove_transaction(&eviction_candidate);
-                Ok(())
-            } else {
-                Err(ChainError::MempoolFull)
-            }
+            .map(|tx| tx.tx.hash())
+        {
+            self.remove_transaction(&eviction_candidate);
+            Ok(())
+        } else {
+            Err(ChainError::MempoolFull)
+        }
     }
 
     pub fn get_transactions_by_fee(&self, limit: usize) -> Vec<Transaction> {
-        let mut txs: Vec<Transaction> = self.transactions.values().map(|mtx| mtx.tx.clone()).collect();
-        txs.sort_by(|a, b| b.fee_area().cmp(&a.fee_area()));
+        let mut txs: Vec<Transaction> = self
+            .transactions
+            .values()
+            .map(|mtx| mtx.tx.clone())
+            .collect();
+        txs.sort_by_key(|b| std::cmp::Reverse(b.fee_area()));
         txs.truncate(limit);
         txs
     }
@@ -106,7 +126,10 @@ impl Mempool {
     }
 
     pub fn get_all_transactions(&self) -> Vec<Transaction> {
-        self.transactions.values().map(|mtx| mtx.tx.clone()).collect()
+        self.transactions
+            .values()
+            .map(|mtx| mtx.tx.clone())
+            .collect()
     }
 
     pub fn remove_transactions(&mut self, tx_hashes: &[Sha256Hash]) {

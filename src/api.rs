@@ -1,23 +1,25 @@
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router, http::StatusCode, response::{IntoResponse, Response},
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-use crate::blockchain::{Blockchain, Block};
-use crate::transaction::{Transaction, CoinbaseTx};
+use crate::blockchain::{Block, Blockchain};
+use crate::crypto::KeyPair;
+use crate::geometry::Coord;
 use crate::miner;
 use crate::network::NetworkNode;
-use crate::geometry::Coord;
-use crate::crypto::KeyPair;
+use crate::transaction::{CoinbaseTx, Transaction};
 
 #[derive(Clone)]
 pub struct Node {
@@ -42,7 +44,11 @@ impl Node {
     }
 
     pub async fn start_mining(&self, miner_address: String) {
-        if self.is_mining.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        if self
+            .is_mining
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             println!("Mining is already in progress.");
             return;
         }
@@ -67,12 +73,7 @@ impl Node {
                         let mut all_txs = vec![coinbase_tx];
                         all_txs.extend(transactions);
 
-                        Some(Block::new(
-                            height,
-                            last_block.hash,
-                            bc.difficulty,
-                            all_txs,
-                        ))
+                        Some(Block::new(height, last_block.hash, bc.difficulty, all_txs))
                     } else {
                         eprintln!("Cannot mine without a genesis block.");
                         None
@@ -109,7 +110,11 @@ impl Node {
     }
 
     pub async fn stop_mining(&self) {
-        if self.is_mining.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+        if self
+            .is_mining
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
             println!("Stopping mining...");
             if let Some(task) = self.mining_task.write().await.take() {
                 task.abort();
@@ -133,7 +138,10 @@ pub struct StatsResponse {
 }
 
 pub async fn run_api_server(node: Arc<Node>) {
-    let cors = CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any);
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
     let api_routes = Router::new()
         .route("/blockchain/height", get(get_blockchain_height))
         .route("/blockchain/blocks", get(get_recent_blocks))
@@ -153,7 +161,10 @@ pub async fn run_api_server(node: Arc<Node>) {
         .fallback_service(serve_dir)
         .layer(cors);
 
-    let port = std::env::var("PORT").ok().and_then(|p| p.parse::<u16>().ok()).unwrap_or(3000);
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(3000);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     let listener = match tokio::net::TcpListener::bind(addr).await {
@@ -190,14 +201,21 @@ async fn get_blockchain_stats(State(node): State<Arc<Node>>) -> impl IntoRespons
     Json(stats)
 }
 
-async fn submit_transaction(State(node): State<Arc<Node>>, Json(tx): Json<Transaction>) -> Response {
+async fn submit_transaction(
+    State(node): State<Arc<Node>>,
+    Json(tx): Json<Transaction>,
+) -> Response {
     let mut blockchain = node.blockchain.write().await;
     match blockchain.mempool.add_transaction(tx.clone()) {
         Ok(_) => {
             node.network.broadcast_transaction(&tx).await;
             (StatusCode::OK, Json("Transaction submitted successfully.")).into_response()
         }
-        Err(e) => (StatusCode::BAD_REQUEST, Json(format!("Failed to add transaction: {}", e))).into_response(),
+        Err(e) => (
+            StatusCode::BAD_REQUEST,
+            Json(format!("Failed to add transaction: {}", e)),
+        )
+            .into_response(),
     }
 }
 
@@ -206,7 +224,10 @@ pub struct StartMiningRequest {
     pub miner_address: String,
 }
 
-async fn start_mining(State(node): State<Arc<Node>>, Json(req): Json<StartMiningRequest>) -> impl IntoResponse {
+async fn start_mining(
+    State(node): State<Arc<Node>>,
+    Json(req): Json<StartMiningRequest>,
+) -> impl IntoResponse {
     node.start_mining(req.miner_address).await;
     (StatusCode::OK, Json("Mining started."))
 }
@@ -221,7 +242,10 @@ async fn get_peers(State(node): State<Arc<Node>>) -> impl IntoResponse {
     Json(peers)
 }
 
-async fn get_address_balance(State(node): State<Arc<Node>>, Path(addr): Path<String>) -> impl IntoResponse {
+async fn get_address_balance(
+    State(node): State<Arc<Node>>,
+    Path(addr): Path<String>,
+) -> impl IntoResponse {
     let blockchain = node.blockchain.read().await;
     let balance = blockchain.state.get_balance(&addr).to_num::<u64>();
     Json(BalanceResponse { balance })
@@ -242,6 +266,10 @@ async fn create_wallet() -> Response {
             };
             (StatusCode::OK, Json(response)).into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(format!("Failed to generate keypair: {}", e))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(format!("Failed to generate keypair: {}", e)),
+        )
+            .into_response(),
     }
 }

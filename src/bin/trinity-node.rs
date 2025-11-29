@@ -1,21 +1,18 @@
 //! Network node for TrinityChain - TUI Edition
 
-use trinitychain::blockchain::Blockchain;
-use trinitychain::persistence::Database;
-use trinitychain::api::Node; // Import the unified Node
-use std::env;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::{backend::CrosstermBackend, Terminal};
+use std::env;
 use std::io;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use trinitychain::api::Node; // Import the unified Node
+use trinitychain::blockchain::Blockchain;
+use trinitychain::persistence::Database;
 
 #[derive(Clone)]
 struct NodeStats {
@@ -80,7 +77,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move {
             if let Some((host, port_str)) = peer_addr.split_once(':') {
                 if let Ok(peer_port) = port_str.parse::<u16>() {
-                    if let Err(e) = node_clone.network.clone().connect_peer(host.to_string(), peer_port).await {
+                    if let Err(e) = node_clone
+                        .network
+                        .clone()
+                        .connect_peer(host.to_string(), peer_port)
+                        .await
+                    {
                         eprintln!("⚠️  Failed to connect to peer: {}", e);
                     }
                 }
