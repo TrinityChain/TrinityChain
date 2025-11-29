@@ -1,7 +1,7 @@
 //! Combined API Server + Telegram Bot for TrinityChain
 //! Runs both services in one process for efficiency
 
-use axum::{extract::State as AxumState, http::StatusCode, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
@@ -18,8 +18,9 @@ use ratatui::{
 use serde_json::{json, Value};
 use std::env;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 use trinitychain::blockchain::Blockchain;
 use trinitychain::persistence::Database;
@@ -51,53 +52,31 @@ impl Default for ServerStats {
     }
 }
 
-type AppState = Arc<Mutex<ServerData>>;
-
+#[derive(Clone)]
 struct ServerData {
-    db: Database,
-    stats: ServerStats,
+    chain: Arc<RwLock<Blockchain>>,
+    stats: Arc<Mutex<ServerStats>>,
 }
 
 async fn get_stats(
-    AxumState(state): AxumState<AppState>,
+    State(state): State<ServerData>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let data = state.lock().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to acquire lock".to_string(),
-        )
-    })?;
-    let chain = data.db.load_blockchain().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to load blockchain".to_string(),
-        )
-    })?;
+    let stats = state.stats.lock().await;
+    let chain = state.chain.read().await;
 
     Ok(Json(json!({
         "chainHeight": chain.blocks.last().map(|b| b.header.height).unwrap_or(0),
         "difficulty": chain.difficulty,
         "totalSupply": 0,
         "maxSupply": 420000000,
-        "uptime": data.stats.uptime_secs,
+        "uptime": stats.uptime_secs,
     })))
 }
 
 async fn get_blocks(
-    AxumState(state): AxumState<AppState>,
+    State(state): State<ServerData>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    let data = state.lock().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to acquire lock".to_string(),
-        )
-    })?;
-    let chain = data.db.load_blockchain().map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to load blockchain".to_string(),
-        )
-    })?;
+    let chain = state.chain.read().await;
 
     let blocks: Vec<_> = chain
         .blocks
@@ -107,7 +86,7 @@ async fn get_blocks(
         .map(|b| {
             json!({
                 "index": b.header.height,
-                "hash": hex::encode(b.hash),
+                "hash": hex::encode(b.hash()),
                 "previousHash": hex::encode(b.header.previous_hash),
                 "timestamp": b.header.timestamp,
                 "difficulty": b.header.difficulty,
@@ -282,18 +261,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let db = Database::open("trinitychain.db").expect("Failed to open database");
-    let chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
 
-    let state = Arc::new(Mutex::new(ServerData {
-        db,
-        stats: ServerStats {
+    let state = ServerData {
+        chain: Arc::new(RwLock::new(chain.clone())),
+        stats: Arc::new(Mutex::new(ServerStats {
             api_port: port,
             chain_height: chain.blocks.last().map(|b| b.header.height).unwrap_or(0),
             ..Default::default()
-        },
-    }));
+        })),
+    };
 
-    let state_clone = Arc::clone(&state);
+    let state_clone = state.clone();
     let start_time = Instant::now();
 
     // Build API router
@@ -306,7 +285,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .allow_methods(Any)
                 .allow_headers(Any),
         )
-        .with_state(Arc::clone(&state));
+        .with_state(state.clone());
 
     // Spawn API server
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
@@ -317,23 +296,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Update stats loop
     let stats_handle = tokio::spawn(async move {
         loop {
-            if let Ok(mut data) = state_clone.lock() {
-                data.stats.status = "Running".to_string();
-                data.stats.uptime_secs = start_time.elapsed().as_secs();
+            let mut stats = state_clone.stats.lock().await;
+            stats.status = "Running".to_string();
+            stats.uptime_secs = start_time.elapsed().as_secs();
 
-                // Check for Telegram token
-                if env::var("TELOXIDE_TOKEN").is_ok() {
-                    data.stats.telegram_status = "Active".to_string();
-                } else {
-                    data.stats.telegram_status = "No Token (set TELOXIDE_TOKEN)".to_string();
-                }
-
-                // Update chain height
-                if let Ok(chain) = data.db.load_blockchain() {
-                    data.stats.chain_height =
-                        chain.blocks.last().map(|b| b.header.height).unwrap_or(0);
-                }
+            // Check for Telegram token
+            if env::var("TELOXIDE_TOKEN").is_ok() {
+                stats.telegram_status = "Active".to_string();
+            } else {
+                stats.telegram_status = "No Token (set TELOXIDE_TOKEN)".to_string();
             }
+
+            // Update chain height from in-memory chain
+            let chain = state_clone.chain.read().await;
+            stats.chain_height =
+                chain.blocks.last().map(|b| b.header.height).unwrap_or(0);
+            
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
@@ -348,12 +326,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        if let Ok(stats_lock) = state.lock() {
-            let stats_clone = stats_lock.stats.clone();
-            terminal.draw(|f| {
-                draw_ui(f, &stats_clone);
-            })?;
-        }
+        let stats_clone = state.stats.lock().await.clone();
+        terminal.draw(|f| {
+            draw_ui(f, &stats_clone);
+        })?;
 
         tokio::time::sleep(Duration::from_millis(250)).await;
     }

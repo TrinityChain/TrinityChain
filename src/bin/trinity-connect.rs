@@ -29,7 +29,7 @@ async fn main() {
 async fn connect_peer(addr: &str) {
     println!("🔗 Connecting to peer: {}", addr);
     let db = Database::open("trinitychain.db").expect("DB open failed");
-    let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
     let node = Arc::new(NetworkNode::new(Arc::new(RwLock::new(blockchain))));
 
     let parts: Vec<&str> = addr.split(':').collect();

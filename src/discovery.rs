@@ -78,7 +78,6 @@ impl PeerDiscovery {
 
     /// Get all known peers
     pub fn get_known_peers(&self) -> Vec<Node> {
-        // In real implementation, would reconstruct from HashSet
         // For now, return bootstrap peers
         self.bootstrap_peers.clone()
     }

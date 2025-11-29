@@ -191,7 +191,7 @@ impl NetworkNode {
                 }
                 NetworkMessage::GetBlock(hash) => {
                     let chain = self.blockchain.read().await;
-                    if let Some(block) = chain.block_index.get(&hash) {
+                    if let Some(block) = chain.blocks.iter().find(|b| b.hash() == hash) {
                         let response = NetworkMessage::Block(Box::new(block.clone()));
                         self.send_message(node, &response).await?;
                     }

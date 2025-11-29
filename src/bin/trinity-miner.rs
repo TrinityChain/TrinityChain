@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use trinitychain::blockchain::{Block, Blockchain};
+use trinitychain::miner::{mine_block, mine_block_parallel};
 use trinitychain::network::NetworkNode;
 use trinitychain::persistence::Database;
 use trinitychain::transaction::{CoinbaseTx, Transaction};
@@ -30,10 +31,10 @@ struct MiningStats {
     chain_height: u64,
     uptime_secs: u64,
     avg_block_time: f64,
-    difficulty: u64,
-    current_reward: u64,
+    difficulty: u32,
+    current_reward: f64,
     total_earned: f64,
-    current_supply: u64,
+    current_supply: f64,
     max_supply: u64,
     blocks_to_halving: u64,
     halving_era: u64,
@@ -54,9 +55,9 @@ impl Default for MiningStats {
             uptime_secs: 0,
             avg_block_time: 0.0,
             difficulty: 1,
-            current_reward: 1000,
+            current_reward: 1000.0,
             total_earned: 0.0,
-            current_supply: 0,
+            current_supply: 0.0,
             max_supply: 420_000_000,
             blocks_to_halving: 210_000,
             halving_era: 0,
@@ -258,7 +259,7 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
         .percent(supply_pct.min(100.0) as u16)
         .label(format!(
             "{} / {} ({:.3}%)",
-            format_number(stats.current_supply),
+            format_number(stats.current_supply as u64),
             format_number(stats.max_supply),
             supply_pct
         ));
@@ -408,7 +409,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_for_network = Database::open("trinitychain.db").expect("Failed to open database");
     let chain_for_network = db_for_network
         .load_blockchain()
-        .unwrap_or_else(|_| Blockchain::new());
+        .unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
     let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
 
@@ -465,7 +466,7 @@ async fn mining_loop(
     network: Option<Arc<NetworkNode>>,
 ) {
     let db = Database::open("trinitychain.db").expect("Failed to open database");
-    let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
 
     let start_time = Instant::now();
     let mut blocks_mined = 0;
@@ -489,7 +490,7 @@ async fn mining_loop(
             beneficiary_address: beneficiary_address.clone(),
         });
 
-        let mut new_block = Block::new(new_height, last_block.hash, difficulty, vec![coinbase_tx]);
+        let mut new_block = Block::new(new_height, last_block.hash(), difficulty, vec![coinbase_tx]);
 
         if new_block.header.timestamp <= last_block.header.timestamp {
             new_block.header.timestamp = last_block.header.timestamp + 1;
@@ -503,52 +504,24 @@ async fn mining_loop(
         }
 
         let mine_start = Instant::now();
-        let mut hash_count = 0u64;
-        let mut last_update = Instant::now();
 
         // Mine the block
-        loop {
-            new_block.hash = new_block.calculate_hash();
-            hash_count += 1;
+        let new_block = if _threads > 1 {
+            mine_block_parallel(new_block)
+        } else {
+            mine_block(new_block)
+        };
 
-            // Update hashrate every 1000 hashes OR every 500ms, whichever comes first
-            if hash_count.is_multiple_of(1000) || last_update.elapsed() > Duration::from_millis(500) {
-                let elapsed = mine_start.elapsed().as_secs_f64();
-                let hashrate = if elapsed > 0.0 {
-                    hash_count as f64 / elapsed
-                } else {
-                    0.0
-                };
-
-                {
-                    let mut s = stats.lock().await;
-                    s.current_hash_rate = hashrate;
-
-                    // Update hashrate history every 5000 hashes to avoid too frequent updates
-                    if hash_count.is_multiple_of(5000) {
-                        s.hashrate_history.remove(0);
-                        s.hashrate_history.push(hashrate as u64);
-                    }
-                } // Lock dropped here
-
-                // Update network stats after releasing lock
-                if let Some(ref net) = network {
-                    let peer_count = net.list_peers().await.len();
-                    let mut s = stats.lock().await;
-                    s.network_peers = peer_count;
-                }
-
-                last_update = Instant::now();
+        let new_block = match new_block {
+            Ok(block) => block,
+            Err(_) => {
+                sleep(Duration::from_secs(1)).await;
+                continue;
             }
-
-            if new_block.verify_proof_of_work() {
-                break;
-            }
-            new_block.header.nonce += 1;
-        }
+        };
 
         let mine_duration = mine_start.elapsed().as_secs_f64();
-        let hash_hex = hex::encode(new_block.hash);
+        let hash_hex = hex::encode(new_block.hash());
 
         if chain.apply_block(new_block.clone()).is_err() {
             sleep(Duration::from_secs(10)).await;
@@ -560,7 +533,7 @@ async fn mining_loop(
             network.broadcast_block(&new_block).await;
         }
 
-        if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty) {
+        if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty as u64) {
             // Handle error silently
         }
 
@@ -570,7 +543,13 @@ async fn mining_loop(
         // Update stats
         {
             let current_height = new_height;
-            let current_supply = Blockchain::calculate_current_supply(current_height);
+            let current_supply: f64 = chain.blocks.iter().flat_map(|b| &b.transactions).filter_map(|tx| {
+                if let Transaction::Coinbase(ctx) = tx {
+                    Some(ctx.reward_area.to_num::<f64>())
+                } else {
+                    None
+                }
+            }).sum();
             let current_reward = Blockchain::calculate_block_reward(current_height);
             let halving_era = current_height / 210_000;
             let blocks_to_halving = ((halving_era + 1) * 210_000).saturating_sub(current_height);

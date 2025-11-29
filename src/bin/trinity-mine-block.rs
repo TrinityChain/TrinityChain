@@ -66,7 +66,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret_bytes = hex::decode(secret_hex)?;
     let secret_key = SecretKey::from_slice(&secret_bytes)?;
     let keypair = KeyPair::from_secret_key(secret_key);
-    let mempool_txs = chain.mempool.get_transactions_by_fee(100);
+    let mut mempool_txs = chain.mempool.get_all_transactions();
+    mempool_txs.sort_by(|a, b| b.fee().cmp(&a.fee()));
+    mempool_txs.truncate(100);
 
     // Collect locked triangles from pending transfers
     let mut locked_triangles = HashSet::new();
@@ -122,7 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let last_block = chain.blocks.last().ok_or("Blockchain is empty")?;
     let mut new_block = trinitychain::blockchain::Block::new(
         last_block.header.height + 1,
-        last_block.hash,
+        last_block.hash(),
         chain.difficulty,
         transactions,
     );
@@ -133,7 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         new_block = mine_block(new_block)?;
     }
 
-    let new_hash_hex = hex::encode(new_block.hash);
+    let new_hash_hex = hex::encode(new_block.hash());
     let new_hash_prefix = &new_hash_hex[..16];
     println!("✅ Block mined! Hash: {}", new_hash_prefix);
 
@@ -145,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = std::fs::remove_file("mempool.json");
 
     println!("\n🎉 Block {} mined successfully!", chain.blocks.len() - 1);
-    println!("   UTXOs: {}", chain.state.count());
+    println!("   UTXOs: {}", chain.state.utxo_set.len());
 
     Ok(())
 }

@@ -48,10 +48,9 @@ pub fn mine_block(mut block: Block) -> Result<Block, ChainError> {
 
     loop {
         block.header.nonce = nonce;
-        let hash = block.calculate_hash();
+        let hash = block.hash();
 
-        if is_hash_valid(&hash, difficulty) {
-            block.hash = hash;
+        if is_hash_valid(&hash, difficulty as u64) {
             return Ok(block);
         }
 
@@ -78,9 +77,9 @@ pub fn mine_block_parallel(block: Block) -> Result<Block, ChainError> {
             while !found.load(Ordering::Relaxed) {
                 let mut test_block = block.clone();
                 test_block.header.nonce = nonce;
-                let hash = test_block.calculate_hash();
+                let hash = test_block.hash();
 
-                if is_hash_valid(&hash, difficulty) {
+                if is_hash_valid(&hash, difficulty as u64) {
                     if !found.swap(true, Ordering::SeqCst) {
                         let _ = s.send((nonce, hash));
                     }
@@ -92,10 +91,9 @@ pub fn mine_block_parallel(block: Block) -> Result<Block, ChainError> {
 
     // Block until a nonce is found by one of the threads
     match receiver.recv() {
-        Ok((nonce, hash)) => {
+        Ok((nonce, _hash)) => {
             let mut mined_block = block;
             mined_block.header.nonce = nonce;
-            mined_block.hash = hash;
             Ok(mined_block)
         }
         // This error occurs if all senders hang up, which means mining was interrupted or failed.

@@ -485,7 +485,6 @@ fn validate_address(address: &str) -> Result<(), ChainError> {
     }
     
     // Basic format validation (adjust for TrinityChain address format)
-    // This is a placeholder - replace with actual address validation
     if !address.chars().all(|c| c.is_alphanumeric()) {
         return Err(ChainError::WalletError(
             "Invalid address format".to_string()

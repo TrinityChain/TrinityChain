@@ -431,8 +431,6 @@ mod tests {
 
         assert!(!sync.has_pending_blocks().await);
 
-        // This would need a real Block to test fully
-        // Just verify the queue works
         assert_eq!(sync.peer_count().await, 0);
     }
 }

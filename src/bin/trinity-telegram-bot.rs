@@ -76,11 +76,16 @@ async fn answer(
                 Ok(db) => match db.load_blockchain() {
                     Ok(chain) => {
                         let height = chain.blocks.last().map_or(0, |b| b.header.height);
-                        let total_supply =
-                            trinitychain::blockchain::Blockchain::calculate_current_supply(height);
+                        let total_supply: f64 = chain.blocks.iter().flat_map(|b| &b.transactions).filter_map(|tx| {
+                            if let trinitychain::transaction::Transaction::Coinbase(ctx) = tx {
+                                Some(ctx.reward_area.to_num::<f64>())
+                            } else {
+                                None
+                            }
+                        }).sum();
                         let current_reward =
                             trinitychain::blockchain::Blockchain::calculate_block_reward(height);
-                        let triangles = chain.state.count();
+                        let triangles = chain.state.utxo_set.len();
 
                         format!(
                             "📊 Blockchain Statistics:\n\n\
@@ -167,7 +172,7 @@ async fn answer(
                             0
                         };
                         let mempool_size = chain.mempool.len();
-                        let utxo_count = chain.state.count();
+                        let utxo_count = chain.state.utxo_set.len();
 
                         format!(
                             "📊 Node Status:\n\n\

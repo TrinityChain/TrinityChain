@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let db = Database::open(&db_path).expect("Failed to open database");
-    let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
 
     // Create the unified Node
     let node = Arc::new(Node::new(blockchain));
@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let bc = node.blockchain.read().await;
             s.chain_height = bc.blocks.len() as u64;
             if let Some(last_block) = bc.blocks.last() {
-                s.last_block_hash = hex::encode(last_block.hash);
+                s.last_block_hash = hex::encode(last_block.hash());
             }
 
             let peers = node.network.list_peers().await;

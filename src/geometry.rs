@@ -122,6 +122,19 @@ impl Triangle {
         self.value.unwrap_or_else(|| self.area())
     }
 
+    /// Creates a new triangle with a different owner.
+    pub fn change_owner(&self, new_owner: String) -> Self {
+        let mut new_triangle = self.clone();
+        new_triangle.owner = new_owner;
+        new_triangle
+    }
+
+    /// Creates a new triangle with a specific effective value.
+    pub fn with_effective_value(mut self, value: Coord) -> Self {
+        self.value = Some(value);
+        self
+    }
+
     /// Calculates the area of the triangle using the Shoelace formula.
     pub fn area(&self) -> Coord {
         let val = (self.a.x * (self.b.y - self.c.y)

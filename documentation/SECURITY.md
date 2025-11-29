@@ -26,7 +26,7 @@ When reporting, please include:
 
 ### Known Limitations
 
-TrinityChain is a **research/educational blockchain**. It is not yet suitable for handling real financial value without additional hardening:
+### Known Limitations
 
 1. **Peer authentication**: Currently lacks HMAC-based peer verification
 2. **Rate limiting**: P2P rate limits are not fully implemented

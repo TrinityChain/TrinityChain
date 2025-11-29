@@ -153,7 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tx_type: "Transfer".to_string(),
                             direction,
                             details: format!("{} | {}{}", hash_short, other_party, memo_str),
-                            timestamp: block.header.timestamp,
+                            timestamp: block.header.timestamp as i64,
                             color,
                         });
                     }
@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tx_type: "Mining".to_string(),
                             direction: "⛏️  Reward".to_string(),
                             details: format!("Area: {}", coinbase_tx.reward_area),
-                            timestamp: block.header.timestamp,
+                            timestamp: block.header.timestamp as i64,
                             color: TableColor::Cyan,
                         });
                     }
@@ -190,7 +190,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tx_type: "Subdivision".to_string(),
                             direction: "✂️  Split".to_string(),
                             details: format!("{} → {} children", hash_short, sub_tx.children.len()),
-                            timestamp: block.header.timestamp,
+                            timestamp: block.header.timestamp as i64,
                             color: TableColor::Magenta,
                         });
                     }

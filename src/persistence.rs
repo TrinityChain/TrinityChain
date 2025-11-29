@@ -7,6 +7,7 @@ use crate::mempool::Mempool;
 use crate::transaction::Transaction;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 pub struct Database {
     conn: Connection,
@@ -67,7 +68,7 @@ impl Database {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 block.header.height as i64,
-                block.hash.to_vec(),
+                block.hash().to_vec(),
                 block.header.previous_hash.to_vec(),
                 block.header.timestamp,
                 block.header.difficulty as i64,
@@ -140,7 +141,7 @@ impl Database {
 
         Ok(TriangleState {
             utxo_set,
-            address_index: HashMap::new(), // Will be rebuilt by caller
+            address_balances: HashMap::new(), // Will be rebuilt by caller
         })
     }
 
@@ -177,7 +178,7 @@ impl Database {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 block.header.height as i64,
-                block.hash.to_vec(),
+                block.hash().to_vec(),
                 block.header.previous_hash.to_vec(),
                 block.header.timestamp,
                 block.header.difficulty as i64,
@@ -220,26 +221,23 @@ impl Database {
 
     pub fn load_blockchain(&self) -> Result<Blockchain, ChainError> {
         let mut stmt = self.conn.prepare(
-            "SELECT height, hash, previous_hash, timestamp, difficulty, nonce, merkle_root, transactions
+            "SELECT height, previous_hash, timestamp, difficulty, nonce, merkle_root, transactions
              FROM blocks ORDER BY height ASC"
         ).map_err(|e| ChainError::DatabaseError(format!("Failed to prepare query: {}", e)))?;
 
         let blocks_iter = stmt
             .query_map([], |row| {
-                let transactions_json: String = row.get(7)?;
+                let transactions_json: String = row.get(6)?;
                 let transactions: Vec<Transaction> = serde_json::from_str(&transactions_json)
                     .map_err(|_e| rusqlite::Error::InvalidQuery)?;
 
                 let height: i64 = row.get(0)?;
-                let timestamp: i64 = row.get(3)?;
-                let difficulty: i64 = row.get(4)?;
-                let nonce: i64 = row.get(5)?;
-                let hash_vec: Vec<u8> = row.get(1)?;
-                let previous_hash_vec: Vec<u8> = row.get(2)?;
-                let merkle_root_vec: Vec<u8> = row.get(6)?;
+                let timestamp: i64 = row.get(2)?;
+                let difficulty: i64 = row.get(3)?;
+                let nonce: i64 = row.get(4)?;
+                let previous_hash_vec: Vec<u8> = row.get(1)?;
+                let merkle_root_vec: Vec<u8> = row.get(5)?;
 
-                let mut hash = [0u8; 32];
-                hash.copy_from_slice(&hash_vec);
                 let mut previous_hash = [0u8; 32];
                 previous_hash.copy_from_slice(&previous_hash_vec);
                 let mut merkle_root = [0u8; 32];
@@ -249,13 +247,11 @@ impl Database {
                     header: BlockHeader {
                         height: height as u64,
                         previous_hash,
-                        timestamp,
-                        difficulty: difficulty as u64,
+                        timestamp: timestamp as u64,
+                        difficulty: difficulty as u32,
                         nonce: nonce as u64,
                         merkle_root,
-                        headline: None, // Headlines not stored in old blocks
                     },
-                    hash,
                     transactions,
                 })
             })
@@ -271,7 +267,7 @@ impl Database {
         }
 
         if blocks.is_empty() {
-            return Ok(Blockchain::new());
+            return Ok(Blockchain::new("".to_string(), 0)?);
         }
 
         let mut utxo_set = HashMap::new();
@@ -301,14 +297,14 @@ impl Database {
         }
 
         // Load difficulty from metadata, but verify against actual blocks
-        let metadata_difficulty: u64 = self
+        let metadata_difficulty: u32 = self
             .conn
             .query_row(
                 "SELECT value FROM metadata WHERE key = 'difficulty'",
                 [],
                 |row| {
                     let val: String = row.get(0)?;
-                    Ok(val.parse::<u64>().unwrap_or(2))
+                    Ok(val.parse::<u32>().unwrap_or(2))
                 },
             )
             .unwrap_or(2);
@@ -337,26 +333,15 @@ impl Database {
             actual_difficulty
         };
 
-        let block_index = blocks.iter().map(|b| (b.hash, b.clone())).collect();
+        let state = self.load_utxo_set()?;
 
-        let mut state = self.load_utxo_set()?;
-
-        // Rebuild address index from UTXO set
-        state.rebuild_address_index();
-
-        let mempool = Mempool::new();
         let blockchain = Blockchain {
             blocks,
-            block_index,
-            forks: std::collections::HashMap::new(),
-            state,
             difficulty,
-            mempool,
+            mempool: Mempool::new(),
+            state,
+            difficulty_mutex: Mutex::new(()),
         };
-
-        // NOTE: Recalculation disabled - it was causing difficulty to jump on every reload
-        // The normal adjustment every 2,016 blocks will handle difficulty changes
-        // blockchain.recalculate_difficulty();
 
         Ok(blockchain)
     }
@@ -376,7 +361,7 @@ mod tests {
     #[test]
     fn test_save_and_load_blockchain() {
         let db = Database::open(":memory:").unwrap();
-        let chain = Blockchain::new();
+        let chain = Blockchain::new("miner".to_string(), 1).unwrap();
 
         db.save_block(&chain.blocks[0]).unwrap();
         db.save_utxo_set(&chain.state).unwrap();

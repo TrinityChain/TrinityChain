@@ -21,6 +21,7 @@ pub enum ChainError {
     BincodeError(String),
     ForkNotFound,
     InvalidBlock(String),
+    InternalError(String),
 }
 
 impl fmt::Display for ChainError {
@@ -43,6 +44,7 @@ impl fmt::Display for ChainError {
             ChainError::BincodeError(msg) => write!(f, "Bincode error: {}", msg),
             ChainError::ForkNotFound => write!(f, "Fork not found"),
             ChainError::InvalidBlock(msg) => write!(f, "Invalid block: {}", msg),
+            ChainError::InternalError(msg) => write!(f, "Internal error: {}", msg),
         }
     }
 }
