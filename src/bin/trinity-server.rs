@@ -1,7 +1,7 @@
 //! Combined API Server + Telegram Bot for TrinityChain
 //! Runs both services in one process for efficiency
 
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use axum::{extract::State, routing::get, Json, Router};
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
@@ -24,6 +24,7 @@ use tokio::sync::{Mutex, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 use trinitychain::blockchain::Blockchain;
 use trinitychain::config::load_config;
+use trinitychain::error::ApiError;
 use trinitychain::persistence::Database;
 
 #[derive(Clone)]
@@ -61,7 +62,7 @@ struct ServerData {
 
 async fn get_stats(
     State(state): State<ServerData>,
-) -> Result<Json<Value>, (StatusCode, String)> {
+) -> Result<Json<Value>, ApiError> {
     let stats = state.stats.lock().await;
     let chain = state.chain.read().await;
 
@@ -76,7 +77,7 @@ async fn get_stats(
 
 async fn get_blocks(
     State(state): State<ServerData>,
-) -> Result<Json<Value>, (StatusCode, String)> {
+) -> Result<Json<Value>, ApiError> {
     let chain = state.chain.read().await;
 
     let blocks: Vec<_> = chain
