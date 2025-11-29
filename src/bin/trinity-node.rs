@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use trinitychain::api::Node; // Import the unified Node
 use trinitychain::blockchain::Blockchain;
+use trinitychain::config::load_config;
 use trinitychain::persistence::Database;
 
 #[derive(Clone)]
@@ -41,15 +42,11 @@ impl Default for NodeStats {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config()?;
+    let port = config.network.p2p_port;
+    let db_path = config.database.path;
+
     let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        println!("Usage: trinity-node <port> [--peer <host:port>]");
-        return Ok(());
-    }
-
-    let port: u16 = args[1].parse().expect("Invalid port number");
-    let db_path = "trinitychain.db".to_string();
 
     // Setup terminal
     enable_raw_mode()?;
@@ -71,8 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_time = Instant::now();
 
     // Connect to peer if specified
-    if args.len() >= 4 && args[2] == "--peer" {
-        let peer_addr = args[3].clone();
+    if args.len() >= 3 && args[1] == "--peer" {
+        let peer_addr = args[2].clone();
         let node_clone = node.clone();
         tokio::spawn(async move {
             if let Some((host, port_str)) = peer_addr.split_once(':') {

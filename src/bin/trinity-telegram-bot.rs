@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use tokio::sync::{Mutex, RwLock};
+use trinitychain::config::load_config;
 use trinitychain::network::NetworkNode;
 use trinitychain::persistence::Database;
 
@@ -72,7 +73,8 @@ async fn answer(
             info!("Handled /help command for user: {:?}", message.from());
         }
         Command::Stats => {
-            let response = match Database::open("trinitychain.db") {
+            let config = load_config().expect("Failed to load config");
+                let response = match Database::open(&config.database.path) {
                 Ok(db) => match db.load_blockchain() {
                     Ok(chain) => {
                         let height = chain.blocks.last().map_or(0, |b| b.header.height);
@@ -105,7 +107,8 @@ async fn answer(
             info!("Handled /stats command for user: {:?}", message.from());
         }
         Command::Mempool => {
-            let response = match Database::open("trinitychain.db") {
+            let config = load_config().expect("Failed to load config");
+                let response = match Database::open(&config.database.path) {
                 Ok(db) => match db.load_blockchain() {
                     Ok(chain) => {
                         let pool_size = chain.mempool.len();
@@ -162,7 +165,8 @@ async fn answer(
             info!("Handled /peers command for user: {:?}", message.from());
         }
         Command::Status => {
-            let response = match Database::open("trinitychain.db") {
+            let config = load_config().expect("Failed to load config");
+                let response = match Database::open(&config.database.path) {
                 Ok(db) => match db.load_blockchain() {
                     Ok(chain) => {
                         let height = chain.blocks.last().map_or(0, |b| b.header.height);

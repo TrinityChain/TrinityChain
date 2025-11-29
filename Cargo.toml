@@ -47,6 +47,7 @@ bip32 = "0.5"
 tempfile = "3.23.0"
 crossbeam-channel = "0.5.15"
 fixed = { version = "1.29.0", features = ["serde"] }
+toml = "0.8"
 
 [[bin]]
 name = "trinity-wallet"

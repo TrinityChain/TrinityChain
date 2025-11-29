@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 use trinitychain::blockchain::Blockchain;
+use trinitychain::config::load_config;
 use trinitychain::persistence::Database;
 
 #[derive(Clone)]
@@ -250,8 +251,8 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &ServerStats) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-    let port: u16 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(3000);
+    let config = load_config()?;
+    let port = config.network.api_port;
 
     // Setup terminal
     enable_raw_mode()?;
@@ -260,7 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let db = Database::open("trinitychain.db").expect("Failed to open database");
+    let db = Database::open(&config.database.path).expect("Failed to open database");
     let chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
 
     let state = ServerData {

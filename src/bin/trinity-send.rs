@@ -7,6 +7,7 @@ use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use trinitychain::config::load_config;
 use trinitychain::geometry::Coord;
 use trinitychain::network::NetworkNode;
 use trinitychain::persistence::Database;
@@ -143,7 +144,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.set_message("Loading blockchain...");
 
-    let db = Database::open("trinitychain.db")?;
+    let config = load_config()?;
+    let db = Database::open(&config.database.path)?;
     let mut chain = db.load_blockchain()?;
 
     // Track locked triangles from pending transactions

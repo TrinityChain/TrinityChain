@@ -1,0 +1,12 @@
+# TrinityChain Configuration
+
+[network]
+p2p_port = 8333
+api_port = 3000
+
+[database]
+path = "trinitychain.db"
+
+[miner]
+threads = 1
+beneficiary_address = "trinity-default-miner-address" # Replace with a valid address

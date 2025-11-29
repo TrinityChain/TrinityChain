@@ -2,6 +2,7 @@ pub mod addressbook;
 pub mod api;
 pub mod blockchain;
 pub mod cache;
+pub mod config;
 pub mod crypto;
 pub mod discovery;
 pub mod error;

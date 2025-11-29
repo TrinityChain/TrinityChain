@@ -346,7 +346,7 @@ impl Blockchain {
 
         // Mine the genesis block (or use a predefined valid hash/nonce)
         // For simplicity, we hardcode the initial nonce and hash
-        let mut genesis_block = Block {
+        let genesis_block = Block {
             header,
             transactions,
         };

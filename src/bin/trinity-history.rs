@@ -4,6 +4,7 @@ use colored::*;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::Color as TableColor;
 use comfy_table::{Attribute, Cell, ContentArrangement, Table};
+use trinitychain::config::load_config;
 use trinitychain::persistence::Database;
 use trinitychain::transaction::Transaction;
 
@@ -44,8 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_str()
         .ok_or("Wallet address not found in wallet file")?;
 
+    let config = load_config()?;
     let db =
-        Database::open("trinitychain.db").map_err(|e| format!("Failed to open database: {}", e))?;
+        Database::open(&config.database.path).map_err(|e| format!("Failed to open database: {}", e))?;
     let chain = db
         .load_blockchain()
         .map_err(|e| format!("Failed to load blockchain: {}", e))?;

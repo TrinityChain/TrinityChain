@@ -13,13 +13,13 @@ use ratatui::{
     widgets::{Block as TuiBlock, Borders, Gauge, Paragraph, Sparkline},
     Terminal,
 };
-use std::env;
 use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
 use trinitychain::blockchain::{Block, Blockchain};
+use trinitychain::config::{load_config, Config};
 use trinitychain::miner::{mine_block, mine_block_parallel};
 use trinitychain::network::NetworkNode;
 use trinitychain::persistence::Database;
@@ -372,27 +372,9 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("Usage: trinity-miner <beneficiary_address> [--threads <N>]");
-        return Ok(());
-    }
-    let beneficiary_address = args[1].clone();
-
-    let mut threads: usize = 1;
-    let mut i = 1;
-    while i < args.len() {
-        if args[i] == "--threads" || args[i] == "-t" {
-            if i + 1 < args.len() {
-                if let Ok(n) = args[i + 1].parse::<usize>() {
-                    threads = n.max(1);
-                }
-            }
-            i += 2;
-        } else {
-            i += 1;
-        }
-    }
+    let config = Arc::new(load_config()?);
+    let beneficiary_address = config.miner.beneficiary_address.clone();
+    let threads = config.miner.threads;
 
     // Setup terminal
     enable_raw_mode()?;
@@ -406,16 +388,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let beneficiary_clone = beneficiary_address.clone();
 
     // Create and start network node
-    let db_for_network = Database::open("trinitychain.db").expect("Failed to open database");
+    let db_for_network = Database::open(&config.database.path).expect("Failed to open database");
     let chain_for_network = db_for_network
         .load_blockchain()
         .unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
     let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
+    let config_clone = Arc::clone(&config);
 
     // Start network server in background
     tokio::spawn(async move {
-        let port = 8333; // Default P2P port
+        let port = config_clone.network.p2p_port;
         println!("🌐 Starting P2P network on port {}...", port);
         if let Err(e) = network_clone.start_server(port).await {
             eprintln!("❌ Network error: {}", e);
@@ -424,7 +407,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn mining task
     let mining_handle = tokio::spawn(async move {
-        mining_loop(beneficiary_clone, threads, stats_clone, Some(network)).await;
+        mining_loop(beneficiary_clone, threads, stats_clone, Some(network), config).await;
     });
 
     // UI loop
@@ -464,8 +447,9 @@ async fn mining_loop(
     _threads: usize,
     stats: Arc<Mutex<MiningStats>>,
     network: Option<Arc<NetworkNode>>,
+    config: Arc<Config>,
 ) {
-    let db = Database::open("trinitychain.db").expect("Failed to open database");
+    let db = Database::open(&config.database.path).expect("Failed to open database");
     let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
 
     let start_time = Instant::now();
