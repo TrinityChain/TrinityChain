@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use crate::error::ChainError;
 use crate::geometry::{Coord, Point, Triangle, GEOMETRIC_TOLERANCE};
 use crate::mempool::Mempool;
+use crate::miner::mine_block;
 use crate::transaction::{
     Address, CoinbaseTx, TransferTx, Transaction
 };
@@ -344,16 +345,12 @@ impl Blockchain {
             nonce: 0,
         };
 
-        // Mine the genesis block (or use a predefined valid hash/nonce)
-        // For simplicity, we hardcode the initial nonce and hash
         let genesis_block = Block {
             header,
             transactions,
         };
 
-        // The hash must satisfy the difficulty target. Since this is the genesis block, 
-        // we'll assign a known valid hash/nonce for a fixed difficulty of 4.
-        Ok(genesis_block)
+        mine_block(genesis_block)
     }
 
     /// Calculates the block reward based on height (halving model)
@@ -480,3 +477,32 @@ impl Blockchain {
 // ============================================================================
 // Blockchain
 // ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_blockchain() {
+        let blockchain = Blockchain::new("test_miner".to_string(), 1).unwrap();
+        assert_eq!(blockchain.blocks.len(), 1);
+        let genesis_block = &blockchain.blocks[0];
+        assert_eq!(genesis_block.header.height, 0);
+        assert_eq!(genesis_block.header.previous_hash, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_apply_invalid_block() {
+        let mut blockchain = Blockchain::new("test_miner".to_string(), 1).unwrap();
+        let last_block = blockchain.blocks.last().unwrap().clone();
+        let new_block = Block::new(
+            last_block.header.height + 2, // Invalid height
+            last_block.hash(),
+            1,
+            vec![],
+        );
+        let res = blockchain.apply_block(new_block);
+        assert!(res.is_err());
+    }
+}
+

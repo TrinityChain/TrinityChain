@@ -365,7 +365,7 @@ mod tests {
 
         db.save_block(&chain.blocks[0]).unwrap();
         db.save_utxo_set(&chain.state).unwrap();
-        db.save_difficulty(chain.difficulty).unwrap();
+        db.save_difficulty(chain.difficulty as u64).unwrap();
 
         let loaded_chain = db.load_blockchain().unwrap();
 

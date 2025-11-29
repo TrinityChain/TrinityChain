@@ -39,7 +39,7 @@ parking_lot = "0.12"
 ipnetwork = "0.20"
 teloxide = { version = "0.12", features = ["macros"] }
 log = "0.4"
-pretty_env_logger = "0.5"
+env_logger = "0.10"
 rayon = "1.8"
 lru = "0.12"
 bip39 = "2.2"

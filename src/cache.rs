@@ -226,9 +226,7 @@ mod tests {
                 difficulty: 1,
                 nonce: 0,
                 merkle_root: [0; 32],
-                headline: None,
             },
-            hash: [0; 32],
             transactions: vec![],
         };
 

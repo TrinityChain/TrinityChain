@@ -372,6 +372,7 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
     let config = Arc::new(load_config()?);
     let beneficiary_address = config.miner.beneficiary_address.clone();
     let threads = config.miner.threads;

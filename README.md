@@ -108,21 +108,21 @@ cargo test --lib
 ### Run Node
 
 ```bash
-# Start with default settings (port 3000)
+# Start with default settings from config.toml
 ./target/release/trinity-node
 
-# Custom configuration
-PORT=8080 ./target/release/trinity-node
+# To connect to a peer
+./target/release/trinity-node --peer <host:port>
 ```
 
 ### Mining
 
 ```bash
-# Single-threaded mining
-./target/release/trinity-mine-block tc1q3k2x9p7f8h5j6m2n4v8c9w1e3r5t7y9u0i8o6
+# Start the persistent miner
+./target/release/trinity-miner
 
-# Multi-threaded mining
-./target/release/trinity-mine-block --threads 4 tc1qYOUR_ADDRESS
+# To mine a single block
+./target/release/trinity-mine-block
 ```
 
 ### Send Transaction

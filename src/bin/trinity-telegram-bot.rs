@@ -262,7 +262,7 @@ async fn answer(
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    env_logger::init();
     info!("Starting TrinityChain Telegram Bot...");
 
     let bot = Bot::from_env();
