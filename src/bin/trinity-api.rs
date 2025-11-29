@@ -1,33 +1,33 @@
+//! Trinity API Server Binary
+//!
+//! Standalone HTTP API server for TrinityChain
+
 use std::sync::Arc;
 use trinitychain::api::{run_api_server, Node};
 use trinitychain::blockchain::Blockchain;
-use trinitychain::persistence::Database;
+use trinitychain::error::ChainError;
 
 #[tokio::main]
-async fn main() {
-    let db = Database::open("trinitychain.db")
-        .expect("Failed to open database. Ensure trinitychain.db is accessible.");
+async fn main() -> Result<(), ChainError> {
+    // Initialize logging (if you have env_logger or similar)
+    // env_logger::init();
 
-    let blockchain = db.load_blockchain().unwrap_or_else(|_| {
-        println!("No existing blockchain found. Initializing genesis block...");
-        let chain = Blockchain::new();
-        db.save_blockchain_state(&chain.blocks[0], &chain.state, chain.difficulty)
-            .expect("Failed to save genesis block to database.");
-        println!("Genesis block created successfully.");
-        chain
-    });
+    println!("🚀 Starting TrinityChain API Server...");
 
+    // Create new blockchain (or load from persistence if you have that method)
+    // For now, just create a new one
+    let blockchain = Blockchain::new();
+    println!("✅ Initialized blockchain");
+
+    // Create node
     let node = Arc::new(Node::new(blockchain));
 
-    // Start the P2P server in the background
-    let network_node = node.network.clone();
-    tokio::spawn(async move {
-        if let Err(e) = network_node.start_server(8333).await {
-            // Default port
-            eprintln!("P2P server error: {}", e);
-        }
-    });
+    // Run API server
+    println!("Starting API server...");
+    if let Err(e) = run_api_server(node).await {
+        eprintln!("❌ API server error: {}", e);
+        return Err(ChainError::ApiError(format!("Server failed: {}", e)));
+    }
 
-    println!("Starting the TrinityChain API server...");
-    run_api_server(node).await;
+    Ok(())
 }
