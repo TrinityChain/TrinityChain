@@ -3,11 +3,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use teloxide::{prelude::*, utils::command::BotCommands};
 use tokio::sync::{Mutex, RwLock};
-use trinitychain::config::load_config;
+use trinitychain::blockchain::Blockchain;
+use trinitychain::cli::load_blockchain_from_config;
 use trinitychain::network::NetworkNode;
-use trinitychain::persistence::Database;
 
 type RateLimiter = Arc<Mutex<HashMap<i64, std::time::Instant>>>;
+
+#[derive(Clone)]
+struct BotState {
+    chain: Arc<RwLock<Blockchain>>,
+    network: Option<Arc<NetworkNode>>,
+}
 
 #[derive(BotCommands, Clone)]
 #[command(
@@ -53,7 +59,7 @@ async fn answer(
     bot: Bot,
     message: Message,
     command: Command,
-    node_opt: Option<Arc<NetworkNode>>,
+    state: Arc<BotState>,
     admin_token: Option<String>,
     rate_limiter: RateLimiter,
 ) -> ResponseResult<()> {
@@ -73,61 +79,45 @@ async fn answer(
             info!("Handled /help command for user: {:?}", message.from());
         }
         Command::Stats => {
-            let config = load_config().expect("Failed to load config");
-                let response = match Database::open(&config.database.path) {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
-                        let total_supply: f64 = chain.blocks.iter().flat_map(|b| &b.transactions).filter_map(|tx| {
-                            if let trinitychain::transaction::Transaction::Coinbase(ctx) = tx {
-                                Some(ctx.reward_area.to_num::<f64>())
-                            } else {
-                                None
-                            }
-                        }).sum();
-                        let current_reward =
-                            trinitychain::blockchain::Blockchain::calculate_block_reward(height);
-                        let triangles = chain.state.utxo_set.len();
+            let chain = state.chain.read().await;
+            let height = chain.blocks.last().map_or(0, |b| b.header.height);
+            let total_supply: f64 = chain.blocks.iter().flat_map(|b| &b.transactions).filter_map(|tx| {
+                if let trinitychain::transaction::Transaction::Coinbase(ctx) = tx {
+                    Some(ctx.reward_area.to_num::<f64>())
+                } else {
+                    None
+                }
+            }).sum();
+            let current_reward =
+                trinitychain::blockchain::Blockchain::calculate_block_reward(height);
+            let triangles = chain.state.utxo_set.len();
 
-                        format!(
-                            "📊 Blockchain Statistics:\n\n\
-                            🏔️ Height: {}\n\
-                            💰 Total Supply: {} area\n\
-                            🎁 Current Block Reward: {} area\n\
-                            🔺 Active Triangles: {}\n\
-                            ⚡ Mining Difficulty: {}",
-                            height, total_supply, current_reward, triangles, chain.difficulty
-                        )
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
+            let response = format!(
+                "📊 Blockchain Statistics:\n\n\
+                🏔️ Height: {}\n\
+                💰 Total Supply: {} area\n\
+                🎁 Current Block Reward: {} area\n\
+                🔺 Active Triangles: {}\n\
+                ⚡ Mining Difficulty: {}",
+                height, total_supply, current_reward, triangles, chain.difficulty
+            );
             bot.send_message(message.chat.id, response).await?;
             info!("Handled /stats command for user: {:?}", message.from());
         }
         Command::Mempool => {
-            let config = load_config().expect("Failed to load config");
-                let response = match Database::open(&config.database.path) {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let pool_size = chain.mempool.len();
-                        let txs = chain.mempool.get_all_transactions();
-                        let top_fees: Vec<_> = txs.iter().take(5).map(|tx| tx.fee()).collect();
-                        format!(
-                            "📥 Mempool: {} transactions\nTop fees (sample): {:?}",
-                            pool_size, top_fees
-                        )
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
-            };
+            let chain = state.chain.read().await;
+            let pool_size = chain.mempool.len();
+            let txs = chain.mempool.get_all_transactions();
+            let top_fees: Vec<_> = txs.iter().take(5).map(|tx| tx.fee()).collect();
+            let response = format!(
+                "📥 Mempool: {} transactions\nTop fees (sample): {:?}",
+                pool_size, top_fees
+            );
             bot.send_message(message.chat.id, response).await?;
             info!("Handled /mempool command for user: {:?}", message.from());
         }
         Command::Node => {
-            if let Some(node) = node_opt.as_ref() {
+            if let Some(node) = state.network.as_ref() {
                 let peers_count = node.list_peers().await.len();
                 let response = format!("🌐 Connected peers: {}", peers_count);
                 bot.send_message(message.chat.id, response).await?;
@@ -141,7 +131,7 @@ async fn answer(
             info!("Handled /node command for user: {:?}", message.from());
         }
         Command::Peers => {
-            if let Some(node) = node_opt.as_ref() {
+            if let Some(node) = state.network.as_ref() {
                 let peers = node.list_peers().await;
                 if peers.is_empty() {
                     bot.send_message(message.chat.id, "📋 No connected peers yet.")
@@ -165,33 +155,25 @@ async fn answer(
             info!("Handled /peers command for user: {:?}", message.from());
         }
         Command::Status => {
-            let config = load_config().expect("Failed to load config");
-                let response = match Database::open(&config.database.path) {
-                Ok(db) => match db.load_blockchain() {
-                    Ok(chain) => {
-                        let height = chain.blocks.last().map_or(0, |b| b.header.height);
-                        let peers_count = if let Some(node) = node_opt.as_ref() {
-                            node.list_peers().await.len()
-                        } else {
-                            0
-                        };
-                        let mempool_size = chain.mempool.len();
-                        let utxo_count = chain.state.utxo_set.len();
-
-                        format!(
-                            "📊 Node Status:\n\n\
-                            🏔️ Height: {}\n\
-                            🌐 Peers: {}\n\
-                            📥 Mempool: {} txs\n\
-                            🔺 UTXO Count: {}\n\
-                            ⚡ Difficulty: {}",
-                            height, peers_count, mempool_size, utxo_count, chain.difficulty
-                        )
-                    }
-                    Err(_) => "Could not load blockchain data.".to_string(),
-                },
-                Err(_) => "Could not open blockchain database.".to_string(),
+            let chain = state.chain.read().await;
+            let height = chain.blocks.last().map_or(0, |b| b.header.height);
+            let peers_count = if let Some(node) = state.network.as_ref() {
+                node.list_peers().await.len()
+            } else {
+                0
             };
+            let mempool_size = chain.mempool.len();
+            let utxo_count = chain.state.utxo_set.len();
+
+            let response = format!(
+                "📊 Node Status:\n\n\
+                🏔️ Height: {}\n\
+                🌐 Peers: {}\n\
+                📥 Mempool: {} txs\n\
+                🔺 UTXO Count: {}\n\
+                ⚡ Difficulty: {}",
+                height, peers_count, mempool_size, utxo_count, chain.difficulty
+            );
             bot.send_message(message.chat.id, response).await?;
             info!("Handled /status command for user: {:?}", message.from());
         }
@@ -221,7 +203,7 @@ async fn answer(
 
             if let Some(cfg_token) = admin_token.as_ref() {
                 match provided_token {
-                    Some(t) if t == cfg_token => {}
+                    Some(t) if t == cfg_token => {} // Correct token
                     _ => {
                         warn!("Unauthorized broadcast attempt from {:?}", message.from());
                         bot.send_message(
@@ -238,7 +220,7 @@ async fn answer(
                 Ok(bytes) => {
                     match bincode::deserialize::<trinitychain::transaction::Transaction>(&bytes) {
                         Ok(tx) => {
-                            if let Some(node) = node_opt.as_ref() {
+                            if let Some(node) = state.network.as_ref() {
                                 node.broadcast_transaction(&tx).await;
                                 let msg = format!(
                                     "✅ Broadcasted transaction {} to peers",
@@ -287,22 +269,14 @@ async fn main() {
     let admin_token = std::env::var("BOT_ADMIN_TOKEN").ok();
     let rate_limiter: RateLimiter = Arc::new(Mutex::new(HashMap::new()));
 
-    let node_opt: Option<Arc<NetworkNode>> = match Database::open("trinitychain.db") {
-        Ok(db) => match db.load_blockchain() {
-            Ok(chain) => {
-                let node = NetworkNode::new(Arc::new(RwLock::new(chain)));
-                Some(Arc::new(node))
-            }
-            Err(e) => {
-                warn!("Could not load blockchain for NetworkNode: {}", e);
-                None
-            }
-        },
-        Err(e) => {
-            warn!("Could not open database for NetworkNode: {}", e);
-            None
-        }
-    };
+    let (_config, chain) = load_blockchain_from_config().expect("Failed to load blockchain");
+    let chain = Arc::new(RwLock::new(chain));
+
+    let network = Arc::new(NetworkNode::new(Arc::clone(&chain)));
+    let state = Arc::new(BotState {
+        chain,
+        network: Some(network),
+    });
 
     Dispatcher::builder(
         bot,
@@ -310,7 +284,7 @@ async fn main() {
             .filter_command::<Command>()
             .endpoint(answer),
     )
-    .dependencies(dptree::deps![node_opt, admin_token, rate_limiter])
+    .dependencies(dptree::deps![state, admin_token, rate_limiter])
     .enable_ctrlc_handler()
     .build()
     .dispatch()

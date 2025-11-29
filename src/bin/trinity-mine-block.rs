@@ -2,7 +2,7 @@
 
 use secp256k1::SecretKey;
 use std::collections::HashSet;
-use trinitychain::config::load_config;
+use trinitychain::cli::load_blockchain_from_config;
 use trinitychain::crypto::KeyPair;
 use trinitychain::miner::{mine_block, mine_block_parallel};
 use trinitychain::persistence::Database;
@@ -12,11 +12,8 @@ use trinitychain::wallet;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
 
-    let config = load_config()?;
+    let (config, mut chain) = load_blockchain_from_config()?;
     let threads = config.miner.threads;
-
-    let db = Database::open(&config.database.path)?;
-    let mut chain = db.load_blockchain()?;
 
     // Load mempool from disk if it exists
     if let Ok(mempool_data) = std::fs::read_to_string("mempool.json") {
@@ -127,6 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Block mined! Hash: {}", new_hash_prefix);
 
     chain.apply_block(new_block.clone())?;
+    let db = Database::open(&config.database.path)?;
     db.save_block(&new_block)?;
     db.save_utxo_set(&chain.state)?;
 
