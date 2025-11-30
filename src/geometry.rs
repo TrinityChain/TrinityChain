@@ -145,18 +145,29 @@ impl Triangle {
     }
 
     /// Calculates the unique cryptographic hash of the triangle.
-    /// Optimized to work with raw bytes and avoid string allocations.
+    ///
+    /// This method creates a canonical representation of the triangle by
+    /// sorting its vertices' raw byte data, then hashing the combined result
+    /// along with owner and value. This approach is more efficient than
+    /// hashing each point individually and combining the results.
     pub fn hash(&self) -> Sha256Hash {
-        let mut hashes = [self.a.hash(), self.b.hash(), self.c.hash()];
-        // Sort to ensure canonical ordering (same triangle regardless of vertex order)
-        hashes.sort_unstable();
-
         let mut hasher = Sha256::new();
-        for hash in &hashes {
-            hasher.update(hash);
+
+        // Create a canonical representation by sorting vertices
+        let mut vertices = [self.a, self.b, self.c];
+        vertices.sort_by(|p1, p2| {
+            p1.x.to_bits()
+                .cmp(&p2.x.to_bits())
+                .then_with(|| p1.y.to_bits().cmp(&p2.y.to_bits()))
+        });
+
+        // Hash the sorted vertices' raw bytes
+        for vertex in &vertices {
+            hasher.update(vertex.x.to_le_bytes());
+            hasher.update(vertex.y.to_le_bytes());
         }
 
-        // Include owner and value in the hash
+        // Include owner and value in the hash for uniqueness
         hasher.update(self.owner.as_bytes());
         if let Some(value) = self.value {
             hasher.update(value.to_le_bytes());
@@ -188,30 +199,47 @@ impl Triangle {
     // 1.7 Subdivision Algorithm
     // ------------------------------------------------------------------------
 
-    /// Calculates the centroid of the triangle.
-    #[inline]
-    fn centroid(&self) -> Point {
-        Point::new(
-            (self.a.x + self.b.x + self.c.x) / 3,
-            (self.a.y + self.b.y + self.c.y) / 3,
-        )
-    }
-
-    /// Subdivides the current triangle into three smaller, valid triangles of equal area
-    /// whose areas sum to the parent's area. This is done by connecting
-    /// the vertices to the triangle's centroid.
-    #[inline]
+    /// Subdivides the triangle into three smaller triangles using midpoints,
+    /// creating a Sierpiński-like structure. This method is geometrically
+    /// stable and prevents the creation of degenerate (long, thin) triangles.
+    ///
+    /// Value is conserved by explicitly assigning one-third of the parent's
+    /// effective value to each child, decoupling spendable value from raw
+    /// geometric area.
     pub fn subdivide(&self) -> [Triangle; 3] {
-        let centroid = self.centroid();
-        let parent_hash = Some(self.hash());
-        let child_value = self.value.map(|v| v / 3);
+        // Calculate midpoints of the triangle's sides
+        let mid_ab = self.a.midpoint(&self.b);
+        let mid_bc = self.b.midpoint(&self.c);
+        let mid_ca = self.c.midpoint(&self.a);
 
-        let mut t1 = Triangle::new(self.a, self.b, centroid, parent_hash, self.owner.clone());
-        t1.value = child_value;
-        let mut t2 = Triangle::new(self.b, self.c, centroid, parent_hash, self.owner.clone());
-        t2.value = child_value;
-        let mut t3 = Triangle::new(self.c, self.a, centroid, parent_hash, self.owner.clone());
-        t3.value = child_value;
+        let parent_hash = Some(self.hash());
+        let child_value = self.effective_value() / 3;
+
+        // Create the three new triangles at the corners
+        let t1 = Triangle::new_with_value(
+            self.a,
+            mid_ab,
+            mid_ca,
+            parent_hash,
+            self.owner.clone(),
+            child_value,
+        );
+        let t2 = Triangle::new_with_value(
+            mid_ab,
+            self.b,
+            mid_bc,
+            parent_hash,
+            self.owner.clone(),
+            child_value,
+        );
+        let t3 = Triangle::new_with_value(
+            mid_ca,
+            mid_bc,
+            self.c,
+            parent_hash,
+            self.owner.clone(),
+            child_value,
+        );
 
         [t1, t2, t3]
     }
@@ -295,13 +323,18 @@ mod tests {
     #[test]
     fn test_subdivision_correctness() {
         let parent = setup_test_triangle();
-        let parent_area = parent.area();
+        let parent_value = parent.effective_value();
         let children = parent.subdivide();
-        let total_child_area: Coord = children.iter().map(|t| t.area()).sum();
 
-        // The total area of the children must equal the parent's area.
-        // A failure here indicates a loss of value in the subdivision process.
-        assert_eq!(total_child_area, parent_area);
+        // The sum of the children's effective values must equal the parent's.
+        let total_child_value: Coord = children.iter().map(|t| t.effective_value()).sum();
+        assert!((total_child_value - parent_value).abs() < GEOMETRIC_TOLERANCE);
+
+        // The geometric area of the children should be 75% of the parent's,
+        // as the central triangle is removed in a Sierpiński subdivision.
+        let total_child_area: Coord = children.iter().map(|t| t.area()).sum();
+        let expected_area = parent.area() * Coord::from_num(0.75);
+        assert!((total_child_area - expected_area).abs() < GEOMETRIC_TOLERANCE);
     }
 
     #[test]
