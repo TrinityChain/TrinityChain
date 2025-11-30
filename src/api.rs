@@ -4,14 +4,14 @@
 //! mining control, network management, and wallet operations.
 
 use axum::{
-    extract::{Path, State, Query, Request},
+    extract::{Path, Query, Request, State},
     http::StatusCode,
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    middleware::{self, Next},
     Json, Router,
 };
-use hex::decode_to_slice; 
+use hex::decode_to_slice;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -104,11 +104,13 @@ impl RateLimiter {
         let now = Instant::now();
 
         // Clean up old entries
-        self.requests.retain(|_, (_, timestamp)| {
-            now.duration_since(*timestamp) < RATE_LIMIT_WINDOW
-        });
+        self.requests
+            .retain(|_, (_, timestamp)| now.duration_since(*timestamp) < RATE_LIMIT_WINDOW);
 
-        let entry = self.requests.entry(identifier.to_string()).or_insert((0, now));
+        let entry = self
+            .requests
+            .entry(identifier.to_string())
+            .or_insert((0, now));
 
         if now.duration_since(entry.1) >= RATE_LIMIT_WINDOW {
             // Reset window
@@ -155,16 +157,17 @@ impl Node {
     pub async fn start_mining(&self, miner_address: String) -> Result<(), ApiError> {
         // Validate address format
         if miner_address.is_empty() {
-            return Err(ApiError::InvalidInput("Miner address cannot be empty".to_string()));
+            return Err(ApiError::InvalidInput(
+                "Miner address cannot be empty".to_string(),
+            ));
         }
 
         // Check if already mining
-        if self.is_mining.compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst
-        ).is_err() {
+        if self
+            .is_mining
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return Err(ApiError::MiningAlreadyRunning);
         }
 
@@ -204,7 +207,12 @@ impl Node {
                     let mut all_txs = vec![coinbase_tx];
                     all_txs.extend(transactions);
 
-                    Some(Block::new(height, last_block.hash(), bc.difficulty, all_txs))
+                    Some(Block::new(
+                        height,
+                        last_block.hash(),
+                        bc.difficulty,
+                        all_txs,
+                    ))
                 };
 
                 if let Some(block) = new_block {
@@ -215,7 +223,10 @@ impl Node {
                                 Ok(_) => {
                                     node_clone.blocks_mined.fetch_add(1, Ordering::SeqCst);
                                     node_clone.network.broadcast_block(&mined_block).await;
-                                    println!("✅ Successfully mined block at height {}", mined_block.header.height);
+                                    println!(
+                                        "✅ Successfully mined block at height {}",
+                                        mined_block.header.height
+                                    );
                                 }
                                 Err(e) => {
                                     eprintln!("❌ Mined block was invalid: {}", e);
@@ -247,12 +258,11 @@ impl Node {
 
     /// Stop mining gracefully
     pub async fn stop_mining(&self) -> Result<(), ApiError> {
-        if self.is_mining.compare_exchange(
-            true,
-            false,
-            Ordering::SeqCst,
-            Ordering::SeqCst
-        ).is_err() {
+        if self
+            .is_mining
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return Err(ApiError::MiningNotRunning);
         }
 
@@ -280,9 +290,7 @@ impl Node {
     /// Get API statistics
     pub async fn get_stats(&self) -> ApiStatsResponse {
         let stats = self.api_stats.read().await;
-        let uptime = stats.start_time
-            .map(|t| t.elapsed().as_secs())
-            .unwrap_or(0);
+        let uptime = stats.start_time.map(|t| t.elapsed().as_secs()).unwrap_or(0);
 
         ApiStatsResponse {
             total_requests: stats.total_requests,
@@ -319,15 +327,17 @@ impl IntoResponse for ApiError {
             ApiError::BlockchainError(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             ApiError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            ApiError::MiningAlreadyRunning => {
-                (StatusCode::CONFLICT, "Mining is already running".to_string())
-            }
+            ApiError::MiningAlreadyRunning => (
+                StatusCode::CONFLICT,
+                "Mining is already running".to_string(),
+            ),
             ApiError::MiningNotRunning => {
                 (StatusCode::CONFLICT, "Mining is not running".to_string())
             }
-            ApiError::RateLimitExceeded => {
-                (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded".to_string())
-            }
+            ApiError::RateLimitExceeded => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Rate limit exceeded".to_string(),
+            ),
             ApiError::InternalError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
 
@@ -408,8 +418,12 @@ struct PaginationQuery {
     limit: u64,
 }
 
-fn default_page() -> u64 { 0 }
-fn default_limit() -> u64 { 10 }
+fn default_page() -> u64 {
+    0
+}
+fn default_limit() -> u64 {
+    10
+}
 
 // ============================================================================
 // Utility Functions
@@ -418,7 +432,9 @@ fn default_limit() -> u64 { 10 }
 /// Parses a 64-character hex string into a Sha256Hash ([u8; 32]).
 fn parse_hash(hash_str: &str) -> Result<Sha256Hash, ApiError> {
     if hash_str.len() != 64 {
-        return Err(ApiError::InvalidInput("Hash must be a 64-character hex string".to_string()));
+        return Err(ApiError::InvalidInput(
+            "Hash must be a 64-character hex string".to_string(),
+        ));
     }
     let mut hash_bytes = [0u8; 32];
     decode_to_slice(hash_str, &mut hash_bytes)
@@ -431,11 +447,7 @@ fn parse_hash(hash_str: &str) -> Result<Sha256Hash, ApiError> {
 // ============================================================================
 
 /// Request logging and statistics middleware
-async fn stats_middleware(
-    State(node): State<Arc<Node>>,
-    req: Request,
-    next: Next,
-) -> Response {
+async fn stats_middleware(State(node): State<Arc<Node>>, req: Request, next: Next) -> Response {
     let response = next.run(req).await;
 
     let success = response.status().is_success();
@@ -464,33 +476,29 @@ pub async fn run_api_server(node: Arc<Node>) -> Result<(), Box<dyn std::error::E
         .route("/blockchain/blocks", get(get_blocks))
         .route("/blockchain/block/:height", get(get_block_by_height))
         .route("/blockchain/stats", get(get_blockchain_stats))
-
         // Transaction endpoints
         .route("/transaction", post(submit_transaction))
         .route("/transaction/:hash", get(get_transaction))
         .route("/mempool", get(get_mempool))
-
         // Mining endpoints
         .route("/mining/start", post(start_mining))
         .route("/mining/stop", post(stop_mining))
         .route("/mining/status", get(get_mining_status))
-
         // Network endpoints
         .route("/network/peers", get(get_peers))
         .route("/network/info", get(get_network_info))
-
         // Address endpoints
         .route("/address/:addr/balance", get(get_address_balance))
         .route("/address/:addr/transactions", get(get_address_transactions))
-
         // Wallet endpoints
         .route("/wallet/create", post(create_wallet))
-
         // System endpoints
         .route("/health", get(health_check))
         .route("/stats", get(get_api_stats))
-
-        .layer(middleware::from_fn_with_state(node.clone(), stats_middleware))
+        .layer(middleware::from_fn_with_state(
+            node.clone(),
+            stats_middleware,
+        ))
         .with_state(node)
         .layer(cors.clone());
 
@@ -556,7 +564,9 @@ async fn get_blocks(
         }));
     }
 
-    let blocks: Vec<_> = blockchain.blocks.iter()
+    let blocks: Vec<_> = blockchain
+        .blocks
+        .iter()
         .rev()
         .skip(offset as usize)
         .take(limit as usize)
@@ -577,7 +587,9 @@ async fn get_block_by_height(
 ) -> Result<Json<Block>, ApiError> {
     let blockchain = node.blockchain.read().await;
 
-    blockchain.blocks.get(height as usize)
+    blockchain
+        .blocks
+        .get(height as usize)
         .cloned()
         .ok_or_else(|| ApiError::NotFound(format!("Block at height {} not found", height)))
         .map(Json)
@@ -646,7 +658,10 @@ async fn get_transaction(
         return Ok(Json(tx.clone()));
     }
 
-    Err(ApiError::NotFound(format!("Transaction {} not found", hash_str)))
+    Err(ApiError::NotFound(format!(
+        "Transaction {} not found",
+        hash_str
+    )))
 }
 
 async fn start_mining(
@@ -711,7 +726,7 @@ async fn get_address_transactions(
     Path(addr): Path<String>,
 ) -> impl IntoResponse {
     let blockchain = node.blockchain.read().await;
-    
+
     // We will collect transactions found on the blockchain and transactions found in the mempool.
     let mut transactions: Vec<TransactionHistoryEntry> = Vec::new();
     let target_addr = addr.clone();
@@ -724,17 +739,16 @@ async fn get_address_transactions(
             let matches = match tx {
                 // Transfer transaction: involves sender (input) or new_owner (output)
                 Transaction::Transfer(transfer_tx) => {
-                    transfer_tx.sender == target_addr || 
-                    transfer_tx.new_owner == target_addr
-                },
+                    transfer_tx.sender == target_addr || transfer_tx.new_owner == target_addr
+                }
                 // Subdivision transaction: check if the target address is the owner performing the split
                 Transaction::Subdivision(subdivision_tx) => {
                     subdivision_tx.owner_address == target_addr
-                },
+                }
                 // Coinbase transactions only have a beneficiary (miner)
                 Transaction::Coinbase(coinbase_tx) => {
                     coinbase_tx.beneficiary_address == target_addr
-                },
+                }
             };
 
             if matches {
@@ -752,13 +766,10 @@ async fn get_address_transactions(
         let matches = match &tx {
             // Transfer transaction: involves sender (input) or new_owner (output)
             Transaction::Transfer(transfer_tx) => {
-                transfer_tx.sender == target_addr || 
-                transfer_tx.new_owner == target_addr
-            },
+                transfer_tx.sender == target_addr || transfer_tx.new_owner == target_addr
+            }
             // Subdivision transaction: check if the target address is the owner performing the split
-            Transaction::Subdivision(subdivision_tx) => {
-                subdivision_tx.owner_address == target_addr
-            },
+            Transaction::Subdivision(subdivision_tx) => subdivision_tx.owner_address == target_addr,
             // Coinbase transactions are never in the mempool
             Transaction::Coinbase(_) => false,
         };
@@ -767,7 +778,7 @@ async fn get_address_transactions(
             // Unconfirmed transactions are assigned height 0
             transactions.push(TransactionHistoryEntry {
                 transaction: tx.clone(),
-                block_height: 0, 
+                block_height: 0,
             });
         }
     }

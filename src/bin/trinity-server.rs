@@ -60,9 +60,7 @@ struct ServerData {
     stats: Arc<Mutex<ServerStats>>,
 }
 
-async fn get_stats(
-    State(state): State<ServerData>,
-) -> Result<Json<Value>, ApiError> {
+async fn get_stats(State(state): State<ServerData>) -> Result<Json<Value>, ApiError> {
     let stats = state.stats.lock().await;
     let chain = state.chain.read().await;
 
@@ -75,9 +73,7 @@ async fn get_stats(
     })))
 }
 
-async fn get_blocks(
-    State(state): State<ServerData>,
-) -> Result<Json<Value>, ApiError> {
+async fn get_blocks(State(state): State<ServerData>) -> Result<Json<Value>, ApiError> {
     let chain = state.chain.read().await;
 
     let blocks: Vec<_> = chain
@@ -263,7 +259,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let db = Database::open(&config.database.path).expect("Failed to open database");
-    let chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
+    let chain = db.load_blockchain().unwrap_or_else(|_| {
+        Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain")
+    });
 
     let state = ServerData {
         chain: Arc::new(RwLock::new(chain.clone())),
@@ -311,9 +309,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Update chain height from in-memory chain
             let chain = state_clone.chain.read().await;
-            stats.chain_height =
-                chain.blocks.last().map(|b| b.header.height).unwrap_or(0);
-            
+            stats.chain_height = chain.blocks.last().map(|b| b.header.height).unwrap_or(0);
+
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });

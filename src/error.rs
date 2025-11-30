@@ -61,7 +61,10 @@ pub enum ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            ApiError::InternalServerError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error".to_string()),
+            ApiError::InternalServerError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error".to_string(),
+            ),
             ApiError::NotFound(message) => (StatusCode::NOT_FOUND, message),
             ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
         };

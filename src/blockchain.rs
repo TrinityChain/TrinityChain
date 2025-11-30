@@ -1,15 +1,13 @@
 //! Core blockchain implementation for TrinityChain, including block structure,
 //! chain validation, UTXO management, and mining difficulty adjustment.
 
-use std::collections::HashMap;
-use sha2::{Digest, Sha256};
 use crate::error::ChainError;
 use crate::geometry::{Coord, Point, Triangle, GEOMETRIC_TOLERANCE};
 use crate::mempool::Mempool;
 use crate::miner::mine_block;
-use crate::transaction::{
-    Address, CoinbaseTx, TransferTx, Transaction
-};
+use crate::transaction::{Address, CoinbaseTx, Transaction, TransferTx};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 // ============================================================================
 // Constants
@@ -20,11 +18,9 @@ pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 10;
 /// The desired time between blocks in seconds.
 pub const TARGET_BLOCK_TIME: u64 = 30;
 
-
 // ============================================================================
 // Types
 // ============================================================================
-
 
 /// A 32-byte hash (SHA-256)
 pub type Sha256Hash = [u8; 32];
@@ -105,16 +101,16 @@ impl Block {
 
     pub fn hash_to_target(difficulty: &u32) -> [u8; 32] {
         // Target: 2^(256 - difficulty)
-        let mut target = [0xFF; 32]; 
+        let mut target = [0xFF; 32];
         let leading_zeros = *difficulty / 8; // Number of leading zero bytes
         let partial_bits = *difficulty % 8; // Number of partial bits
-        
+
         for item in target.iter_mut().take(leading_zeros as usize) {
             *item = 0;
         }
 
         if leading_zeros < 32 && partial_bits > 0 {
-            // E.g., if partial_bits is 4, we need the first 4 bits to be 0, 
+            // E.g., if partial_bits is 4, we need the first 4 bits to be 0,
             // so we set the byte to 0b00001111 = 15
             target[leading_zeros as usize] = (0xFF >> partial_bits) as u8;
         }
@@ -142,15 +138,34 @@ impl TriangleState {
         Self::default()
     }
 
+    /// Rebuilds the address_balances HashMap by iterating through the current utxo_set.
+    /// This should be called after loading the utxo_set from persistence.
+    pub fn rebuild_address_balances(&mut self) {
+        self.address_balances.clear();
+        for triangle in self.utxo_set.values() {
+            *self
+                .address_balances
+                .entry(triangle.owner.clone())
+                .or_insert(Coord::from_num(0)) += triangle.effective_value();
+        }
+    }
+
     /// Gets the current total area owned by an address.
     pub fn get_balance(&self, address: &Address) -> Coord {
-        *self.address_balances.get(address).unwrap_or(&Coord::from_num(0))
+        *self
+            .address_balances
+            .get(address)
+            .unwrap_or(&Coord::from_num(0))
     }
 
     /// Updates the UTXO set and derived balances based on a transaction.
     /// This is the core state transition logic for the blockchain. It is critical
     /// that this function is correct and deterministic.
-    pub fn apply_transaction(&mut self, tx: &Transaction, _block_height: u64) -> Result<(), ChainError> {
+    pub fn apply_transaction(
+        &mut self,
+        tx: &Transaction,
+        _block_height: u64,
+    ) -> Result<(), ChainError> {
         match tx {
             // ================== 1. Coinbase Transaction ==================
             // Creates new value (area) and assigns it to the miner's address (beneficiary).
@@ -170,9 +185,12 @@ impl TriangleState {
                 // b) Add the new triangle to the UTXO set, indexed by the transaction hash.
                 let tx_hash = Transaction::Coinbase(tx.clone()).hash();
                 self.utxo_set.insert(tx_hash, new_triangle);
-                
+
                 // c) Update the balance for the beneficiary address.
-                *self.address_balances.entry(tx.beneficiary_address.clone()).or_insert(Coord::from_num(0)) += tx.reward_area;
+                *self
+                    .address_balances
+                    .entry(tx.beneficiary_address.clone())
+                    .or_insert(Coord::from_num(0)) += tx.reward_area;
             }
 
             // ================== 2. Transfer Transaction ==================
@@ -198,19 +216,25 @@ impl TriangleState {
                         tx.sender, consumed_triangle.owner
                     )));
                 }
-                
+
                 let input_value = consumed_triangle.effective_value();
                 let total_spent = tx.amount + tx.fee_area;
                 let remaining_value = input_value - total_spent;
 
                 // c) Decrease the sender's balance by the full value of the consumed UTXO.
                 // The change amount will be added back later if applicable.
-                let sender_balance = self.address_balances.entry(tx.sender.clone()).or_insert(Coord::from_num(0));
+                let sender_balance = self
+                    .address_balances
+                    .entry(tx.sender.clone())
+                    .or_insert(Coord::from_num(0));
                 *sender_balance -= input_value;
-                if *sender_balance < Coord::from_num(0) { *sender_balance = Coord::from_num(0); }
+                if *sender_balance < Coord::from_num(0) {
+                    *sender_balance = Coord::from_num(0);
+                }
 
                 // d) Create the new UTXO for the recipient.
-                let new_owner_triangle = consumed_triangle.clone()
+                let new_owner_triangle = consumed_triangle
+                    .clone()
                     .change_owner(tx.new_owner.clone())
                     .with_effective_value(tx.amount); // The value is the amount being transferred.
 
@@ -218,7 +242,10 @@ impl TriangleState {
                 self.utxo_set.insert(tx_hash, new_owner_triangle);
 
                 // e) Update the recipient's balance.
-                *self.address_balances.entry(tx.new_owner.clone()).or_insert(Coord::from_num(0)) += tx.amount;
+                *self
+                    .address_balances
+                    .entry(tx.new_owner.clone())
+                    .or_insert(Coord::from_num(0)) += tx.amount;
 
                 // f) Handle the change. If there's remaining value, create a new UTXO for the sender.
                 if remaining_value > GEOMETRIC_TOLERANCE {
@@ -229,19 +256,24 @@ impl TriangleState {
                         sender: tx.sender.clone(),
                         amount: remaining_value,
                         fee_area: Coord::from_num(0), // No fee on change.
-                        nonce: tx.nonce + 1, // Different nonce to ensure different hash.
-                        signature: None, public_key: None, memo: Some("Change".to_string()),
+                        nonce: tx.nonce + 1,          // Different nonce to ensure different hash.
+                        signature: None,
+                        public_key: None,
+                        memo: Some("Change".to_string()),
                     });
-                    
+
                     let change_hash = change_tx.hash();
                     let change_triangle = consumed_triangle
                         .change_owner(tx.sender.clone())
                         .with_effective_value(remaining_value);
 
                     self.utxo_set.insert(change_hash, change_triangle);
-                    
+
                     // Add the change value back to the sender's balance.
-                    *self.address_balances.entry(tx.sender.clone()).or_insert(Coord::from_num(0)) += remaining_value;
+                    *self
+                        .address_balances
+                        .entry(tx.sender.clone())
+                        .or_insert(Coord::from_num(0)) += remaining_value;
                 }
             }
 
@@ -268,18 +300,27 @@ impl TriangleState {
 
                 // c) Decrease the owner's balance by the value of the consumed parent.
                 let parent_value = consumed_triangle.effective_value();
-                let owner_balance = self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0));
+                let owner_balance = self
+                    .address_balances
+                    .entry(tx.owner_address.clone())
+                    .or_insert(Coord::from_num(0));
                 *owner_balance -= parent_value;
-                if *owner_balance < Coord::from_num(0) { *owner_balance = Coord::from_num(0); }
+                if *owner_balance < Coord::from_num(0) {
+                    *owner_balance = Coord::from_num(0);
+                }
 
                 // d) Validate that the children's total value equals the parent's value minus the fee.
-                let total_child_value: Coord = tx.children.iter().map(|c| c.effective_value()).sum();
+                let total_child_value: Coord =
+                    tx.children.iter().map(|c| c.effective_value()).sum();
                 let expected_value = parent_value - tx.fee_area;
 
                 if (total_child_value - expected_value).abs() > GEOMETRIC_TOLERANCE {
                     // Revert state changes before returning error
                     self.utxo_set.insert(input_hash, consumed_triangle);
-                    *self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0)) += parent_value;
+                    *self
+                        .address_balances
+                        .entry(tx.owner_address.clone())
+                        .or_insert(Coord::from_num(0)) += parent_value;
                     return Err(ChainError::InvalidTransaction(format!(
                         "Value mismatch in subdivision: parent ({}) - fee ({}) != children total ({}).",
                         parent_value, tx.fee_area, total_child_value
@@ -289,14 +330,16 @@ impl TriangleState {
                 // e) Add new child UTXOs to the state and update balance.
                 for child in &tx.children {
                     self.utxo_set.insert(child.hash(), child.clone());
-                    *self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0)) += child.effective_value();
+                    *self
+                        .address_balances
+                        .entry(tx.owner_address.clone())
+                        .or_insert(Coord::from_num(0)) += child.effective_value();
                 }
             }
         }
         Ok(())
     }
 }
-
 
 // ============================================================================
 // Blockchain
@@ -324,9 +367,12 @@ impl Clone for Blockchain {
 
 impl Blockchain {
     /// Initializer for a new blockchain with the genesis block.
-    pub fn new(genesis_miner_address: Address, initial_difficulty: u32) -> Result<Self, ChainError> {
+    pub fn new(
+        genesis_miner_address: Address,
+        initial_difficulty: u32,
+    ) -> Result<Self, ChainError> {
         let genesis_block = Self::create_genesis_block(genesis_miner_address, initial_difficulty)?;
-        
+
         let mut blockchain = Blockchain {
             blocks: vec![],
             difficulty: initial_difficulty,
@@ -340,7 +386,10 @@ impl Blockchain {
     }
 
     /// Creates the immutable genesis block.
-    fn create_genesis_block(miner_address: Address, initial_difficulty: u32) -> Result<Block, ChainError> {
+    fn create_genesis_block(
+        miner_address: Address,
+        initial_difficulty: u32,
+    ) -> Result<Block, ChainError> {
         // Create a special genesis transaction (Coinbase)
         let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
             reward_area: Coord::from_num(1_000_000.0), // Initial fixed supply
@@ -371,15 +420,15 @@ impl Blockchain {
     pub fn calculate_block_reward(height: u64) -> f64 {
         const INITIAL_REWARD: f64 = 50.0; // In area units
         const HALVING_INTERVAL: u64 = 210000;
-        
+
         let halving_count = height / HALVING_INTERVAL;
-        if halving_count >= 64 { // Prevent overflow and reward going to 0
+        if halving_count >= 64 {
+            // Prevent overflow and reward going to 0
             0.0
         } else {
             INITIAL_REWARD / (2u64.pow(halving_count as u32) as f64)
         }
     }
-
 
     // ============================================================================
     // Core Chain and State Logic
@@ -524,7 +573,8 @@ impl Blockchain {
 
             if let Some(last_adjustment_block) = last_adjustment_block {
                 let last_block = self.blocks.last().unwrap();
-                let actual_time = last_block.header.timestamp - last_adjustment_block.header.timestamp;
+                let actual_time =
+                    last_block.header.timestamp - last_adjustment_block.header.timestamp;
                 let expected_time = (DIFFICULTY_ADJUSTMENT_INTERVAL * TARGET_BLOCK_TIME) * 1000; // in milliseconds
 
                 let ratio = actual_time as f64 / expected_time as f64;
@@ -543,9 +593,9 @@ impl Blockchain {
     fn verify_pow(&self, block: &Block) -> bool {
         let hash_target = Block::hash_to_target(&block.header.difficulty);
         let block_hash_int = Block::hash_as_u256(&block.hash());
-        
+
         // Block hash must be less than or equal to the target
-        block_hash_int <= hash_target 
+        block_hash_int <= hash_target
     }
 }
 
@@ -556,8 +606,8 @@ impl Blockchain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{Coord, Point};
     use crate::transaction::{SubdivisionTx, TransferTx};
-    use crate::geometry::{Point, Coord};
     fn create_test_address(id: &str) -> Address {
         id.to_string()
     }
@@ -565,7 +615,7 @@ mod tests {
     fn create_test_blockchain() -> Blockchain {
         Blockchain::new(create_test_address("miner1"), 1).unwrap()
     }
-    
+
     fn create_test_transaction(i: u8) -> Transaction {
         Transaction::Coinbase(CoinbaseTx {
             reward_area: Coord::from_num(i),
@@ -580,7 +630,10 @@ mod tests {
         let genesis_block = &blockchain.blocks[0];
         assert_eq!(genesis_block.header.height, 0);
         assert_eq!(genesis_block.header.previous_hash, [0u8; 32]);
-        assert_eq!(blockchain.state.get_balance(&create_test_address("miner1")), Coord::from_num(1_000_000.0));
+        assert_eq!(
+            blockchain.state.get_balance(&create_test_address("miner1")),
+            Coord::from_num(1_000_000.0)
+        );
     }
 
     #[test]
@@ -637,7 +690,7 @@ mod tests {
         assert_eq!(target3[0], 0);
         assert_eq!(target3[1], 0b0011_1111);
     }
-    
+
     #[test]
     fn test_calculate_block_reward() {
         assert_eq!(Blockchain::calculate_block_reward(0), 50.0);
@@ -652,28 +705,31 @@ mod tests {
     fn test_apply_block_valid() {
         let mut blockchain = create_test_blockchain();
         let last_block = blockchain.blocks.last().unwrap().clone();
-        
+
         let tx = Transaction::Coinbase(CoinbaseTx {
             reward_area: Coord::from_num(50.0),
             beneficiary_address: create_test_address("miner2"),
         });
-        
+
         let block = Block::new(1, last_block.hash(), 1, vec![tx]);
         let mined_block = mine_block(block).unwrap();
 
         let result = blockchain.apply_block(mined_block);
         assert!(result.is_ok());
         assert_eq!(blockchain.blocks.len(), 2);
-        assert_eq!(blockchain.state.get_balance(&create_test_address("miner2")), Coord::from_num(50.0));
+        assert_eq!(
+            blockchain.state.get_balance(&create_test_address("miner2")),
+            Coord::from_num(50.0)
+        );
     }
 
     #[test]
     fn test_apply_block_invalid_height() {
         let mut blockchain = create_test_blockchain();
         let last_block = blockchain.blocks.last().unwrap().clone();
-        
+
         let block = Block::new(2, last_block.hash(), 1, vec![]); // Invalid height
-        
+
         let result = blockchain.apply_block(block);
         assert!(matches!(result, Err(ChainError::InvalidBlock(_))));
     }
@@ -681,9 +737,9 @@ mod tests {
     #[test]
     fn test_apply_block_invalid_prev_hash() {
         let mut blockchain = create_test_blockchain();
-        
+
         let block = Block::new(1, [0; 32], 1, vec![]); // Invalid prev hash
-        
+
         let result = blockchain.apply_block(block);
         assert!(matches!(result, Err(ChainError::InvalidBlock(_))));
     }
@@ -692,12 +748,14 @@ mod tests {
     fn test_apply_block_invalid_pow() {
         let mut blockchain = create_test_blockchain();
         let last_block = blockchain.blocks.last().unwrap().clone();
-        
+
         // Block without mining
         let block = Block::new(1, last_block.hash(), 20, vec![]); // High difficulty
-        
+
         let result = blockchain.apply_block(block);
-        assert!(matches!(result, Err(ChainError::InvalidBlock(msg)) if msg.contains("Invalid Proof-of-Work")));
+        assert!(
+            matches!(result, Err(ChainError::InvalidBlock(msg)) if msg.contains("Invalid Proof-of-Work"))
+        );
     }
 
     #[test]
@@ -728,14 +786,16 @@ mod tests {
             reward_area: Coord::from_num(50.0),
             beneficiary_address: create_test_address("miner1"),
         });
-        
+
         let block = Block::new(1, last_block.hash(), 1, vec![coinbase, tx1, tx2]);
         let mined_block = mine_block(block).unwrap();
 
         let result = blockchain.apply_block(mined_block);
-        assert!(matches!(result, Err(ChainError::InvalidTransaction(msg)) if msg.contains("Double spend detected")));
+        assert!(
+            matches!(result, Err(ChainError::InvalidTransaction(msg)) if msg.contains("Double spend detected"))
+        );
     }
-    
+
     #[test]
     fn test_state_apply_coinbase_tx() {
         let mut state = TriangleState::new();
@@ -764,10 +824,13 @@ mod tests {
             Point::new(Coord::from_num(5), Coord::from_num(10)),
             None,
             sender.clone(),
-        ).with_effective_value(Coord::from_num(1000.0));
+        )
+        .with_effective_value(Coord::from_num(1000.0));
         let input_hash = initial_triangle.hash();
         state.utxo_set.insert(input_hash, initial_triangle);
-        state.address_balances.insert(sender.clone(), Coord::from_num(1000.0));
+        state
+            .address_balances
+            .insert(sender.clone(), Coord::from_num(1000.0));
 
         // 2. Create and apply the transfer
         let tx = Transaction::Transfer(TransferTx {
@@ -777,7 +840,9 @@ mod tests {
             amount: Coord::from_num(700.0),
             fee_area: Coord::from_num(50.0),
             nonce: 0,
-            signature: None, public_key: None, memo: None,
+            signature: None,
+            public_key: None,
+            memo: None,
         });
 
         let result = state.apply_transaction(&tx, 1);
@@ -787,17 +852,29 @@ mod tests {
         let change_value = Coord::from_num(250.0);
         assert_eq!(state.get_balance(&sender), change_value);
         assert_eq!(state.get_balance(&recipient), Coord::from_num(700.0));
-        
+
         // Should be 2 UTXOs: one for recipient, one for change
         assert_eq!(state.utxo_set.len(), 2);
-        
-        let recipient_utxo_found = state.utxo_set.values().any(|t| t.owner == recipient && t.effective_value() == Coord::from_num(700.0));
-        let change_utxo_found = state.utxo_set.values().any(|t| t.owner == sender && t.effective_value() == change_value);
 
-        assert!(recipient_utxo_found, "Recipient's UTXO not found or incorrect value");
-        assert!(change_utxo_found, "Sender's change UTXO not found or incorrect value");
+        let recipient_utxo_found = state
+            .utxo_set
+            .values()
+            .any(|t| t.owner == recipient && t.effective_value() == Coord::from_num(700.0));
+        let change_utxo_found = state
+            .utxo_set
+            .values()
+            .any(|t| t.owner == sender && t.effective_value() == change_value);
+
+        assert!(
+            recipient_utxo_found,
+            "Recipient's UTXO not found or incorrect value"
+        );
+        assert!(
+            change_utxo_found,
+            "Sender's change UTXO not found or incorrect value"
+        );
     }
-    
+
     #[test]
     fn test_state_apply_subdivision_tx() {
         let mut state = TriangleState::new();
@@ -808,7 +885,8 @@ mod tests {
             Point::new(Coord::from_num(0), Coord::from_num(0)),
             Point::new(Coord::from_num(20), Coord::from_num(0)),
             Point::new(Coord::from_num(10), Coord::from_num(10)),
-            None, owner.clone()
+            None,
+            owner.clone(),
         ); // Area = 100
         let parent_hash = parent_triangle.hash();
         let parent_value = parent_triangle.effective_value();
@@ -839,24 +917,41 @@ mod tests {
             children,
             fee_area: fee,
             nonce: 0,
-            signature: None, public_key: None,
+            signature: None,
+            public_key: None,
         };
         let tx = Transaction::Subdivision(subdivision_tx);
 
         let result = state.apply_transaction(&tx, 1);
-        assert!(result.is_ok(), "Transaction should be valid, but failed with: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Transaction should be valid, but failed with: {:?}",
+            result.err()
+        );
 
         // 5. Verify state changes.
         let expected_balance = total_child_value;
-        assert!((state.get_balance(&owner) - expected_balance).abs() < GEOMETRIC_TOLERANCE, "Balance mismatch: expected {}, got {}", expected_balance, state.get_balance(&owner));
+        assert!(
+            (state.get_balance(&owner) - expected_balance).abs() < GEOMETRIC_TOLERANCE,
+            "Balance mismatch: expected {}, got {}",
+            expected_balance,
+            state.get_balance(&owner)
+        );
         assert_eq!(state.utxo_set.len(), 3, "There should be 3 new UTXOs");
 
         // Verify that the child UTXOs are in the set with the correct values.
         if let Transaction::Subdivision(sub_tx) = tx {
             for child in &sub_tx.children {
-                assert!(state.utxo_set.contains_key(&child.hash()), "Child UTXO not found in state");
+                assert!(
+                    state.utxo_set.contains_key(&child.hash()),
+                    "Child UTXO not found in state"
+                );
                 let utxo = state.utxo_set.get(&child.hash()).unwrap();
-                assert_eq!(utxo.effective_value(), child.effective_value(), "Child UTXO value is incorrect in state");
+                assert_eq!(
+                    utxo.effective_value(),
+                    child.effective_value(),
+                    "Child UTXO value is incorrect in state"
+                );
             }
         }
     }

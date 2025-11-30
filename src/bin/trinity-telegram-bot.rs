@@ -81,13 +81,18 @@ async fn answer(
         Command::Stats => {
             let chain = state.chain.read().await;
             let height = chain.blocks.last().map_or(0, |b| b.header.height);
-            let total_supply: f64 = chain.blocks.iter().flat_map(|b| &b.transactions).filter_map(|tx| {
-                if let trinitychain::transaction::Transaction::Coinbase(ctx) = tx {
-                    Some(ctx.reward_area.to_num::<f64>())
-                } else {
-                    None
-                }
-            }).sum();
+            let total_supply: f64 = chain
+                .blocks
+                .iter()
+                .flat_map(|b| &b.transactions)
+                .filter_map(|tx| {
+                    if let trinitychain::transaction::Transaction::Coinbase(ctx) = tx {
+                        Some(ctx.reward_area.to_num::<f64>())
+                    } else {
+                        None
+                    }
+                })
+                .sum();
             let current_reward =
                 trinitychain::blockchain::Blockchain::calculate_block_reward(height);
             let triangles = chain.state.utxo_set.len();

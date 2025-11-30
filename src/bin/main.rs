@@ -1,17 +1,20 @@
 use clap::{Parser, Subcommand};
+use colored::*;
+use comfy_table::{presets::UTF8_FULL, Attribute, Cell, ContentArrangement, Table};
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use futures_util::{SinkExt, StreamExt};
+use hex;
 use indicatif::{ProgressBar, ProgressStyle};
+use log::{info, warn};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block as TuiBlock, Borders, Gauge, Paragraph, Sparkline},
+    widgets::{Block as TuiBlock, Borders, Paragraph},
     Terminal,
 };
 use secp256k1::SecretKey;
@@ -21,23 +24,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::sleep;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use trinitychain::api::Node;
 use trinitychain::blockchain::{Block, Blockchain};
 use trinitychain::cli::load_blockchain_from_config;
 use trinitychain::config::{load_config, Config};
 use trinitychain::crypto::KeyPair;
+use trinitychain::geometry::Coord;
 use trinitychain::miner::{mine_block, mine_block_parallel};
 use trinitychain::network::NetworkNode;
 use trinitychain::persistence::Database;
 use trinitychain::transaction::{CoinbaseTx, SubdivisionTx, Transaction, TransferTx};
 use trinitychain::wallet;
-use log::{info, warn};
-use hex;
-use colored::*; 
-use trinitychain::geometry::Coord;
-use comfy_table::{Attribute, Cell, ContentArrangement, Table, presets::UTF8_FULL};
-use std::env;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -68,13 +65,9 @@ enum Commands {
     /// Shows the transaction history
     History,
     /// Shows the balance of the wallet
-    Balance {
-        address: Option<String>,
-    },
+    Balance { address: Option<String> },
     /// Creates a new wallet
-    NewWallet {
-        name: Option<String>,
-    },
+    NewWallet { name: Option<String> },
     /// Backs up the wallet
     BackupWallet,
     /// Restores the wallet
@@ -164,7 +157,9 @@ async fn run_node(peer: Option<&str>) -> Result<(), Box<dyn std::error::Error>> 
     let mut terminal = Terminal::new(backend)?;
 
     let db = Database::open(&db_path).expect("Failed to open database");
-    let blockchain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
+    let blockchain = db.load_blockchain().unwrap_or_else(|_| {
+        Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain")
+    });
 
     // Create the unified Node
     let node = Arc::new(Node::new(blockchain));
@@ -307,7 +302,8 @@ async fn run_mine_block() -> Result<(), Box<dyn std::error::Error>> {
         .state
         .utxo_set
         .get(&parent_hash)
-        .ok_or("Parent triangle not found")? .clone();
+        .ok_or("Parent triangle not found")?
+        .clone();
 
     let hash_hex = hex::encode(parent_hash);
     let hash_prefix = &hash_hex[..16];
@@ -370,7 +366,12 @@ async fn run_mine_block() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run_send(to_address: &str, amount: f64, from: Option<&str>, memo: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_send(
+    to_address: &str,
+    amount: f64,
+    from: Option<&str>,
+    memo: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let amount_coord = Coord::from_num(amount);
 
     let wallet_name = from.map(|s| s.to_string());
@@ -405,7 +406,7 @@ async fn run_send(to_address: &str, amount: f64, from: Option<&str>, memo: Optio
     let from_wallet = if let Some(name) = wallet_name {
         wallet::load_named_wallet(&name)?
     } else {
-        wallet::load_default_wallet()? 
+        wallet::load_default_wallet()?
     };
 
     let from_address = from_wallet.address.clone();
@@ -786,7 +787,7 @@ async fn run_history() -> Result<(), Box<dyn std::error::Error>> {
             "╚══════════════════════════════════════════════════════════╝".yellow()
         );
         println!();
-        return Ok(())
+        return Ok(());
     }
 
     // Reverse to show newest first
@@ -892,9 +893,9 @@ async fn run_miner() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and start network node
     let db_for_network = Database::open(&config.database.path).expect("Failed to open database");
-    let chain_for_network = db_for_network
-        .load_blockchain()
-        .unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
+    let chain_for_network = db_for_network.load_blockchain().unwrap_or_else(|_| {
+        Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain")
+    });
     let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
     let config_clone = Arc::clone(&config);
@@ -910,7 +911,14 @@ async fn run_miner() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn mining task
     let mining_handle = tokio::spawn(async move {
-        mining_loop(beneficiary_clone, threads, stats_clone, Some(network), config).await;
+        mining_loop(
+            beneficiary_clone,
+            threads,
+            stats_clone,
+            Some(network),
+            config,
+        )
+        .await;
     });
 
     // UI loop
@@ -953,7 +961,9 @@ async fn mining_loop(
     config: Arc<Config>,
 ) {
     let db = Database::open(&config.database.path).expect("Failed to open database");
-    let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
+    let mut chain = db.load_blockchain().unwrap_or_else(|_| {
+        Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain")
+    });
 
     let start_time = Instant::now();
     let mut blocks_mined = 0;
@@ -972,14 +982,18 @@ async fn mining_loop(
 
         let new_height = last_block.header.height + 1;
         let difficulty = chain.difficulty;
-        info!("Mining block #{} with difficulty {}", new_height, difficulty);
+        info!(
+            "Mining block #{} with difficulty {}",
+            new_height, difficulty
+        );
 
         let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
             reward_area: trinitychain::geometry::Coord::from_num(1000),
             beneficiary_address: beneficiary_address.clone(),
         });
 
-        let mut new_block = Block::new(new_height, last_block.hash(), difficulty, vec![coinbase_tx]);
+        let mut new_block =
+            Block::new(new_height, last_block.hash(), difficulty, vec![coinbase_tx]);
 
         if new_block.header.timestamp <= last_block.header.timestamp {
             new_block.header.timestamp = last_block.header.timestamp + 1;
@@ -1012,7 +1026,10 @@ async fn mining_loop(
 
         let mine_duration = mine_start.elapsed().as_secs_f64();
         let hash_hex = hex::encode(new_block.hash());
-        info!("Mined block #{} in {:.2}s with hash {}", new_height, mine_duration, hash_hex);
+        info!(
+            "Mined block #{} in {:.2}s with hash {}",
+            new_height, mine_duration, hash_hex
+        );
 
         if let Err(e) = chain.apply_block(new_block.clone()) {
             warn!("Failed to apply block: {}", e);
@@ -1026,7 +1043,8 @@ async fn mining_loop(
             network.broadcast_block(&new_block).await;
         }
 
-        if let Err(e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty as u64) {
+        if let Err(e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty as u64)
+        {
             warn!("Failed to save blockchain state: {}", e);
         }
 
@@ -1036,13 +1054,18 @@ async fn mining_loop(
         // Update stats
         {
             let current_height = new_height;
-            let current_supply: f64 = chain.blocks.iter().flat_map(|b| &b.transactions).filter_map(|tx| {
-                if let Transaction::Coinbase(ctx) = tx {
-                    Some(ctx.reward_area.to_num::<f64>())
-                } else {
-                    None
-                }
-            }).sum();
+            let current_supply: f64 = chain
+                .blocks
+                .iter()
+                .flat_map(|b| &b.transactions)
+                .filter_map(|tx| {
+                    if let Transaction::Coinbase(ctx) = tx {
+                        Some(ctx.reward_area.to_num::<f64>())
+                    } else {
+                        None
+                    }
+                })
+                .sum();
             let current_reward = Blockchain::calculate_block_reward(current_height);
             let halving_era = current_height / 210_000;
             let blocks_to_halving = ((halving_era + 1) * 210_000).saturating_sub(current_height);
@@ -1092,7 +1115,11 @@ fn draw_miner_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary_addres
         .split(f.size());
 
     let title = Paragraph::new("TrinityChain Miner")
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);
 
@@ -1104,7 +1131,10 @@ fn draw_miner_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary_addres
     let status_text = vec![
         Line::from(vec![
             Span::styled("Status: ", Style::default().fg(Color::Gray)),
-            Span::styled(stats.mining_status.clone(), Style::default().fg(Color::Green)),
+            Span::styled(
+                stats.mining_status.clone(),
+                Style::default().fg(Color::Green),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Beneficiary: ", Style::default().fg(Color::Gray)),
@@ -1120,8 +1150,11 @@ fn draw_miner_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary_addres
         ]),
     ];
 
-    let status_widget = Paragraph::new(status_text)
-        .block(TuiBlock::default().borders(Borders::ALL).title("Miner Info"));
+    let status_widget = Paragraph::new(status_text).block(
+        TuiBlock::default()
+            .borders(Borders::ALL)
+            .title("Miner Info"),
+    );
     f.render_widget(status_widget, top_chunks[0]);
 
     let chain_text = vec![
@@ -1142,18 +1175,33 @@ fn draw_miner_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary_addres
             Span::raw(stats.last_block_hash.chars().take(16).collect::<String>() + "..."),
         ]),
     ];
-    let chain_widget = Paragraph::new(chain_text)
-        .block(TuiBlock::default().borders(Borders::ALL).title("Blockchain"));
+    let chain_widget = Paragraph::new(chain_text).block(
+        TuiBlock::default()
+            .borders(Borders::ALL)
+            .title("Blockchain"),
+    );
     f.render_widget(chain_widget, top_chunks[1]);
 
-    let block_list: Vec<Line> = stats.recent_blocks.iter().rev().map(|(height, hash, parent)| {
-        Line::from(vec![
-            Span::styled(format!("#{} ", height), Style::default().fg(Color::Cyan)),
-            Span::raw(format!("{} -> {}", parent.chars().take(8).collect::<String>(), hash.chars().take(8).collect::<String>())),
-        ])
-    }).collect();
-    let blocks_widget = Paragraph::new(block_list)
-        .block(TuiBlock::default().borders(Borders::ALL).title("Recent Blocks"));
+    let block_list: Vec<Line> = stats
+        .recent_blocks
+        .iter()
+        .rev()
+        .map(|(height, hash, parent)| {
+            Line::from(vec![
+                Span::styled(format!("#{} ", height), Style::default().fg(Color::Cyan)),
+                Span::raw(format!(
+                    "{} -> {}",
+                    parent.chars().take(8).collect::<String>(),
+                    hash.chars().take(8).collect::<String>()
+                )),
+            ])
+        })
+        .collect();
+    let blocks_widget = Paragraph::new(block_list).block(
+        TuiBlock::default()
+            .borders(Borders::ALL)
+            .title("Recent Blocks"),
+    );
     f.render_widget(blocks_widget, chunks[2]);
 
     let footer = Paragraph::new("Press 'q' to quit")
@@ -1193,7 +1241,6 @@ async fn run_new_wallet(name: Option<&str>) -> Result<(), Box<dyn std::error::Er
             Ok(wallet) => {
                 println!("🔑 New wallet '{}' created!", wallet_name);
                 println!("   Address: {}", wallet.address);
-                println!("   Mnemonic: {}", wallet.mnemonic);
                 println!("   Location: {}", wallet_path.display());
             }
             Err(e) => {
@@ -1218,16 +1265,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Miner => {
             run_miner().await?;
         }
-        Commands::Send { to_address, amount, from, memo } => {
+        Commands::Send {
+            to_address,
+            amount,
+            from,
+            memo,
+        } => {
             run_send(to_address, *amount, from.as_deref(), memo.as_deref()).await?;
         }
         Commands::History => {
             run_history().await?;
         }
-        Commands::Balance { address }=> {
+        Commands::Balance { address } => {
             run_balance(address.as_deref()).await?;
         }
-        Commands::NewWallet { name }=> {
+        Commands::NewWallet { name } => {
             run_new_wallet(name.as_deref()).await?;
         }
         Commands::BackupWallet => {

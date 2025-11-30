@@ -332,7 +332,8 @@ impl Database {
             actual_difficulty
         };
 
-        let state = self.load_utxo_set()?;
+        let mut state = self.load_utxo_set()?;
+        state.rebuild_address_balances();
 
         let blockchain = Blockchain {
             blocks,

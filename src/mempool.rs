@@ -58,10 +58,7 @@ impl Mempool {
             }
         };
 
-        let sender_txs = self
-            .by_sender
-            .entry(sender.clone())
-            .or_default();
+        let sender_txs = self.by_sender.entry(sender.clone()).or_default();
         if sender_txs.len() >= MAX_TX_PER_ADDRESS {
             return Err(ChainError::InvalidTransaction(
                 "Exceeded maximum transactions per address".to_string(),

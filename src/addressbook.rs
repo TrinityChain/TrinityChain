@@ -24,19 +24,19 @@ const BACKUP_SUFFIX: &str = ".backup";
 pub struct AddressEntry {
     /// Display label for the address (case-preserved)
     pub label: String,
-    
+
     /// TrinityChain address
     pub address: String,
-    
+
     /// Optional notes about this contact
     pub notes: Option<String>,
-    
+
     /// RFC3339 timestamp when entry was created
     pub created_at: String,
-    
+
     /// RFC3339 timestamp of last modification
     pub updated_at: String,
-    
+
     /// Number of times this entry has been modified
     pub version: u32,
 }
@@ -52,7 +52,7 @@ impl AddressEntry {
         }
 
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         Ok(AddressEntry {
             label,
             address,
@@ -69,12 +69,12 @@ impl AddressEntry {
             validate_address(&addr)?;
             self.address = addr;
         }
-        
+
         if let Some(n) = notes {
             validate_notes(&n)?;
             self.notes = Some(n);
         }
-        
+
         self.updated_at = chrono::Utc::now().to_rfc3339();
         self.version = self.version.saturating_add(1);
         Ok(())
@@ -91,11 +91,11 @@ pub struct AddressBook {
 struct AddressBookInner {
     /// Entries keyed by lowercase label for case-insensitive lookup
     entries: HashMap<String, AddressEntry>,
-    
+
     /// Reverse index: address -> label (for quick address lookups)
     #[serde(skip)]
     address_index: HashMap<String, String>,
-    
+
     /// Metadata about the address book
     metadata: AddressBookMetadata,
 }
@@ -127,10 +127,11 @@ impl AddressBookInner {
     fn rebuild_index(&mut self) {
         self.address_index.clear();
         for (key, entry) in &self.entries {
-            self.address_index.insert(entry.address.clone(), key.clone());
+            self.address_index
+                .insert(entry.address.clone(), key.clone());
         }
     }
-    
+
     /// Update modification timestamp
     fn touch(&mut self) {
         self.metadata.last_modified = chrono::Utc::now().to_rfc3339();
@@ -155,16 +156,17 @@ impl AddressBook {
         notes: Option<String>,
     ) -> Result<(), ChainError> {
         let mut inner = self.inner.write();
-        
+
         // Check size limit
         if inner.entries.len() >= MAX_ENTRIES {
-            return Err(ChainError::WalletError(
-                format!("Address book is full (max {} entries)", MAX_ENTRIES)
-            ));
+            return Err(ChainError::WalletError(format!(
+                "Address book is full (max {} entries)",
+                MAX_ENTRIES
+            )));
         }
-        
+
         let key = label.to_lowercase();
-        
+
         // Check for duplicate label
         if inner.entries.contains_key(&key) {
             return Err(ChainError::WalletError(format!(
@@ -172,7 +174,7 @@ impl AddressBook {
                 label
             )));
         }
-        
+
         // Check for duplicate address
         if inner.address_index.contains_key(&address) {
             let existing_label = inner.address_index.get(&address).unwrap();
@@ -184,12 +186,12 @@ impl AddressBook {
         }
 
         let entry = AddressEntry::new(label, address.clone(), notes)?;
-        
+
         // Update indices
         inner.address_index.insert(address, key.clone());
         inner.entries.insert(key, entry);
         inner.touch();
-        
+
         Ok(())
     }
 
@@ -202,11 +204,11 @@ impl AddressBook {
             .entries
             .remove(&key)
             .ok_or_else(|| ChainError::WalletError(format!("Label '{}' not found", label)))?;
-        
+
         // Update address index
         inner.address_index.remove(&entry.address);
         inner.touch();
-        
+
         Ok(entry)
     }
 
@@ -219,7 +221,7 @@ impl AddressBook {
     ) -> Result<(), ChainError> {
         let mut inner = self.inner.write();
         let key = label.to_lowercase();
-        
+
         // First, check if the entry exists and get the old address
         let old_address = inner
             .entries
@@ -227,7 +229,7 @@ impl AddressBook {
             .ok_or_else(|| ChainError::WalletError(format!("Label '{}' not found", label)))?
             .address
             .clone();
-        
+
         // Check for duplicate address if updating address (before getting mutable reference)
         if let Some(ref new_addr) = new_address {
             if new_addr != &old_address && inner.address_index.contains_key(new_addr) {
@@ -239,18 +241,18 @@ impl AddressBook {
                 )));
             }
         }
-        
+
         // Now we can safely get the mutable reference
         let entry = inner.entries.get_mut(&key).unwrap(); // Safe: we checked existence above
-        
+
         entry.update(new_address.clone(), new_notes)?;
-        
+
         // Update address index if address changed
         if let Some(new_addr) = new_address {
             inner.address_index.remove(&old_address);
             inner.address_index.insert(new_addr, key);
         }
-        
+
         inner.touch();
         Ok(())
     }
@@ -290,7 +292,7 @@ impl AddressBook {
             })
             .cloned()
             .collect();
-        
+
         results.sort_by(|a, b| a.label.cmp(&b.label));
         results
     }
@@ -329,15 +331,12 @@ impl AddressBook {
     /// Save address book to file with atomic write and backup
     pub fn save(&self, path: &Path) -> Result<(), ChainError> {
         let inner = self.inner.read();
-        
+
         // Create backup if file exists
         if path.exists() {
-            let backup_path = path.with_extension(
-                format!("json{}", BACKUP_SUFFIX)
-            );
-            fs::copy(path, &backup_path).map_err(|e| {
-                ChainError::WalletError(format!("Failed to create backup: {}", e))
-            })?;
+            let backup_path = path.with_extension(format!("json{}", BACKUP_SUFFIX));
+            fs::copy(path, &backup_path)
+                .map_err(|e| ChainError::WalletError(format!("Failed to create backup: {}", e)))?;
         }
 
         // Serialize to JSON
@@ -347,24 +346,20 @@ impl AddressBook {
 
         // Atomic write using temporary file
         let temp_path = path.with_extension("tmp");
-        let mut file = File::create(&temp_path).map_err(|e| {
-            ChainError::WalletError(format!("Failed to create temp file: {}", e))
-        })?;
-        
-        file.write_all(json.as_bytes()).map_err(|e| {
-            ChainError::WalletError(format!("Failed to write address book: {}", e))
-        })?;
-        
-        file.sync_all().map_err(|e| {
-            ChainError::WalletError(format!("Failed to sync file: {}", e))
-        })?;
-        
+        let mut file = File::create(&temp_path)
+            .map_err(|e| ChainError::WalletError(format!("Failed to create temp file: {}", e)))?;
+
+        file.write_all(json.as_bytes())
+            .map_err(|e| ChainError::WalletError(format!("Failed to write address book: {}", e)))?;
+
+        file.sync_all()
+            .map_err(|e| ChainError::WalletError(format!("Failed to sync file: {}", e)))?;
+
         drop(file);
 
         // Atomic rename
-        fs::rename(&temp_path, path).map_err(|e| {
-            ChainError::WalletError(format!("Failed to finalize write: {}", e))
-        })?;
+        fs::rename(&temp_path, path)
+            .map_err(|e| ChainError::WalletError(format!("Failed to finalize write: {}", e)))?;
 
         Ok(())
     }
@@ -375,13 +370,11 @@ impl AddressBook {
             return Ok(AddressBook::new());
         }
 
-        let contents = fs::read_to_string(path).map_err(|e| {
-            ChainError::WalletError(format!("Failed to read address book: {}", e))
-        })?;
+        let contents = fs::read_to_string(path)
+            .map_err(|e| ChainError::WalletError(format!("Failed to read address book: {}", e)))?;
 
-        let mut inner: AddressBookInner = serde_json::from_str(&contents).map_err(|e| {
-            ChainError::WalletError(format!("Failed to parse address book: {}", e))
-        })?;
+        let mut inner: AddressBookInner = serde_json::from_str(&contents)
+            .map_err(|e| ChainError::WalletError(format!("Failed to parse address book: {}", e)))?;
 
         // Rebuild address index
         inner.rebuild_index();
@@ -407,7 +400,7 @@ impl AddressBook {
         entries.sort_by(|a, b| a.label.cmp(&b.label));
 
         let mut csv = String::from("Label,Address,Notes,Created,Updated,Version\n");
-        
+
         for entry in entries {
             let notes = entry.notes.as_deref().unwrap_or("");
             csv.push_str(&format!(
@@ -421,9 +414,8 @@ impl AddressBook {
             ));
         }
 
-        fs::write(path, csv).map_err(|e| {
-            ChainError::WalletError(format!("Failed to export CSV: {}", e))
-        })?;
+        fs::write(path, csv)
+            .map_err(|e| ChainError::WalletError(format!("Failed to export CSV: {}", e)))?;
 
         Ok(())
     }
@@ -448,59 +440,61 @@ impl Default for AddressBook {
 
 fn validate_label(label: &str) -> Result<(), ChainError> {
     if label.is_empty() {
-        return Err(ChainError::WalletError(
-            "Label cannot be empty".to_string()
-        ));
+        return Err(ChainError::WalletError("Label cannot be empty".to_string()));
     }
-    
+
     if label.len() > MAX_LABEL_LENGTH {
-        return Err(ChainError::WalletError(
-            format!("Label too long (max {} characters)", MAX_LABEL_LENGTH)
-        ));
+        return Err(ChainError::WalletError(format!(
+            "Label too long (max {} characters)",
+            MAX_LABEL_LENGTH
+        )));
     }
-    
+
     // Check for valid characters (alphanumeric, spaces, basic punctuation)
-    if !label.chars().all(|c| {
-        c.is_alphanumeric() || c.is_whitespace() || "-_.,()[]{}".contains(c)
-    }) {
+    if !label
+        .chars()
+        .all(|c| c.is_alphanumeric() || c.is_whitespace() || "-_.,()[]{}".contains(c))
+    {
         return Err(ChainError::WalletError(
-            "Label contains invalid characters".to_string()
+            "Label contains invalid characters".to_string(),
         ));
     }
-    
+
     Ok(())
 }
 
 fn validate_address(address: &str) -> Result<(), ChainError> {
     if address.is_empty() {
         return Err(ChainError::WalletError(
-            "Address cannot be empty".to_string()
+            "Address cannot be empty".to_string(),
         ));
     }
-    
+
     if address.len() > MAX_ADDRESS_LENGTH {
-        return Err(ChainError::WalletError(
-            format!("Address too long (max {} characters)", MAX_ADDRESS_LENGTH)
-        ));
+        return Err(ChainError::WalletError(format!(
+            "Address too long (max {} characters)",
+            MAX_ADDRESS_LENGTH
+        )));
     }
-    
+
     // Basic format validation (adjust for TrinityChain address format)
     if !address.chars().all(|c| c.is_alphanumeric()) {
         return Err(ChainError::WalletError(
-            "Invalid address format".to_string()
+            "Invalid address format".to_string(),
         ));
     }
-    
+
     Ok(())
 }
 
 fn validate_notes(notes: &str) -> Result<(), ChainError> {
     if notes.len() > MAX_NOTES_LENGTH {
-        return Err(ChainError::WalletError(
-            format!("Notes too long (max {} characters)", MAX_NOTES_LENGTH)
-        ));
+        return Err(ChainError::WalletError(format!(
+            "Notes too long (max {} characters)",
+            MAX_NOTES_LENGTH
+        )));
     }
-    
+
     Ok(())
 }
 
@@ -525,9 +519,8 @@ pub fn save_default(book: &AddressBook) -> Result<(), ChainError> {
 
     // Ensure directory exists
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            ChainError::WalletError(format!("Failed to create directory: {}", e))
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| ChainError::WalletError(format!("Failed to create directory: {}", e)))?;
     }
 
     book.save(&path)
@@ -696,13 +689,17 @@ mod tests {
         let csv_path = temp_dir.path().join("export.csv");
 
         let book = AddressBook::new();
-        book.add("Alice".to_string(), "abc123".to_string(), Some("Friend".to_string()))
-            .unwrap();
+        book.add(
+            "Alice".to_string(),
+            "abc123".to_string(),
+            Some("Friend".to_string()),
+        )
+        .unwrap();
         book.add("Bob".to_string(), "def456".to_string(), None)
             .unwrap();
 
         book.export_csv(&csv_path).unwrap();
-        
+
         let csv_content = fs::read_to_string(&csv_path).unwrap();
         assert!(csv_content.contains("Alice"));
         assert!(csv_content.contains("abc123"));

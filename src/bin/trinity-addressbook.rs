@@ -2,9 +2,9 @@
 //!
 //! Command-line interface for managing TrinityChain address book
 
+use std::env;
 use trinitychain::addressbook::{self, AddressBook};
 use trinitychain::error::ChainError;
-use std::env;
 
 fn main() -> Result<(), ChainError> {
     let args: Vec<String> = env::args().collect();
@@ -55,10 +55,10 @@ fn main() -> Result<(), ChainError> {
                 return Ok(());
             }
             let label = &args[2];
-            
+
             let mut new_address = None;
             let mut new_notes = None;
-            
+
             let mut i = 3;
             while i < args.len() {
                 match args[i].as_str() {
@@ -116,7 +116,7 @@ fn main() -> Result<(), ChainError> {
 
             let book = addressbook::load_default()?;
             let results = book.search(&query);
-            
+
             if results.is_empty() {
                 println!("No addresses found matching '{}'", query);
             } else {
@@ -131,7 +131,7 @@ fn main() -> Result<(), ChainError> {
         "list" | "ls" => {
             let book = addressbook::load_default()?;
             let entries = book.list();
-            
+
             if entries.is_empty() {
                 println!("Address book is empty");
             } else {
@@ -216,55 +216,63 @@ fn print_entry(entry: &trinitychain::addressbook::AddressEntry) {
 }
 
 fn print_entry_compact(entry: &trinitychain::addressbook::AddressEntry) {
-    let notes_preview = entry.notes.as_ref().map(|n| {
-        if n.len() > 30 {
-            format!(" - {}...", &n[..30])
-        } else {
-            format!(" - {}", n)
-        }
-    }).unwrap_or_default();
-    
-    println!("  {} → {}{}", 
-        entry.label, 
-        entry.address,
-        notes_preview
-    );
+    let notes_preview = entry
+        .notes
+        .as_ref()
+        .map(|n| {
+            if n.len() > 30 {
+                format!(" - {}...", &n[..30])
+            } else {
+                format!(" - {}", n)
+            }
+        })
+        .unwrap_or_default();
+
+    println!("  {} → {}{}", entry.label, entry.address, notes_preview);
 }
 
 fn print_stats(book: &AddressBook) {
     println!("📊 Address Book Statistics");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("📦 Total Entries: {}", book.len());
-    
+
     let entries = book.list();
     let with_notes = entries.iter().filter(|e| e.notes.is_some()).count();
-    
+
     println!("📝 Entries with notes: {}", with_notes);
     println!("📭 Entries without notes: {}", entries.len() - with_notes);
-    
+
     if !entries.is_empty() {
         // Find most recently added/updated
-        let newest = entries.iter().max_by(|a, b| a.created_at.cmp(&b.created_at));
-        let most_updated = entries.iter().max_by(|a, b| a.updated_at.cmp(&b.updated_at));
-        
+        let newest = entries
+            .iter()
+            .max_by(|a, b| a.created_at.cmp(&b.created_at));
+        let most_updated = entries
+            .iter()
+            .max_by(|a, b| a.updated_at.cmp(&b.updated_at));
+
         if let Some(entry) = newest {
             println!("🆕 Newest entry: {} ({})", entry.label, entry.created_at);
         }
-        
+
         if let Some(entry) = most_updated {
-            println!("🔄 Most recently updated: {} (v{}, {})", 
-                entry.label, entry.version, entry.updated_at);
+            println!(
+                "🔄 Most recently updated: {} (v{}, {})",
+                entry.label, entry.version, entry.updated_at
+            );
         }
-        
+
         // Find entry with most updates
         let most_versions = entries.iter().max_by_key(|e| e.version);
         if let Some(entry) = most_versions {
             if entry.version > 1 {
-                println!("🏆 Most updated entry: {} ({} versions)", 
-                    entry.label, entry.version);
+                println!(
+                    "🏆 Most updated entry: {} ({} versions)",
+                    entry.label, entry.version
+                );
             }
         }
     }
-    
+
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }

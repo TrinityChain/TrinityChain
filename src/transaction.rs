@@ -182,6 +182,14 @@ impl SubdivisionTx {
             }
         };
 
+        // Verify that the transaction's owner address matches the parent triangle's owner
+        if parent.owner != self.owner_address {
+            return Err(ChainError::InvalidTransaction(format!(
+                "Subdivision transaction owner {} does not match parent triangle owner {}",
+                self.owner_address, parent.owner
+            )));
+        }
+
         let expected_children = parent.subdivide();
 
         if self.children.len() != 3 {
@@ -439,19 +447,20 @@ mod tests {
     #[test]
     fn test_tx_validation_success() {
         let mut state = TriangleState::new();
+        let keypair = KeyPair::generate().unwrap();
+        let address = keypair.address();
+
         let parent = Triangle::new(
             Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
-            "test_owner".to_string(),
+            address.clone(),
         );
         let parent_hash = parent.hash();
         state.utxo_set.insert(parent_hash, parent.clone());
 
         let children = parent.subdivide();
-        let keypair = KeyPair::generate().unwrap();
-        let address = keypair.address();
 
         let mut tx = SubdivisionTx::new(
             parent_hash,

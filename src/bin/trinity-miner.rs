@@ -390,9 +390,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create and start network node
     let db_for_network = Database::open(&config.database.path).expect("Failed to open database");
-    let chain_for_network = db_for_network
-        .load_blockchain()
-        .unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
+    let chain_for_network = db_for_network.load_blockchain().unwrap_or_else(|_| {
+        Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain")
+    });
     let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
     let config_clone = Arc::clone(&config);
@@ -408,7 +408,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn mining task
     let mining_handle = tokio::spawn(async move {
-        mining_loop(beneficiary_clone, threads, stats_clone, Some(network), config).await;
+        mining_loop(
+            beneficiary_clone,
+            threads,
+            stats_clone,
+            Some(network),
+            config,
+        )
+        .await;
     });
 
     // UI loop
@@ -451,7 +458,9 @@ async fn mining_loop(
     config: Arc<Config>,
 ) {
     let db = Database::open(&config.database.path).expect("Failed to open database");
-    let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain"));
+    let mut chain = db.load_blockchain().unwrap_or_else(|_| {
+        Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain")
+    });
 
     let start_time = Instant::now();
     let mut blocks_mined = 0;
@@ -472,8 +481,11 @@ async fn mining_loop(
 
         let mut mempool_txs = chain.mempool.get_all_transactions();
         mempool_txs.sort_by(|a, b| b.fee().cmp(&a.fee()));
-        
-        let total_fees: f64 = mempool_txs.iter().map(|tx| tx.fee_area().to_num::<f64>()).sum();
+
+        let total_fees: f64 = mempool_txs
+            .iter()
+            .map(|tx| tx.fee_area().to_num::<f64>())
+            .sum();
         let block_reward = Blockchain::calculate_block_reward(new_height);
         let total_reward = block_reward + total_fees;
 
@@ -528,7 +540,8 @@ async fn mining_loop(
             network.broadcast_block(&new_block).await;
         }
 
-        if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty as u64) {
+        if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty as u64)
+        {
             // Handle error silently
         }
 
@@ -538,13 +551,18 @@ async fn mining_loop(
         // Update stats
         {
             let current_height = new_height;
-            let current_supply: f64 = chain.blocks.iter().flat_map(|b| &b.transactions).filter_map(|tx| {
-                if let Transaction::Coinbase(ctx) = tx {
-                    Some(ctx.reward_area.to_num::<f64>())
-                } else {
-                    None
-                }
-            }).sum();
+            let current_supply: f64 = chain
+                .blocks
+                .iter()
+                .flat_map(|b| &b.transactions)
+                .filter_map(|tx| {
+                    if let Transaction::Coinbase(ctx) = tx {
+                        Some(ctx.reward_area.to_num::<f64>())
+                    } else {
+                        None
+                    }
+                })
+                .sum();
             let current_reward = Blockchain::calculate_block_reward(current_height);
             let halving_era = current_height / 210_000;
             let blocks_to_halving = ((halving_era + 1) * 210_000).saturating_sub(current_height);
