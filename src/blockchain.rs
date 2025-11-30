@@ -272,27 +272,24 @@ impl TriangleState {
                 *owner_balance -= parent_value;
                 if *owner_balance < Coord::from_num(0) { *owner_balance = Coord::from_num(0); }
 
-                // d) Create new UTXOs for each child triangle.
-                let total_area_of_children = consumed_triangle.area();
-                if total_area_of_children == Coord::from_num(0) {
-                    return Err(ChainError::InvalidTransaction("Subdivision children have zero total area.".to_string()));
+                // d) Validate that the children's total value equals the parent's value minus the fee.
+                let total_child_value: Coord = tx.children.iter().map(|c| c.effective_value()).sum();
+                let expected_value = parent_value - tx.fee_area;
+
+                if (total_child_value - expected_value).abs() > GEOMETRIC_TOLERANCE {
+                    // Revert state changes before returning error
+                    self.utxo_set.insert(input_hash, consumed_triangle);
+                    *self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0)) += parent_value;
+                    return Err(ChainError::InvalidTransaction(format!(
+                        "Value mismatch in subdivision: parent ({}) - fee ({}) != children total ({}).",
+                        parent_value, tx.fee_area, total_child_value
+                    )));
                 }
-                let fee_ratio = tx.fee_area / total_area_of_children;
 
+                // e) Add new child UTXOs to the state and update balance.
                 for child in &tx.children {
-                    // The value of each child is its area, minus a proportional fee.
-                    let child_area = child.area();
-                    let child_value = child_area * (Coord::from_num(1.0) - fee_ratio);
-                    
-                    let new_utxo = child.clone()
-                        .change_owner(tx.owner_address.clone())
-                        .with_effective_value(child_value);
-
-                    // Add the new child UTXO to the state.
-                    self.utxo_set.insert(new_utxo.hash(), new_utxo);
-                    
-                    // e) Update the owner's balance with the value of the new child.
-                    *self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0)) += child_value;
+                    self.utxo_set.insert(child.hash(), child.clone());
+                    *self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0)) += child.effective_value();
                 }
             }
         }
@@ -806,7 +803,7 @@ mod tests {
         let mut state = TriangleState::new();
         let owner = create_test_address("owner");
 
-        // 1. Create a parent UTXO
+        // 1. Create a parent UTXO with an effective value of 100.
         let parent_triangle = Triangle::new(
             Point::new(Coord::from_num(0), Coord::from_num(0)),
             Point::new(Coord::from_num(20), Coord::from_num(0)),
@@ -814,49 +811,53 @@ mod tests {
             None, owner.clone()
         ); // Area = 100
         let parent_hash = parent_triangle.hash();
+        let parent_value = parent_triangle.effective_value();
         state.utxo_set.insert(parent_hash, parent_triangle.clone());
-        state.address_balances.insert(owner.clone(), parent_triangle.area());
+        state.address_balances.insert(owner.clone(), parent_value);
 
-        // 2. Create child triangles for subdivision using the correct method
-        let children = parent_triangle.subdivide();
+        // 2. Define fee and calculate the total value for the children.
+        let fee = Coord::from_num(10.0);
+        let total_child_value = parent_value - fee; // Should be 90.0
 
-        // 3. Create and apply the subdivision transaction
+        // 3. Create child triangles whose values sum to the required total.
+        // This simulates a client correctly constructing a subdivision transaction.
+        let base_children = parent_triangle.subdivide();
+        let child1_value = total_child_value / 3;
+        let child2_value = total_child_value / 3;
+        let child3_value = total_child_value - child1_value - child2_value; // Handle rounding
+
+        let children = vec![
+            base_children[0].clone().with_effective_value(child1_value),
+            base_children[1].clone().with_effective_value(child2_value),
+            base_children[2].clone().with_effective_value(child3_value),
+        ];
+
+        // 4. Create and apply the subdivision transaction.
         let subdivision_tx = SubdivisionTx {
             parent_hash,
             owner_address: owner.clone(),
-            children: children.to_vec(),
-            fee_area: Coord::from_num(10.0), // 10% fee
+            children,
+            fee_area: fee,
             nonce: 0,
             signature: None, public_key: None,
         };
         let tx = Transaction::Subdivision(subdivision_tx);
 
         let result = state.apply_transaction(&tx, 1);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Transaction should be valid, but failed with: {:?}", result.err());
 
-        // 4. Verify state changes
-        let expected_balance = Coord::from_num(90.0);
+        // 5. Verify state changes.
+        let expected_balance = total_child_value;
         assert!((state.get_balance(&owner) - expected_balance).abs() < GEOMETRIC_TOLERANCE, "Balance mismatch: expected {}, got {}", expected_balance, state.get_balance(&owner));
-        assert_eq!(state.utxo_set.len(), 3);
-        
-        if let Transaction::Subdivision(sub_tx) = tx {
-            let mut found_children = 0;
-            let fee_ratio = sub_tx.fee_area / parent_triangle.area();
+        assert_eq!(state.utxo_set.len(), 3, "There should be 3 new UTXOs");
 
+        // Verify that the child UTXOs are in the set with the correct values.
+        if let Transaction::Subdivision(sub_tx) = tx {
             for child in &sub_tx.children {
-                let expected_value = child.area() * (Coord::from_num(1.0) - fee_ratio);
-                let new_utxo = child.clone()
-                    .change_owner(sub_tx.owner_address.clone())
-                    .with_effective_value(expected_value);
-                
-                if let Some(utxo) = state.utxo_set.get(&new_utxo.hash()) {
-                    assert!((utxo.effective_value() - expected_value).abs() < GEOMETRIC_TOLERANCE, "Child UTXO value mismatch: expected {}, got {}", expected_value, utxo.effective_value());
-                    found_children += 1;
-                }
+                assert!(state.utxo_set.contains_key(&child.hash()), "Child UTXO not found in state");
+                let utxo = state.utxo_set.get(&child.hash()).unwrap();
+                assert_eq!(utxo.effective_value(), child.effective_value(), "Child UTXO value is incorrect in state");
             }
-            assert_eq!(found_children, 3);
-        } else {
-            panic!("Test setup error: tx should be a SubdivisionTx");
         }
     }
 }
