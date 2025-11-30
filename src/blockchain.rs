@@ -313,8 +313,6 @@ pub struct Blockchain {
     pub difficulty: u32,
     pub mempool: Mempool,
     pub state: TriangleState, // UTXO Cache (TriangleState)
-    // Mutex for difficulty adjustment to prevent race conditions during mining/sync
-    pub difficulty_mutex: Mutex<()>, 
 }
 
 impl Clone for Blockchain {
@@ -324,7 +322,6 @@ impl Clone for Blockchain {
             difficulty: self.difficulty,
             mempool: self.mempool.clone(),
             state: self.state.clone(),
-            difficulty_mutex: Mutex::new(()),
         }
     }
 }
@@ -339,7 +336,6 @@ impl Blockchain {
             difficulty: initial_difficulty,
             mempool: Mempool::new(),
             state: TriangleState::new(),
-            difficulty_mutex: Mutex::new(()),
         };
 
         // Apply the genesis block to initialize the state
@@ -422,12 +418,6 @@ impl Blockchain {
     /// This is the heart of the consensus logic, ensuring that only valid blocks
     /// are added to the chain.
     pub fn apply_block(&mut self, block: Block) -> Result<(), ChainError> {
-        // Lock to ensure atomic operation, preventing race conditions during concurrent
-        // block application or difficulty adjustments.
-        let _lock = self.difficulty_mutex.lock().map_err(|_| {
-            ChainError::InternalError("Failed to lock difficulty mutex for block application".to_string())
-        })?;
-
         let is_genesis = block.header.height == 0;
 
         // 1. ==================== Basic Header Validation ====================
