@@ -52,8 +52,17 @@ thiserror = "1.0"
 clap = { version = "4.5.53", features = ["derive"] }
 
 [[bin]]
-name = "trinity"
-path = "src/bin/main.rs"
+name = "trinity-guestbook"
+path = "src/bin/trinity-guestbook.rs"
+
+[[bin]]
+name = "trinity-user"
+path = "src/bin/trinity-user.rs"
+
+[[bin]]
+name = "trinity-wallet-backup"
+path = "src/bin/trinity-wallet-backup.rs"
+
 
 [dev-dependencies]
 axum-test = "14.1.1"

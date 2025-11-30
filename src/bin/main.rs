@@ -18,6 +18,7 @@ fn main() {
     println!("  - {}", "trinity-wallet-backup".bright_white());
     println!("  - {}", "trinity-wallet-restore".bright_white());
     println!("  - {}", "trinity-addressbook".bright_white());
+    println!("  - {}", "trinity-guestbook".bright_white());
     println!("  - {}", "trinity-connect".bright_white());
     println!("  - {}", "trinity-server".bright_white());
     println!("  - {}", "trinity-telegram-bot".bright_white());

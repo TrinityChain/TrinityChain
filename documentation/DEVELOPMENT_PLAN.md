@@ -112,9 +112,11 @@ Siertrichain is a revolutionary blockchain implementation that replaces traditio
 6. `trinity-send` - Transfer triangles
 7. `trinity-history` - Transaction history viewer
 8. `trinity-addressbook` - Manage contacts
-9. `trinity-mine-block` - Mine single block
-10. `trinity-miner` - Continuous mining daemon
-11. `trinity-node` - P2P network node
+9. `trinity-guestbook` - Sign and view the guestbook
+10. `trinity-user` - User login/logout management
+11. `trinity-mine-block` - Mine single block
+12. `trinity-miner` - Continuous mining daemon
+13. `trinity-node` - P2P network node
 
 #### Testing ✅
 - **33 Passing Tests**: Comprehensive test coverage

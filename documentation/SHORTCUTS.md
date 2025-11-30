@@ -64,6 +64,11 @@ For other shells:
 |----------|--------------|-------------|
 | `addressbook` | `cargo run --bin trinity-addressbook` | Manage address book |
 
+| Alias | Command | Description |
+| :--- | :--- | :--- |
+| `guestbook` | `cargo run --bin trinity-guestbook` | Sign and view the guestbook |
+| `user` | `cargo run --bin trinity-user` | User login/logout management |
+
 ### Release Mode (Optimized)
 
 For faster execution with optimizations enabled:

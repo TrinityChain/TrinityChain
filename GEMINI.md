@@ -64,6 +64,16 @@ cargo test --lib
 ./target/release/trinity-mine-block
 ```
 
+**Sign the guestbook:**
+```bash
+./target/release/trinity-guestbook sign "Your message here"
+```
+
+**View the guestbook:**
+```bash
+./target/release/trinity-guestbook view
+```
+
 ### Dashboard (React)
 
 **Install dependencies:**

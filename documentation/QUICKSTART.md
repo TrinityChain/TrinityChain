@@ -75,6 +75,8 @@ cargo build --release
 - `trinity-send` - Transfer triangles
 - `trinity-node` - Run P2P node
 - `trinity-api` - REST API server
+- `trinity-guestbook` - Sign and view the guestbook
+- `trinity-user` - User login/logout management
 
 ### Step 4: Create Wallet
 
