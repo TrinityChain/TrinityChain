@@ -98,7 +98,7 @@ cargo test --lib
 
 ```bash
 # Generate new wallet
-./target/release/trinity-wallet-new
+./target/release/trinity new-wallet
 
 # Output:
 # Mnemonic: abandon ability able about above absent absorb...
