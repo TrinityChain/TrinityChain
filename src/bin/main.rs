@@ -552,9 +552,6 @@ async fn run_send(to_address: &str, amount: f64, from: Option<&str>, memo: Optio
 }
 
 async fn run_history() -> Result<(), Box<dyn std::error::Error>> {
-    let logo = r##"#;
-    println!("{}", logo.bright_magenta());
-
     let home = std::env::var("HOME")?;
     let wallet_file = format!("{}/.trinitychain/wallet.json", home);
 
