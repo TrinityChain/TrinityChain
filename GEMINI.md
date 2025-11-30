@@ -61,7 +61,7 @@ cargo test --lib
 
 **Mine a block:**
 ```bash
-./target/release/trinity-mine-block
+./target/release/trinity-mine-block --wallet <wallet_name>
 ```
 
 **Sign the guestbook:**

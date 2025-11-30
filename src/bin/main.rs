@@ -20,7 +20,7 @@ fn main() {
     println!("  - {}", "trinity-send".bright_white());
     println!("  - {}", "trinity-history".bright_white());
     println!("  - {}", "trinity-balance".bright_white());
-    println!("  - {}", "trinity-wallet-new".bright_white());
+    println!("  - {}", "trinity-wallet".bright_white());
     println!("  - {}", "trinity-wallet-backup".bright_white());
     println!("  - {}", "trinity-wallet-restore".bright_white());
     println!("  - {}", "trinity-addressbook".bright_white());

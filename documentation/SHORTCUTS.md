@@ -31,30 +31,14 @@ For other shells:
 
 | Shortcut | Full Command | Description |
 |----------|--------------|-------------|
-| `wallet` | `cargo run --bin trinity-wallet` | Main wallet interface |
-| `wallet-new` | `cargo run --bin trinity-wallet-new` | Create a new wallet |
+| `wallet` | `cargo run --bin trinity-wallet` | Main wallet interface (use with `new`, `show`, `list` subcommands) |
 | `wallet-backup` | `cargo run --bin trinity-wallet-backup` | Backup your wallet |
 | `wallet-restore` | `cargo run --bin trinity-wallet-restore` | Restore wallet from backup |
-
-### Transactions
-
-| Shortcut | Full Command | Description |
-|----------|--------------|-------------|
 | `send` | `cargo run --bin trinity-send` | Send coins to an address |
 | `balance` | `cargo run --bin trinity-balance` | Check wallet balance |
 | `history` | `cargo run --bin trinity-history` | View transaction history |
-
-### Mining
-
-| Shortcut | Full Command | Description |
-|----------|--------------|-------------|
-| `miner` | `cargo run --bin trinity-miner` | Start the mining process |
-| `mine-block` | `cargo run --bin trinity-mine-block` | Mine a single block |
-
-### Network
-
-| Shortcut | Full Command | Description |
-|----------|--------------|-------------|
+| `miner` | `cargo run --bin trinity-miner` | Start the persistent mining process (beneficiary address from config.toml) |
+| `mine-block` | `cargo run --bin trinity-mine-block -- --wallet <name>` | Mine a single block (specify wallet by name) |
 | `node` | `cargo run --bin trinity-node` | Start a blockchain node |
 | `api` | `cargo run --bin trinity-api` | Start the API server |
 

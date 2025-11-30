@@ -12,10 +12,12 @@ git clone https://github.com/littlekickoffkittie/trinitychain.git
 cd trinitychain && cargo build --release
 
 # 2. Create wallet
-cargo run --release --bin trinity-wallet-new
+cargo run --release --bin trinity-wallet -- new
 
-# 3. Start mining (use the address from step 2)
-cargo run --release --bin trinity-miner <YOUR_ADDRESS_HERE>
+# 3. Configure your miner address in config.toml
+#    (replace "trinity-default-miner-address" with your address from step 2)
+#    Then start mining:
+cargo run --release --bin trinity-miner
 ```
 
 That's it! You're now mining triangular cryptocurrency. 🔺⛓️
@@ -68,8 +70,7 @@ cargo build --release
 ```
 
 **Available Commands:**
-- `trinity-wallet-new` - Create wallet
-- `trinity-wallet` - View wallet info
+- `trinity-wallet` - View wallet info, create new wallets with `new` subcommand
 - `trinity-miner` - Mine blocks (recommended)
 - `trinity-balance` - Check your balance
 - `trinity-send` - Transfer triangles
@@ -81,7 +82,7 @@ cargo build --release
 ### Step 4: Create Wallet
 
 ```bash
-cargo run --release --bin trinity-wallet-new
+cargo run --release --bin trinity-wallet -- new
 ```
 
 **Output:**
@@ -99,9 +100,23 @@ cargo run --release --bin trinity-wallet-new
 
 ### Step 5: Start Mining
 
+First, open the `config.toml` file in the project root and replace `"trinity-default-miner-address"` with **YOUR address** from step 4.
+
+```toml
+# In config.toml
+[miner]
+threads = 1
+beneficiary_address = "1KjT9P8mW...xyz123" # <-- PASTE YOUR ADDRESS HERE
+```
+
+Now, start the miner:
 ```bash
-# Replace with YOUR address from step 4
-cargo run --release --bin trinity-miner 1KjT9P8mW...xyz123
+cargo run --release --bin trinity-miner
+```
+
+Alternatively, to mine a single block with a named wallet:
+```bash
+cargo run --release --bin trinity-mine-block --wallet <your_wallet_name>
 ```
 
 **What you'll see:**
@@ -199,13 +214,13 @@ cargo run --release --bin trinity-send \
 
 ```bash
 # Person A (host):
-cargo run --release --bin trinity-node 8333
+cargo run --release --bin trinity-node --port 8333
 
 # Person B (connect to A):
-cargo run --release --bin trinity-node 8334 --peer <PERSON_A_IP>:8333
+cargo run --release --bin trinity-node --port 8334 --peer <PERSON_A_IP>:8333
 
 # Now Person B can mine:
-cargo run --release --bin trinity-miner <YOUR_ADDRESS> --peer <PERSON_A_IP>:8333
+cargo run --release --bin trinity-miner --peer <PERSON_A_IP>:8333
 ```
 
 ---
@@ -273,7 +288,7 @@ This usually means:
 # Stop miner (Ctrl+C)
 # Wait 1-2 seconds
 # Restart miner
-cargo run --release --bin trinity-miner <YOUR_ADDRESS>
+cargo run --release --bin trinity-miner
 ```
 
 ### "Database is locked"
@@ -292,7 +307,7 @@ pkill trinity
 
 ```bash
 # Create a new wallet:
-cargo run --release --bin trinity-wallet-new
+cargo run --release --bin trinity-wallet -- new
 
 # Or specify wallet location:
 export HOME=/path/to/wallet/directory
@@ -334,8 +349,8 @@ This is normal! CPU mining is intentionally slow.
 ### Scenario 1: Solo Mining (Just You)
 
 ```bash
-# Start mining, that's it!
-cargo run --release --bin trinity-miner <YOUR_ADDRESS>
+# Make sure your address is in config.toml, then:
+cargo run --release --bin trinity-miner
 ```
 
 **You'll get:**
@@ -347,13 +362,13 @@ cargo run --release --bin trinity-miner <YOUR_ADDRESS>
 
 ```bash
 # Friend 1 (host node):
-cargo run --release --bin trinity-node 8333
+cargo run --release --bin trinity-node --port 8333
 
 # Friend 2 (connect to Friend 1):
-cargo run --release --bin trinity-miner <ADDRESS> --peer <FRIEND1_IP>:8333
+cargo run --release --bin trinity-miner --peer <FRIEND1_IP>:8333
 
 # Friend 3 (connect to Friend 1):
-cargo run --release --bin trinity-miner <ADDRESS> --peer <FRIEND1_IP>:8333
+cargo run --release --bin trinity-miner --peer <FRIEND1_IP>:8333
 ```
 
 **Now you're all on the same blockchain!**
@@ -368,10 +383,10 @@ cargo run --release --bin trinity-miner <ADDRESS> --peer <FRIEND1_IP>:8333
 rm TrinityChain.db
 
 # Create new wallet:
-cargo run --release --bin trinity-wallet-new
+cargo run --release --bin trinity-wallet -- new
 
-# Start mining from genesis:
-cargo run --release --bin trinity-miner <YOUR_ADDRESS>
+# Configure config.toml with your new address, then:
+cargo run --release --bin trinity-miner
 ```
 
 ---
