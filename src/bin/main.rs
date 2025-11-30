@@ -112,6 +112,45 @@ impl Default for NodeStats {
     }
 }
 
+#[derive(Clone)]
+struct MiningStats {
+    mining_status: String,
+    difficulty: u32,
+    blocks_mined: u64,
+    chain_height: u64,
+    uptime_secs: u64,
+    avg_block_time: f64,
+    current_reward: f64,
+    total_earned: f64,
+    current_supply: f64,
+    blocks_to_halving: u64,
+    halving_era: u64,
+    last_block_hash: String,
+    last_block_time: f64,
+    recent_blocks: Vec<(u64, String, String)>,
+}
+
+impl Default for MiningStats {
+    fn default() -> Self {
+        Self {
+            mining_status: "Initializing...".to_string(),
+            difficulty: 0,
+            blocks_mined: 0,
+            chain_height: 0,
+            uptime_secs: 0,
+            avg_block_time: 0.0,
+            current_reward: 0.0,
+            total_earned: 0.0,
+            current_supply: 0.0,
+            blocks_to_halving: 0,
+            halving_era: 0,
+            last_block_hash: "N/A".to_string(),
+            last_block_time: 0.0,
+            recent_blocks: Vec::new(),
+        }
+    }
+}
+
 async fn run_node(peer: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
     let port = config.network.p2p_port;
@@ -459,7 +498,7 @@ async fn run_send(to_address: &str, amount: f64, from: Option<&str>, memo: Optio
         let memo_display = if m.len() > 45 {
             format!("{}", &m[..42])
         } else {
-            m.clone()
+            m.to_string()
         };
         println!("{}", format!("║  📝 Memo: {:<47} ║", memo_display).cyan());
     }
@@ -1035,6 +1074,133 @@ async fn mining_loop(
 
         sleep(Duration::from_millis(500)).await;
     }
+}
+
+fn draw_miner_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary_address: &str) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                Constraint::Length(3),
+                Constraint::Length(8),
+                Constraint::Min(10),
+                Constraint::Length(3),
+            ]
+            .as_ref(),
+        )
+        .split(f.size());
+
+    let title = Paragraph::new("TrinityChain Miner")
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .alignment(Alignment::Center);
+    f.render_widget(title, chunks[0]);
+
+    let top_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .split(chunks[1]);
+
+    let status_text = vec![
+        Line::from(vec![
+            Span::styled("Status: ", Style::default().fg(Color::Gray)),
+            Span::styled(stats.mining_status.clone(), Style::default().fg(Color::Green)),
+        ]),
+        Line::from(vec![
+            Span::styled("Beneficiary: ", Style::default().fg(Color::Gray)),
+            Span::raw(beneficiary_address),
+        ]),
+        Line::from(vec![
+            Span::styled("Uptime: ", Style::default().fg(Color::Gray)),
+            Span::raw(format!("{}s", stats.uptime_secs)),
+        ]),
+        Line::from(vec![
+            Span::styled("Blocks Mined: ", Style::default().fg(Color::Gray)),
+            Span::raw(stats.blocks_mined.to_string()),
+        ]),
+    ];
+
+    let status_widget = Paragraph::new(status_text)
+        .block(TuiBlock::default().borders(Borders::ALL).title("Miner Info"));
+    f.render_widget(status_widget, top_chunks[0]);
+
+    let chain_text = vec![
+        Line::from(vec![
+            Span::styled("Chain Height: ", Style::default().fg(Color::Gray)),
+            Span::raw(stats.chain_height.to_string()),
+        ]),
+        Line::from(vec![
+            Span::styled("Difficulty: ", Style::default().fg(Color::Gray)),
+            Span::raw(stats.difficulty.to_string()),
+        ]),
+        Line::from(vec![
+            Span::styled("Avg Block Time: ", Style::default().fg(Color::Gray)),
+            Span::raw(format!("{:.2}s", stats.avg_block_time)),
+        ]),
+        Line::from(vec![
+            Span::styled("Last Block Hash: ", Style::default().fg(Color::Gray)),
+            Span::raw(stats.last_block_hash.chars().take(16).collect::<String>() + "..."),
+        ]),
+    ];
+    let chain_widget = Paragraph::new(chain_text)
+        .block(TuiBlock::default().borders(Borders::ALL).title("Blockchain"));
+    f.render_widget(chain_widget, top_chunks[1]);
+
+    let block_list: Vec<Line> = stats.recent_blocks.iter().rev().map(|(height, hash, parent)| {
+        Line::from(vec![
+            Span::styled(format!("#{} ", height), Style::default().fg(Color::Cyan)),
+            Span::raw(format!("{} -> {}", parent.chars().take(8).collect::<String>(), hash.chars().take(8).collect::<String>())),
+        ])
+    }).collect();
+    let blocks_widget = Paragraph::new(block_list)
+        .block(TuiBlock::default().borders(Borders::ALL).title("Recent Blocks"));
+    f.render_widget(blocks_widget, chunks[2]);
+
+    let footer = Paragraph::new("Press 'q' to quit")
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+    f.render_widget(footer, chunks[3]);
+}
+
+async fn run_balance(address: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let (_config, chain) = load_blockchain_from_config()?;
+    let address_to_check = if let Some(addr) = address {
+        addr.to_string()
+    } else {
+        let wallet_data = wallet::load_default_wallet()?;
+        wallet_data.address
+    };
+
+    let mut balance = 0.0;
+    for triangle in chain.state.utxo_set.values() {
+        if triangle.owner == address_to_check {
+            balance += triangle.effective_value().to_num::<f64>();
+        }
+    }
+
+    println!("Balance for {}: {}", address_to_check, balance);
+    Ok(())
+}
+
+async fn run_new_wallet(name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(wallet_name) = name {
+        let wallet_path = wallet::get_named_wallet_path(wallet_name)?;
+        if wallet_path.exists() {
+            println!("Wallet '{}' already exists.", wallet_name);
+        } else {
+            wallet::create_named_wallet(wallet_name)?;
+            println!("Wallet '{}' created at: {}", wallet_name, wallet_path.display());
+        }
+    } else {
+        let wallet_path = wallet::get_default_wallet_path()?;
+        if wallet_path.exists() {
+            println!("Default wallet already exists.");
+        } else {
+            wallet::create_default_wallet()?;
+            println!("Default wallet created at: {}", wallet_path.display());
+        }
+    }
+    Ok(())
 }
 
 #[tokio::main]
