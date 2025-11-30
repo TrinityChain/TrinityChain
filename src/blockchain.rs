@@ -2,7 +2,6 @@
 //! chain validation, UTXO management, and mining difficulty adjustment.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
 use sha2::{Digest, Sha256};
 use crate::error::ChainError;
 use crate::geometry::{Coord, Point, Triangle, GEOMETRIC_TOLERANCE};

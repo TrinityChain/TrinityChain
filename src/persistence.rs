@@ -7,7 +7,6 @@ use crate::mempool::Mempool;
 use crate::transaction::Transaction;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 pub struct Database {
     conn: Connection,
@@ -340,7 +339,6 @@ impl Database {
             difficulty,
             mempool: Mempool::new(),
             state,
-            difficulty_mutex: Mutex::new(()),
         };
 
         Ok(blockchain)
