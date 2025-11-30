@@ -158,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = chain.mempool.add_transaction(tx);
             }
 
-            if chain.mempool.len() > 0 {
+            if !chain.mempool.is_empty() {
                 pb.println(format!(
                     "📬 {} pending transaction(s) already in mempool",
                     chain.mempool.len()

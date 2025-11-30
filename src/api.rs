@@ -599,7 +599,7 @@ async fn get_blockchain_stats(State(node): State<Arc<Node>>) -> impl IntoRespons
     let blockchain = node.blockchain.read().await;
     let stats = StatsResponse {
         height: blockchain.blocks.len() as u64,
-        difficulty: blockchain.difficulty as u32,
+        difficulty: blockchain.difficulty,
         mempool_size: blockchain.mempool.len(),
         total_blocks: blockchain.blocks.len() as u64,
     };

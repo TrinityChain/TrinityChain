@@ -266,7 +266,7 @@ impl Database {
         }
 
         if blocks.is_empty() {
-            return Ok(Blockchain::new("".to_string(), 0)?);
+            return Blockchain::new("".to_string(), 0);
         }
 
         let mut utxo_set = HashMap::new();

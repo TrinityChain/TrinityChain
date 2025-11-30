@@ -566,7 +566,7 @@ impl Blockchain {
     /// `DIFFICULTY_ADJUSTMENT_INTERVAL` blocks.
     fn adjust_difficulty(&mut self) {
         let current_height = self.blocks.last().map_or(0, |b| b.header.height);
-        if current_height > 0 && current_height % DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
+        if current_height > 0 && current_height.is_multiple_of(DIFFICULTY_ADJUSTMENT_INTERVAL) {
             let last_adjustment_block = self
                 .blocks
                 .get((current_height - DIFFICULTY_ADJUSTMENT_INTERVAL) as usize);
@@ -580,7 +580,7 @@ impl Blockchain {
                 let ratio = actual_time as f64 / expected_time as f64;
 
                 // Clamp the ratio to prevent drastic changes
-                let ratio = ratio.max(0.25).min(4.0);
+                let ratio = ratio.clamp(0.25, 4.0);
 
                 let new_difficulty = (self.difficulty as f64 * ratio) as u32;
                 // Ensure difficulty is at least 1

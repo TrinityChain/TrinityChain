@@ -247,7 +247,7 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
     f.render_widget(stats_widget, chunks[2]);
 
     // Supply Progress
-    let supply_pct = (stats.current_supply as f64 / stats.max_supply as f64) * 100.0;
+    let supply_pct = (stats.current_supply / stats.max_supply as f64) * 100.0;
     let gauge = Gauge::default()
         .block(
             TuiBlock::default()
