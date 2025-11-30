@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 /// Coordinate type for deterministic geometric calculations.
 pub type Coord = I32F32;
 /// Tolerance for fixed-point comparisons to check for degeneracy/equality.
-pub const GEOMETRIC_TOLERANCE: Coord = I32F32::from_bits(1); // Smallest possible value
+pub const GEOMETRIC_TOLERANCE: Coord = I32F32::from_bits(42950); // Approx 1e-5
 
 // ----------------------------------------------------------------------------
 // 1.4 Coordinate System: Point

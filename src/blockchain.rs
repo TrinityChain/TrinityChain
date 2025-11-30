@@ -89,8 +89,7 @@ impl Block {
         hasher.finalize().into()
     }
 
-    pub fn hash_to_u256(hash: &Sha256Hash) -> [u8; 32] {
-        // Remove "Simple placeholder for conversion"
+    pub fn hash_as_u256(hash: &Sha256Hash) -> [u8; 32] {
         *hash
     }
 
@@ -100,8 +99,8 @@ impl Block {
         let leading_zeros = *difficulty / 8; // Number of leading zero bytes
         let partial_bits = *difficulty % 8; // Number of partial bits
         
-        for i in 0..leading_zeros as usize {
-            target[i] = 0;
+        for item in target.iter_mut().take(leading_zeros as usize) {
+            *item = 0;
         }
 
         if leading_zeros < 32 && partial_bits > 0 {
@@ -139,82 +138,89 @@ impl TriangleState {
     }
 
     /// Updates the UTXO set and derived balances based on a transaction.
-    /// This is the core state transition logic.
+    /// This is the core state transition logic for the blockchain. It is critical
+    /// that this function is correct and deterministic.
     pub fn apply_transaction(&mut self, tx: &Transaction, _block_height: u64) -> Result<(), ChainError> {
         match tx {
-            // 1. Coinbase: Creates new value and assigns it to the miner (beneficiary)
+            // ================== 1. Coinbase Transaction ==================
+            // Creates new value (area) and assigns it to the miner's address (beneficiary).
             Transaction::Coinbase(tx) => {
-                // Create the new Genesis Triangle for the reward
+                // a) Create the new Genesis Triangle for the block reward.
+                // This triangle has a specific area but its geometric points are zero,
+                // as it doesn't represent a real geometric shape but rather a value.
                 let new_triangle = Triangle::new(
-                    Point::new(Coord::from_num(0.0), Coord::from_num(0.0)), // Point A
-                    Point::new(Coord::from_num(0.0), Coord::from_num(0.0)), // Point B
-                    Point::new(Coord::from_num(0.0), Coord::from_num(0.0)), // Point C
+                    Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+                    Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
+                    Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
                     None,
                     tx.beneficiary_address.clone(),
                 )
                 .with_effective_value(tx.reward_area);
 
+                // b) Add the new triangle to the UTXO set, indexed by the transaction hash.
                 let tx_hash = Transaction::Coinbase(tx.clone()).hash();
-                self.utxo_set.insert(tx_hash, new_triangle.clone());
+                self.utxo_set.insert(tx_hash, new_triangle);
                 
-                // Update balance for the beneficiary
+                // c) Update the balance for the beneficiary address.
                 *self.address_balances.entry(tx.beneficiary_address.clone()).or_insert(Coord::from_num(0)) += tx.reward_area;
             }
 
-            // 2. Transfer: Consumes one UTXO and creates a new one (or two: change is not implemented yet)
+            // ================== 2. Transfer Transaction ==================
+            // Consumes one UTXO and creates one or two new UTXOs (one for the recipient,
+            // and optionally one for the sender's change).
             Transaction::Transfer(tx) => {
-                // a) Validate and remove input (Consumed UTXO)
+                // a) Find and remove the input UTXO being spent.
                 let input_hash = tx.input_hash;
                 let consumed_triangle = self.utxo_set.remove(&input_hash).ok_or_else(|| {
                     ChainError::TriangleNotFound(format!(
-                        "Transfer input {} not found in UTXO set",
+                        "Input UTXO not found for transfer: {}",
                         hex::encode(input_hash)
                     ))
                 })?;
 
-                // b) Check ownership and decrease sender balance
+                // b) Verify that the sender owns the input UTXO.
+                // This is a critical check to prevent theft.
                 if consumed_triangle.owner != tx.sender {
-                    // This check should have happened in tx.validate_with_state, but we ensure state is consistent
-                    self.utxo_set.insert(input_hash, consumed_triangle.clone()); // Put it back
+                    // If ownership is invalid, revert the state change (put the UTXO back) and error out.
+                    self.utxo_set.insert(input_hash, consumed_triangle.clone());
                     return Err(ChainError::InvalidTransaction(format!(
-                        "Sender {} does not own input triangle (owned by {})",
+                        "Sender {} does not own input UTXO (owned by {})",
                         tx.sender, consumed_triangle.owner
                     )));
                 }
-
+                
                 let input_value = consumed_triangle.effective_value();
                 let total_spent = tx.amount + tx.fee_area;
                 let remaining_value = input_value - total_spent;
-                
-                // Decrease sender balance by the full consumed value (value + fee + remainder)
-                let sender_balance = self.address_balances.entry(tx.sender.clone()).or_insert(Coord::from_num(0));
-                *sender_balance = *sender_balance - input_value;
-                if *sender_balance < Coord::from_num(0) { *sender_balance = Coord::from_num(0); } // Prevent negative balance
 
-                // c) Create new UTXO for the new owner (Output UTXO)
+                // c) Decrease the sender's balance by the full value of the consumed UTXO.
+                // The change amount will be added back later if applicable.
+                let sender_balance = self.address_balances.entry(tx.sender.clone()).or_insert(Coord::from_num(0));
+                *sender_balance -= input_value;
+                if *sender_balance < Coord::from_num(0) { *sender_balance = Coord::from_num(0); }
+
+                // d) Create the new UTXO for the recipient.
                 let new_owner_triangle = consumed_triangle.clone()
                     .change_owner(tx.new_owner.clone())
-                    .with_effective_value(tx.amount); // Assign the transferred amount as new value
+                    .with_effective_value(tx.amount); // The value is the amount being transferred.
 
                 let tx_hash = Transaction::Transfer(tx.clone()).hash();
                 self.utxo_set.insert(tx_hash, new_owner_triangle);
 
-                // d) Update new owner balance
+                // e) Update the recipient's balance.
                 *self.address_balances.entry(tx.new_owner.clone()).or_insert(Coord::from_num(0)) += tx.amount;
 
-                // e) Handle Change UTXO (Remaining value is treated as 'change' and returned to sender)
+                // f) Handle the change. If there's remaining value, create a new UTXO for the sender.
                 if remaining_value > GEOMETRIC_TOLERANCE {
-                    // Create a separate UTXO for the change, sent back to the sender
+                    // Create a pseudo-transaction for the change to get a unique hash.
                     let change_tx = Transaction::Transfer(TransferTx {
-                        input_hash: tx_hash, // Use the hash of the current output as a pseudo-input for change
+                        input_hash: tx_hash, // The "input" for the change is the hash of the main transfer output.
                         new_owner: tx.sender.clone(),
                         sender: tx.sender.clone(),
                         amount: remaining_value,
-                        fee_area: Coord::from_num(0), // No fee on change
-                        nonce: 0,
-                        signature: None,
-                        public_key: None,
-                        memo: Some("Change".to_string()),
+                        fee_area: Coord::from_num(0), // No fee on change.
+                        nonce: tx.nonce + 1, // Different nonce to ensure different hash.
+                        signature: None, public_key: None, memo: Some("Change".to_string()),
                     });
                     
                     let change_hash = change_tx.hash();
@@ -224,53 +230,58 @@ impl TriangleState {
 
                     self.utxo_set.insert(change_hash, change_triangle);
                     
-                    // Re-add change value to sender's balance (since we deducted the whole input_value earlier)
+                    // Add the change value back to the sender's balance.
                     *self.address_balances.entry(tx.sender.clone()).or_insert(Coord::from_num(0)) += remaining_value;
                 }
             }
 
-            // 3. Subdivision: Consumes one UTXO and creates three new children UTXOs
+            // ================== 3. Subdivision Transaction ==================
+            // Consumes one parent UTXO and creates multiple new children UTXOs from it.
             Transaction::Subdivision(tx) => {
-                // a) Validate and remove input (Consumed UTXO)
+                // a) Find and remove the parent UTXO being subdivided.
                 let input_hash = tx.parent_hash;
                 let consumed_triangle = self.utxo_set.remove(&input_hash).ok_or_else(|| {
                     ChainError::TriangleNotFound(format!(
-                        "Subdivision parent {} not found in UTXO set",
+                        "Parent UTXO for subdivision not found: {}",
                         hex::encode(input_hash)
                     ))
                 })?;
 
-                // b) Check ownership
+                // b) Verify ownership of the parent triangle.
                 if consumed_triangle.owner != tx.owner_address {
-                    self.utxo_set.insert(input_hash, consumed_triangle); // Put it back
-                    return Err(ChainError::InvalidTransaction(
-                        "Subdivision tx owner does not match triangle owner".to_string()
-                    ));
+                    self.utxo_set.insert(input_hash, consumed_triangle.clone()); // Revert state change.
+                    return Err(ChainError::InvalidTransaction(format!(
+                        "Subdivision owner {} does not match parent triangle owner {}",
+                        tx.owner_address, consumed_triangle.owner
+                    )));
                 }
 
-                // c) Remove parent value from owner's balance
+                // c) Decrease the owner's balance by the value of the consumed parent.
                 let parent_value = consumed_triangle.effective_value();
                 let owner_balance = self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0));
-                *owner_balance = *owner_balance - parent_value;
-                if *owner_balance < Coord::from_num(0) { *owner_balance = Coord::from_num(0); } // Prevent negative balance
+                *owner_balance -= parent_value;
+                if *owner_balance < Coord::from_num(0) { *owner_balance = Coord::from_num(0); }
 
-                // d) Create new UTXOs (Outputs)
+                // d) Create new UTXOs for each child triangle.
                 let total_area_of_children = consumed_triangle.area();
+                if total_area_of_children == Coord::from_num(0) {
+                    return Err(ChainError::InvalidTransaction("Subdivision children have zero total area.".to_string()));
+                }
                 let fee_ratio = tx.fee_area / total_area_of_children;
 
                 for child in &tx.children {
-                    // The value of each child is calculated based on its proportion of the parent's area
+                    // The value of each child is its area, minus a proportional fee.
                     let child_area = child.area();
                     let child_value = child_area * (Coord::from_num(1.0) - fee_ratio);
                     
                     let new_utxo = child.clone()
                         .change_owner(tx.owner_address.clone())
-                        .with_effective_value(child_value); // Assign new value post-fee
+                        .with_effective_value(child_value);
 
-                    // Hash the new UTXO based on its properties (Triangle hash)
-                    self.utxo_set.insert(new_utxo.hash(), new_utxo.clone());
+                    // Add the new child UTXO to the state.
+                    self.utxo_set.insert(new_utxo.hash(), new_utxo);
                     
-                    // e) Update owner balance with the new children's value
+                    // e) Update the owner's balance with the value of the new child.
                     *self.address_balances.entry(tx.owner_address.clone()).or_insert(Coord::from_num(0)) += child_value;
                 }
             }
@@ -371,94 +382,135 @@ impl Blockchain {
     // Core Chain and State Logic
     // ============================================================================
 
+    /// Validates that no UTXOs are spent more than once within the same block.
+    fn validate_no_double_spend(block: &Block) -> Result<(), ChainError> {
+        let mut seen_inputs = HashMap::new();
+        for tx in &block.transactions {
+            let input_hash = match tx {
+                Transaction::Transfer(t) => Some(t.input_hash),
+                Transaction::Subdivision(s) => Some(s.parent_hash),
+                _ => None, // Coinbase has no input
+            };
+
+            if let Some(hash) = input_hash {
+                if let Some(conflicting_tx_hash) = seen_inputs.get(&hash) {
+                    return Err(ChainError::InvalidTransaction(format!(
+                        "Double spend detected in block. UTXO {} is spent by both {} and {}",
+                        hex::encode(hash),
+                        hex::encode(conflicting_tx_hash),
+                        hex::encode(tx.hash())
+                    )));
+                }
+                seen_inputs.insert(hash, tx.hash());
+            }
+        }
+        Ok(())
+    }
+
     /// Attempts to apply a block to the chain, performing all necessary validations.
+    /// This is the heart of the consensus logic, ensuring that only valid blocks
+    /// are added to the chain.
     pub fn apply_block(&mut self, block: Block) -> Result<(), ChainError> {
-        let _lock = self.difficulty_mutex.lock().map_err(|_| ChainError::InternalError("Failed to lock difficulty mutex".to_string()))?;
+        // Lock to ensure atomic operation, preventing race conditions during concurrent
+        // block application or difficulty adjustments.
+        let _lock = self.difficulty_mutex.lock().map_err(|_| {
+            ChainError::InternalError("Failed to lock difficulty mutex for block application".to_string())
+        })?;
 
         let is_genesis = block.header.height == 0;
 
-        // 1. Validate block height and previous hash
+        // 1. ==================== Basic Header Validation ====================
         if !is_genesis {
-            let last_block = self.blocks.last().ok_or(ChainError::InvalidBlock("Chain is empty, but block height is not 0".to_string()))?;
+            let last_block = self.blocks.last().ok_or_else(|| {
+                ChainError::InvalidBlock(
+                    "Cannot apply non-genesis block; the chain is empty.".to_string(),
+                )
+            })?;
 
+            // a) Check for sequential height
             if block.header.height != last_block.header.height + 1 {
                 return Err(ChainError::InvalidBlock(format!(
-                    "Expected height {}, got {}",
+                    "Invalid block height. Expected {}, but got {}.",
                     last_block.header.height + 1,
                     block.header.height
                 )));
             }
 
+            // b) Check for correct previous hash link
             if block.header.previous_hash != last_block.hash() {
-                return Err(ChainError::InvalidBlock("Previous hash mismatch".to_string()));
+                return Err(ChainError::InvalidBlock(format!(
+                    "Invalid previous block hash. Expected {}, but got {}.",
+                    hex::encode(last_block.hash()),
+                    hex::encode(block.header.previous_hash)
+                )));
             }
-        } else if self.blocks.len() > 0 {
-             return Err(ChainError::InvalidBlock("Genesis block already exists".to_string()));
+        } else if !self.blocks.is_empty() {
+            // Genesis block can only be applied to an empty chain
+            return Err(ChainError::InvalidBlock(
+                "Genesis block can only be applied to an empty chain.".to_string(),
+            ));
         }
 
-        // 2. Validate Proof-of-Work (PoW)
+        // 2. ==================== Proof-of-Work (PoW) Validation ====================
         if !self.verify_pow(&block) {
-            return Err(ChainError::InvalidBlock("Invalid Proof-of-Work".to_string()));
+            return Err(ChainError::InvalidBlock(
+                "Invalid Proof-of-Work: Block hash does not meet difficulty target.".to_string(),
+            ));
         }
 
-        // 3. Temporary state to check transaction validity
-        let mut temp_state = self.state.clone(); 
-        let mut seen_utxos: HashMap<Sha256Hash, Sha256Hash> = HashMap::new(); // Tracks UTXOs used in this block
+        // 3. ================= Transaction and State Validation =================
+        // Create a temporary state to simulate the application of transactions.
+        // If any transaction fails, we discard this state, leaving the main state untouched.
+        let mut temp_state = self.state.clone();
 
-        // 4. Validate and apply transactions to temporary state
+        // a) Check for double spending within the block itself
+        Self::validate_no_double_spend(&block)?;
+
+        // b) Validate and apply each transaction sequentially
         for (i, tx) in block.transactions.iter().enumerate() {
-            // All transactions must validate their size first
+            // All transactions must adhere to size limits.
             tx.validate_size()?;
 
-            // The first transaction must be a Coinbase transaction
+            // The first transaction MUST be a Coinbase transaction.
             if i == 0 {
-                match tx {
-                    Transaction::Coinbase(_) => {},
-                    _ => return Err(ChainError::InvalidBlock("First transaction must be Coinbase".to_string())),
+                if !matches!(tx, Transaction::Coinbase(_)) {
+                    return Err(ChainError::InvalidBlock(
+                        "First transaction in a block must be a Coinbase transaction.".to_string(),
+                    ));
                 }
             } else {
-                // Check general validation (including signature)
+                // All other transactions must be standard and pass signature/state checks.
                 tx.validate(&temp_state)?;
             }
 
-            // Check for double spending within the block for Transfer and Subdivision
-            match tx {
-                Transaction::Transfer(transfer_tx) => {
-                    if seen_utxos.contains_key(&transfer_tx.input_hash) {
-                         return Err(ChainError::InvalidTransaction("Double spend detected within block".to_string()));
-                    }
-                    // Mark input as used
-                    seen_utxos.insert(transfer_tx.input_hash, tx.hash());
-                },
-                Transaction::Subdivision(subdivision_tx) => {
-                    if seen_utxos.contains_key(&subdivision_tx.parent_hash) {
-                         return Err(ChainError::InvalidTransaction("Double spend detected within block".to_string()));
-                    }
-                    // Mark input as used
-                    seen_utxos.insert(subdivision_tx.parent_hash, tx.hash());
-                },
-                _ => {} // Coinbase has no input to double spend
-            }
-
-            // Apply transaction to the temporary state
+            // Apply the transaction to the temporary state, updating the UTXO set.
             temp_state.apply_transaction(tx, block.header.height)?;
         }
-        
-        // 5. Finalize block validity checks
-        if Block::calculate_merkle_root(&block.transactions) != block.header.merkle_root {
-            return Err(ChainError::InvalidBlock("Merkle root mismatch".to_string()));
+
+        // 4. ==================== Final Block Validation ====================
+        // a) Verify the Merkle root matches the transactions in the block.
+        let expected_merkle_root = Block::calculate_merkle_root(&block.transactions);
+        if expected_merkle_root != block.header.merkle_root {
+            return Err(ChainError::InvalidBlock(format!(
+                "Merkle root mismatch. Expected {}, but got {}.",
+                hex::encode(expected_merkle_root),
+                hex::encode(block.header.merkle_root)
+            )));
         }
-        
-        // 6. Update chain state
+
+        // 5. ==================== Commit to Chain State ====================
+        // All checks passed. The block is valid.
+        // a) Add the block to the blockchain.
         self.blocks.push(block.clone());
-        self.state = temp_state; // Commit the temporary state
-        
-        // 7. Remove confirmed transactions from mempool
+        // b) Commit the temporary state as the new official state.
+        self.state = temp_state;
+
+        // c) Remove the newly confirmed transactions from the mempool.
         for tx in &block.transactions {
             self.mempool.remove_transaction(&tx.hash());
         }
 
-        // 8. Adjust difficulty (This logic is usually complex and based on time, skipping for now)
+        // d) TODO: Adjust difficulty based on block time.
         // self.adjust_difficulty();
 
         Ok(())
@@ -467,7 +519,7 @@ impl Blockchain {
     /// Verifies the Proof-of-Work constraint of a block.
     fn verify_pow(&self, block: &Block) -> bool {
         let hash_target = Block::hash_to_target(&block.header.difficulty);
-        let block_hash_int = Block::hash_to_u256(&block.hash());
+        let block_hash_int = Block::hash_as_u256(&block.hash());
         
         // Block hash must be less than or equal to the target
         block_hash_int <= hash_target 
@@ -481,28 +533,304 @@ impl Blockchain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transaction::{SubdivisionTx, TransferTx};
+    use crate::geometry::{Point, Coord};
+    fn create_test_address(id: &str) -> Address {
+        id.to_string()
+    }
+
+    fn create_test_blockchain() -> Blockchain {
+        Blockchain::new(create_test_address("miner1"), 1).unwrap()
+    }
+    
+    fn create_test_transaction(i: u8) -> Transaction {
+        Transaction::Coinbase(CoinbaseTx {
+            reward_area: Coord::from_num(i),
+            beneficiary_address: create_test_address("test"),
+        })
+    }
 
     #[test]
-    fn test_new_blockchain() {
-        let blockchain = Blockchain::new("test_miner".to_string(), 1).unwrap();
+    fn test_new_blockchain_creates_genesis_block() {
+        let blockchain = create_test_blockchain();
         assert_eq!(blockchain.blocks.len(), 1);
         let genesis_block = &blockchain.blocks[0];
         assert_eq!(genesis_block.header.height, 0);
         assert_eq!(genesis_block.header.previous_hash, [0u8; 32]);
+        assert_eq!(blockchain.state.get_balance(&create_test_address("miner1")), Coord::from_num(1_000_000.0));
     }
 
     #[test]
-    fn test_apply_invalid_block() {
-        let mut blockchain = Blockchain::new("test_miner".to_string(), 1).unwrap();
+    fn test_block_header_hash() {
+        let header = BlockHeader {
+            height: 1,
+            timestamp: 12345,
+            previous_hash: [1; 32],
+            merkle_root: [2; 32],
+            difficulty: 10,
+            nonce: 42,
+        };
+        let hash = header.hash();
+        assert_ne!(hash, [0; 32]);
+    }
+
+    #[test]
+    fn test_calculate_merkle_root() {
+        let tx1 = create_test_transaction(1);
+        let tx2 = create_test_transaction(2);
+
+        // Test with no transactions
+        let root_empty = Block::calculate_merkle_root(&[]);
+        assert_ne!(root_empty, [0u8; 32]); // Should be hash of empty data, not zeros
+
+        // Test with one transaction
+        let root_one = Block::calculate_merkle_root(&[tx1.clone()]);
+        let mut hasher = Sha256::new();
+        hasher.update(tx1.hash());
+        let expected_one: Sha256Hash = hasher.finalize().into();
+        assert_eq!(root_one, expected_one);
+
+        // Test with multiple transactions
+        let root_multiple = Block::calculate_merkle_root(&[tx1.clone(), tx2.clone()]);
+        let mut hasher_multiple = Sha256::new();
+        hasher_multiple.update(tx1.hash());
+        hasher_multiple.update(tx2.hash());
+        let expected_multiple: Sha256Hash = hasher_multiple.finalize().into();
+        assert_eq!(root_multiple, expected_multiple);
+    }
+
+    #[test]
+    fn test_hash_to_target() {
+        let target1 = Block::hash_to_target(&8);
+        assert_eq!(target1[0], 0);
+        assert_eq!(target1[1], 0xFF);
+
+        let target2 = Block::hash_to_target(&16);
+        assert_eq!(target2[0], 0);
+        assert_eq!(target2[1], 0);
+        assert_eq!(target2[2], 0xFF);
+
+        let target3 = Block::hash_to_target(&10);
+        assert_eq!(target3[0], 0);
+        assert_eq!(target3[1], 0b0011_1111);
+    }
+    
+    #[test]
+    fn test_calculate_block_reward() {
+        assert_eq!(Blockchain::calculate_block_reward(0), 50.0);
+        assert_eq!(Blockchain::calculate_block_reward(210000 - 1), 50.0);
+        assert_eq!(Blockchain::calculate_block_reward(210000), 25.0);
+        assert_eq!(Blockchain::calculate_block_reward(420000), 12.5);
+        // Test far in the future
+        assert_eq!(Blockchain::calculate_block_reward(210000 * 64), 0.0);
+    }
+
+    #[test]
+    fn test_apply_block_valid() {
+        let mut blockchain = create_test_blockchain();
         let last_block = blockchain.blocks.last().unwrap().clone();
-        let new_block = Block::new(
-            last_block.header.height + 2, // Invalid height
-            last_block.hash(),
-            1,
-            vec![],
-        );
-        let res = blockchain.apply_block(new_block);
-        assert!(res.is_err());
+        
+        let tx = Transaction::Coinbase(CoinbaseTx {
+            reward_area: Coord::from_num(50.0),
+            beneficiary_address: create_test_address("miner2"),
+        });
+        
+        let block = Block::new(1, last_block.hash(), 1, vec![tx]);
+        let mined_block = mine_block(block).unwrap();
+
+        let result = blockchain.apply_block(mined_block);
+        assert!(result.is_ok());
+        assert_eq!(blockchain.blocks.len(), 2);
+        assert_eq!(blockchain.state.get_balance(&create_test_address("miner2")), Coord::from_num(50.0));
+    }
+
+    #[test]
+    fn test_apply_block_invalid_height() {
+        let mut blockchain = create_test_blockchain();
+        let last_block = blockchain.blocks.last().unwrap().clone();
+        
+        let block = Block::new(2, last_block.hash(), 1, vec![]); // Invalid height
+        
+        let result = blockchain.apply_block(block);
+        assert!(matches!(result, Err(ChainError::InvalidBlock(_))));
+    }
+
+    #[test]
+    fn test_apply_block_invalid_prev_hash() {
+        let mut blockchain = create_test_blockchain();
+        
+        let block = Block::new(1, [0; 32], 1, vec![]); // Invalid prev hash
+        
+        let result = blockchain.apply_block(block);
+        assert!(matches!(result, Err(ChainError::InvalidBlock(_))));
+    }
+
+    #[test]
+    fn test_apply_block_invalid_pow() {
+        let mut blockchain = create_test_blockchain();
+        let last_block = blockchain.blocks.last().unwrap().clone();
+        
+        // Block without mining
+        let block = Block::new(1, last_block.hash(), 20, vec![]); // High difficulty
+        
+        let result = blockchain.apply_block(block);
+        assert!(matches!(result, Err(ChainError::InvalidBlock(msg)) if msg.contains("Invalid Proof-of-Work")));
+    }
+
+    #[test]
+    fn test_apply_block_double_spend_in_block() {
+        let mut blockchain = create_test_blockchain();
+
+        // Create a UTXO to be spent
+        let initial_tx = blockchain.blocks[0].transactions[0].clone();
+        let input_hash = initial_tx.hash();
+
+        let transfer_tx = TransferTx {
+            input_hash,
+            new_owner: create_test_address("recipient"),
+            sender: create_test_address("miner1"),
+            amount: Coord::from_num(100.0),
+            fee_area: Coord::from_num(1.0),
+            nonce: 0,
+            signature: None, // Simplified for test
+            public_key: None,
+            memo: None,
+        };
+
+        let tx1 = Transaction::Transfer(transfer_tx.clone());
+        let tx2 = Transaction::Transfer(transfer_tx); // Same input hash
+
+        let last_block = blockchain.blocks.last().unwrap().clone();
+        let coinbase = Transaction::Coinbase(CoinbaseTx {
+            reward_area: Coord::from_num(50.0),
+            beneficiary_address: create_test_address("miner1"),
+        });
+        
+        let block = Block::new(1, last_block.hash(), 1, vec![coinbase, tx1, tx2]);
+        let mined_block = mine_block(block).unwrap();
+
+        let result = blockchain.apply_block(mined_block);
+        assert!(matches!(result, Err(ChainError::InvalidTransaction(msg)) if msg.contains("Double spend detected")));
+    }
+    
+    #[test]
+    fn test_state_apply_coinbase_tx() {
+        let mut state = TriangleState::new();
+        let address = create_test_address("miner");
+        let tx = Transaction::Coinbase(CoinbaseTx {
+            reward_area: Coord::from_num(100.0),
+            beneficiary_address: address.clone(),
+        });
+
+        let result = state.apply_transaction(&tx, 0);
+        assert!(result.is_ok());
+        assert_eq!(state.get_balance(&address), Coord::from_num(100.0));
+        assert_eq!(state.utxo_set.len(), 1);
+    }
+
+    #[test]
+    fn test_state_apply_transfer_tx() {
+        let mut state = TriangleState::new();
+        let sender = create_test_address("sender");
+        let recipient = create_test_address("recipient");
+
+        // 1. Create a UTXO for the sender
+        let initial_triangle = Triangle::new(
+            Point::new(Coord::from_num(0), Coord::from_num(0)),
+            Point::new(Coord::from_num(10), Coord::from_num(0)),
+            Point::new(Coord::from_num(5), Coord::from_num(10)),
+            None,
+            sender.clone(),
+        ).with_effective_value(Coord::from_num(1000.0));
+        let input_hash = initial_triangle.hash();
+        state.utxo_set.insert(input_hash, initial_triangle);
+        state.address_balances.insert(sender.clone(), Coord::from_num(1000.0));
+
+        // 2. Create and apply the transfer
+        let tx = Transaction::Transfer(TransferTx {
+            input_hash,
+            new_owner: recipient.clone(),
+            sender: sender.clone(),
+            amount: Coord::from_num(700.0),
+            fee_area: Coord::from_num(50.0),
+            nonce: 0,
+            signature: None, public_key: None, memo: None,
+        });
+
+        let result = state.apply_transaction(&tx, 1);
+        assert!(result.is_ok());
+
+        // 3. Verify state changes
+        let change_value = Coord::from_num(250.0);
+        assert_eq!(state.get_balance(&sender), change_value);
+        assert_eq!(state.get_balance(&recipient), Coord::from_num(700.0));
+        
+        // Should be 2 UTXOs: one for recipient, one for change
+        assert_eq!(state.utxo_set.len(), 2);
+        
+        let recipient_utxo_found = state.utxo_set.values().any(|t| t.owner == recipient && t.effective_value() == Coord::from_num(700.0));
+        let change_utxo_found = state.utxo_set.values().any(|t| t.owner == sender && t.effective_value() == change_value);
+
+        assert!(recipient_utxo_found, "Recipient's UTXO not found or incorrect value");
+        assert!(change_utxo_found, "Sender's change UTXO not found or incorrect value");
+    }
+    
+    #[test]
+    fn test_state_apply_subdivision_tx() {
+        let mut state = TriangleState::new();
+        let owner = create_test_address("owner");
+
+        // 1. Create a parent UTXO
+        let parent_triangle = Triangle::new(
+            Point::new(Coord::from_num(0), Coord::from_num(0)),
+            Point::new(Coord::from_num(20), Coord::from_num(0)),
+            Point::new(Coord::from_num(10), Coord::from_num(10)),
+            None, owner.clone()
+        ); // Area = 100
+        let parent_hash = parent_triangle.hash();
+        state.utxo_set.insert(parent_hash, parent_triangle.clone());
+        state.address_balances.insert(owner.clone(), parent_triangle.area());
+
+        // 2. Create child triangles for subdivision using the correct method
+        let children = parent_triangle.subdivide();
+
+        // 3. Create and apply the subdivision transaction
+        let subdivision_tx = SubdivisionTx {
+            parent_hash,
+            owner_address: owner.clone(),
+            children: children.to_vec(),
+            fee_area: Coord::from_num(10.0), // 10% fee
+            nonce: 0,
+            signature: None, public_key: None,
+        };
+        let tx = Transaction::Subdivision(subdivision_tx);
+
+        let result = state.apply_transaction(&tx, 1);
+        assert!(result.is_ok());
+
+        // 4. Verify state changes
+        let expected_balance = Coord::from_num(90.0);
+        assert!((state.get_balance(&owner) - expected_balance).abs() < GEOMETRIC_TOLERANCE, "Balance mismatch: expected {}, got {}", expected_balance, state.get_balance(&owner));
+        assert_eq!(state.utxo_set.len(), 3);
+        
+        if let Transaction::Subdivision(sub_tx) = tx {
+            let mut found_children = 0;
+            let fee_ratio = sub_tx.fee_area / parent_triangle.area();
+
+            for child in &sub_tx.children {
+                let expected_value = child.area() * (Coord::from_num(1.0) - fee_ratio);
+                let new_utxo = child.clone()
+                    .change_owner(sub_tx.owner_address.clone())
+                    .with_effective_value(expected_value);
+                
+                if let Some(utxo) = state.utxo_set.get(&new_utxo.hash()) {
+                    assert!((utxo.effective_value() - expected_value).abs() < GEOMETRIC_TOLERANCE, "Child UTXO value mismatch: expected {}, got {}", expected_value, utxo.effective_value());
+                    found_children += 1;
+                }
+            }
+            assert_eq!(found_children, 3);
+        } else {
+            panic!("Test setup error: tx should be a SubdivisionTx");
+        }
     }
 }
-
