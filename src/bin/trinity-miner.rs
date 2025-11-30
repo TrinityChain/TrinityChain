@@ -480,7 +480,7 @@ async fn mining_loop(
         let difficulty = chain.difficulty;
 
         let mut mempool_txs = chain.mempool.get_all_transactions();
-        mempool_txs.sort_by(|a, b| b.fee().cmp(&a.fee()));
+        mempool_txs.sort_by_key(|b| std::cmp::Reverse(b.fee()));
 
         let total_fees: f64 = mempool_txs
             .iter()
