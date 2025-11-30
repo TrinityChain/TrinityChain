@@ -1183,21 +1183,22 @@ async fn run_balance(address: Option<&str>) -> Result<(), Box<dyn std::error::Er
 }
 
 async fn run_new_wallet(name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(wallet_name) = name {
-        let wallet_path = wallet::get_named_wallet_path(wallet_name)?;
-        if wallet_path.exists() {
-            println!("Wallet '{}' already exists.", wallet_name);
-        } else {
-            wallet::create_named_wallet(wallet_name)?;
-            println!("Wallet '{}' created at: {}", wallet_name, wallet_path.display());
-        }
+    let wallet_name = name.unwrap_or("default");
+    let wallet_path = wallet::get_named_wallet_path(wallet_name)?;
+
+    if wallet_path.exists() {
+        println!("A wallet with the name '{}' already exists.", wallet_name);
     } else {
-        let wallet_path = wallet::get_default_wallet_path()?;
-        if wallet_path.exists() {
-            println!("Default wallet already exists.");
-        } else {
-            wallet::create_default_wallet()?;
-            println!("Default wallet created at: {}", wallet_path.display());
+        match wallet::create_named_wallet(wallet_name) {
+            Ok(wallet) => {
+                println!("🔑 New wallet '{}' created!", wallet_name);
+                println!("   Address: {}", wallet.address);
+                println!("   Mnemonic: {}", wallet.mnemonic);
+                println!("   Location: {}", wallet_path.display());
+            }
+            Err(e) => {
+                eprintln!("❌ Error creating wallet: {}", e);
+            }
         }
     }
     Ok(())
