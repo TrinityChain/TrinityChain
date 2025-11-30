@@ -174,7 +174,7 @@ src/
 ├── transaction.rs    # Coinbase, Transfer, Subdivision logic
 ├── blockchain.rs     # Chain validation, UTXO management, mempool
 ├── network.rs        # P2P message handling, peer discovery
-├── miner.rs          # PoW mining, difficulty adjustment (2016 blocks)
+├── miner.rs          # PoW mining, difficulty adjustment (10 blocks)
 ├── persistence.rs    # SQLite schema and queries
 ├── api.rs            # REST + WebSocket endpoints
 ├── crypto.rs         # secp256k1 signing and verification
@@ -254,11 +254,11 @@ Access at `http://localhost:3000/dashboard`
 
 | Parameter | Value |
 |-----------|-------|
-| Initial Reward | 1,000 TRC |
+| Initial Reward | 50 TRC + fees |
 | Halving Interval | 210,000 blocks |
 | Max Supply | 420,000,000 TRC |
-| Block Time (target) | ~10 seconds |
-| Current Difficulty | Dynamic (2016-block avg) |
+| Block Time (target) | ~30 seconds |
+| Current Difficulty | Dynamic (10-block avg) |
 
 Supply curve follows geometric decay with periodic halvings.
 

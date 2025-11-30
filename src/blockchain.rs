@@ -13,8 +13,19 @@ use crate::transaction::{
 };
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/// The number of blocks after which to adjust the difficulty.
+pub const DIFFICULTY_ADJUSTMENT_INTERVAL: u64 = 10;
+/// The desired time between blocks in seconds.
+pub const TARGET_BLOCK_TIME: u64 = 30;
+
+
+// ============================================================================
 // Types
 // ============================================================================
+
 
 /// A 32-byte hash (SHA-256)
 pub type Sha256Hash = [u8; 32];
@@ -510,10 +521,36 @@ impl Blockchain {
             self.mempool.remove_transaction(&tx.hash());
         }
 
-        // d) TODO: Adjust difficulty based on block time.
-        // self.adjust_difficulty();
+        // d) Adjust difficulty.
+        self.adjust_difficulty();
 
         Ok(())
+    }
+
+    /// Adjusts the blockchain difficulty based on the time it took to mine the last
+    /// `DIFFICULTY_ADJUSTMENT_INTERVAL` blocks.
+    fn adjust_difficulty(&mut self) {
+        let current_height = self.blocks.last().map_or(0, |b| b.header.height);
+        if current_height > 0 && current_height % DIFFICULTY_ADJUSTMENT_INTERVAL == 0 {
+            let last_adjustment_block = self
+                .blocks
+                .get((current_height - DIFFICULTY_ADJUSTMENT_INTERVAL) as usize);
+
+            if let Some(last_adjustment_block) = last_adjustment_block {
+                let last_block = self.blocks.last().unwrap();
+                let actual_time = last_block.header.timestamp - last_adjustment_block.header.timestamp;
+                let expected_time = (DIFFICULTY_ADJUSTMENT_INTERVAL * TARGET_BLOCK_TIME) * 1000; // in milliseconds
+
+                let ratio = actual_time as f64 / expected_time as f64;
+
+                // Clamp the ratio to prevent drastic changes
+                let ratio = ratio.max(0.25).min(4.0);
+
+                let new_difficulty = (self.difficulty as f64 * ratio) as u32;
+                // Ensure difficulty is at least 1
+                self.difficulty = new_difficulty.max(1);
+            }
+        }
     }
 
     /// Verifies the Proof-of-Work constraint of a block.

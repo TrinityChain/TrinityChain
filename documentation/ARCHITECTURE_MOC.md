@@ -131,8 +131,16 @@
 │  OPERATION: Coinbase (Mining Reward)                                        │
 │  ───────────────────────────────────                                        │
 │                                                                             │
+│    ┌──────────────────────────────────────────────────┐                     │
+│    │ Coinbase Reward = Block Reward + Total Tx Fees   │                     │
+│    │ └────────┬────────┘   └──────────┬──────────┘   │                     │
+│    │          │                       │              │                     │
+│    │ Halving schedule (starts at 50) │ Sum of all tx.fee_area in block │   │
+│    └──────────────────────────────────────────────────┘                     │
+│                                                                             │
+│    Resulting UTXO:                                                          │
 │    ┌─────────────────┐                                                      │
-│    │ area: 1000.0    │  Created fresh, value = None                         │
+│    │ area: reward    │  Created fresh, value = None                         │
 │    │ value: None     │  (full geometric value available)                    │
 │    │ owner: Miner    │                                                      │
 │    └─────────────────┘                                                      │
@@ -509,6 +517,29 @@
 ```
 
 ---
+
+---
+
+## 9. Difficulty Adjustment Algorithm
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      DIFFICULTY ADJUSTMENT ALGORITHM                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  The difficulty is adjusted every 10 blocks to target a 30-second block     │
+│  time.                                                                      │
+│                                                                             │
+│  1. Check if `current_height % 10 == 0`.                                    │
+│  2. `actual_time` = `timestamp_of_current_block` -                          │
+│     `timestamp_of_block_10_blocks_ago`.                                     │
+│  3. `expected_time` = `10 blocks * 30 seconds/block * 1000 ms/s`.           │
+│  4. `ratio` = `actual_time / expected_time`.                                │
+│  5. `clamped_ratio` = `ratio.max(0.25).min(4.0)`.                            │
+│  6. `new_difficulty` = `old_difficulty * clamped_ratio`.                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ## Summary
 

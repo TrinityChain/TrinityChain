@@ -470,12 +470,22 @@ async fn mining_loop(
         let new_height = last_block.header.height + 1;
         let difficulty = chain.difficulty;
 
+        let mut mempool_txs = chain.mempool.get_all_transactions();
+        mempool_txs.sort_by(|a, b| b.fee().cmp(&a.fee()));
+        
+        let total_fees: f64 = mempool_txs.iter().map(|tx| tx.fee_area().to_num::<f64>()).sum();
+        let block_reward = Blockchain::calculate_block_reward(new_height);
+        let total_reward = block_reward + total_fees;
+
         let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
-            reward_area: trinitychain::geometry::Coord::from_num(1000),
+            reward_area: trinitychain::geometry::Coord::from_num(total_reward),
             beneficiary_address: beneficiary_address.clone(),
         });
 
-        let mut new_block = Block::new(new_height, last_block.hash(), difficulty, vec![coinbase_tx]);
+        let mut transactions = vec![coinbase_tx];
+        transactions.extend(mempool_txs);
+
+        let mut new_block = Block::new(new_height, last_block.hash(), difficulty, transactions);
 
         if new_block.header.timestamp <= last_block.header.timestamp {
             new_block.header.timestamp = last_block.header.timestamp + 1;

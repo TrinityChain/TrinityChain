@@ -131,7 +131,7 @@ cargo run --release --bin trinity-miner 1KjT9P8mW...xyz123
 ║ 🔺 Blocks Mined: 1                                       ║
 ║ 🏔️  Chain Height: 1                                      ║
 ║ 🎯 Difficulty: 2                                         ║
-║ 💎 Current Reward: 1000 area units                       ║
+║ 💎 Current Reward: 50 area units + fees                  ║
 ║ 📈 Total Supply: 1,000 / 420,000,000 (0.0002%)          ║
 ║ ⏰ Blocks to Halving: 209,999                            ║
 ║ 🎚️  Halving Era: 0                                       ║
@@ -226,12 +226,12 @@ cargo run --release --bin trinity-miner <YOUR_ADDRESS> --peer <PERSON_A_IP>:8333
 
 ```
 Max Supply: 420,000,000 area units
-Initial Reward: 1,000 per block
+Initial Reward: 50 per block (plus transaction fees)
 Halving: Every 210,000 blocks (~4 years)
 
-Block 0 - 209,999:    1,000 area/block
-Block 210,000 - 419,999:  500 area/block
-Block 420,000 - 629,999:  250 area/block
+Block 0 - 209,999:    50 area/block + fees
+Block 210,000 - 419,999:  25 area/block + fees
+Block 420,000 - 629,999:  12.5 area/block + fees
 ...and so on (64 halvings total)
 ```
 
@@ -338,7 +338,7 @@ cargo run --release --bin trinity-miner <YOUR_ADDRESS>
 
 **You'll get:**
 - All blocks you find
-- Full 1,000 area reward per block
+- Full 50 area reward + transaction fees per block
 - Stored in local `TrinityChain.db`
 
 ### Scenario 2: Mining with Friends (P2P Network)
@@ -379,7 +379,7 @@ cargo run --release --bin trinity-miner <YOUR_ADDRESS>
 1. **Always use `--release`** - It's 10-50x faster than debug builds
 2. **Backup your wallet** - Copy `~/.TrinityChain/wallet.json` somewhere safe
 3. **Monitor difficulty** - As it increases, blocks take longer
-4. **Wait for halvings** - First halving at block 210,000 (reward drops to 500)
+4. **Wait for halvings** - First halving at block 210,000 (reward drops to 25)
 5. **Check supply** - Track how much of the 420M has been mined
 
 ---
