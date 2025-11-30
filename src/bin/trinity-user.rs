@@ -46,7 +46,10 @@ fn login(name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         None => {
             let wallets = wallet::list_wallets()?;
             if wallets.is_empty() {
-                println!("{}", "No wallets found. Create one with 'trinity-wallet new'".red());
+                println!(
+                    "{}",
+                    "No wallets found. Create one with 'trinity-wallet new'".red()
+                );
                 return Ok(());
             }
 
@@ -69,7 +72,10 @@ fn login(name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    println!("Attempting to log in to wallet: {}", wallet_name.bright_cyan());
+    println!(
+        "Attempting to log in to wallet: {}",
+        wallet_name.bright_cyan()
+    );
 
     let wallet = if wallet_name == "wallet.json" {
         wallet::load_default_wallet()
@@ -111,7 +117,14 @@ fn status() -> Result<(), Box<dyn std::error::Error>> {
     if session_path.exists() {
         let session_data = std::fs::read_to_string(&session_path)?;
         let wallet: wallet::Wallet = serde_json::from_str(&session_data)?;
-        println!("{} {}", "Logged in as:".bright_green(), wallet.name.unwrap_or_else(|| "default".to_string()).bright_cyan());
+        println!(
+            "{} {}",
+            "Logged in as:".bright_green(),
+            wallet
+                .name
+                .unwrap_or_else(|| "default".to_string())
+                .bright_cyan()
+        );
         println!("Address: {}", wallet.address.bright_yellow());
     } else {
         println!("{}", "Not currently logged in.".yellow());

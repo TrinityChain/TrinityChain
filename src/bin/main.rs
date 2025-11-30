@@ -4,8 +4,14 @@ fn main() {
     println!("{}", "TrinityChain CLI".bright_cyan().bold());
     println!("{}", "----------------".bright_cyan());
     println!();
-    println!("{}", "This is the main entry point, but most functionality is in separate binaries.".yellow());
-    println!("{}", "Use 'cargo run --bin <binary_name>' to run a specific command.".yellow());
+    println!(
+        "{}",
+        "This is the main entry point, but most functionality is in separate binaries.".yellow()
+    );
+    println!(
+        "{}",
+        "Use 'cargo run --bin <binary_name>' to run a specific command.".yellow()
+    );
     println!();
     println!("{}", "Available binaries:".bright_green().underline());
     println!("  - {}", "trinity-node".bright_white());

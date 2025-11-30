@@ -1,5 +1,6 @@
 //! Mine a new block by subdividing a triangle
 
+use clap::Parser;
 use secp256k1::SecretKey;
 use std::collections::HashSet;
 use trinitychain::config::load_config;
@@ -9,20 +10,39 @@ use trinitychain::persistence::Database;
 use trinitychain::transaction::{CoinbaseTx, SubdivisionTx, Transaction};
 use trinitychain::wallet;
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// The name of the wallet to use for mining
+    #[arg(long)]
+    wallet: Option<String>,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
     println!("⛏️  Mining Block...\n");
 
     let config = load_config()?;
     let threads = config.miner.threads;
 
     // Load wallet first to get the beneficiary address
-    let wallet_path = wallet::get_default_wallet_path()?;
-    if !wallet_path.exists() {
-        println!("👛 No default wallet found. Creating a new one...");
-        wallet::create_default_wallet()?;
-        println!("✅ New wallet created at: {}", wallet_path.display());
-    }
-    let wallet_data = wallet::load_default_wallet()?;
+    let wallet_data = match cli.wallet {
+        Some(name) => {
+            println!("👛 Using named wallet: {}", name);
+            wallet::load_named_wallet(&name)?
+        }
+        None => {
+            println!("👛 Using default wallet");
+            let wallet_path = wallet::get_default_wallet_path()?;
+            if !wallet_path.exists() {
+                println!("   -> No default wallet found. Creating a new one...");
+                wallet::create_default_wallet()?;
+                println!("   -> New wallet created at: {}", wallet_path.display());
+            }
+            wallet::load_default_wallet()?
+        }
+    };
+
     let address = wallet_data.address.clone();
     let secret_hex = wallet_data.secret_key_hex;
     let secret_bytes = hex::decode(secret_hex)?;

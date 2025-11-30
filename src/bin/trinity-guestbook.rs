@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand};
 use colored::*;
+use std::collections::HashSet;
 use trinitychain::cli::load_blockchain_from_config;
+use trinitychain::geometry::Coord;
 use trinitychain::transaction::{Transaction, TransferTx};
 use trinitychain::wallet;
-use trinitychain::geometry::Coord;
-use std::collections::HashSet;
 
 const GUESTBOOK_ADDRESS: &str = "trinity-guestbook-address-00000000000000000";
 
@@ -60,11 +60,11 @@ async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn st
             ("default".to_string(), w.address, kp)
         }
     };
-    
+
     println!("Signing with wallet: {}", from_wallet.bright_yellow());
 
     let (_config, mut chain) = load_blockchain_from_config()?;
-    
+
     let mut locked_triangles = HashSet::new();
     if let Ok(mempool_data) = std::fs::read_to_string("mempool.json") {
         if let Ok(txs) = serde_json::from_str::<Vec<Transaction>>(&mempool_data) {
@@ -89,7 +89,7 @@ async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn st
         *input_hash,
         GUESTBOOK_ADDRESS.to_string(),
         from_address,
-        Coord::from_num(0), // No value transferred to the guestbook address
+        Coord::from_num(0),      // No value transferred to the guestbook address
         Coord::from_num(0.0001), // A small fee to get the transaction mined
         chain.blocks.len() as u64,
     )
