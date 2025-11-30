@@ -2,18 +2,34 @@
 
 use secp256k1::SecretKey;
 use std::collections::HashSet;
-use trinitychain::cli::load_blockchain_from_config;
-use trinitychain::crypto::KeyPair;
-use trinitychain::miner::{mine_block, mine_block_parallel};
-use trinitychain::persistence::Database;
-use trinitychain::transaction::{CoinbaseTx, SubdivisionTx, Transaction};
-use trinitychain::wallet;
+use trinitychain::config::load_config;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
 
-    let (config, mut chain) = load_blockchain_from_config()?;
+    let config = load_config()?;
     let threads = config.miner.threads;
+
+    // Load wallet first to get the beneficiary address
+    let wallet_path = wallet::get_default_wallet_path()?;
+    if !wallet_path.exists() {
+        println!("👛 No default wallet found. Creating a new one...");
+        wallet::create_default_wallet()?;
+        println!("✅ New wallet created at: {}", wallet_path.display());
+    }
+    let wallet_data = wallet::load_default_wallet()?;
+    let address = wallet_data.address.clone();
+    let secret_hex = wallet_data.secret_key_hex;
+    let secret_bytes = hex::decode(secret_hex)?;
+    let secret_key = SecretKey::from_slice(&secret_bytes)?;
+    let keypair = KeyPair::from_secret_key(secret_key);
+
+    // Now load the blockchain, using the wallet's address for the genesis block if needed
+    let db = Database::open(&config.database.path)?;
+    let mut chain = db.load_blockchain().unwrap_or_else(|_| {
+        trinitychain::blockchain::Blockchain::new(address.clone(), 1)
+            .expect("Failed to create new blockchain")
+    });
 
     // Load mempool from disk if it exists
     if let Ok(mempool_data) = std::fs::read_to_string("mempool.json") {
@@ -36,22 +52,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Blockchain is empty")?;
     println!("📊 Current height: {}", current_height);
 
-    let wallet_path = wallet::get_default_wallet_path()?;
-    if !wallet_path.exists() {
-        println!("👛 No default wallet found. Creating a new one...");
-        wallet::create_default_wallet()?;
-        println!("✅ New wallet created at: {}", wallet_path.display());
-    }
-
-    let wallet_data = wallet::load_default_wallet()?;
-
-    let address = wallet_data.address;
-    let secret_hex = wallet_data.secret_key_hex;
-    let secret_bytes = hex::decode(secret_hex)?;
-    let secret_key = SecretKey::from_slice(&secret_bytes)?;
-    let keypair = KeyPair::from_secret_key(secret_key);
     let mut mempool_txs = chain.mempool.get_all_transactions();
-    mempool_txs.sort_by(|a, b| b.fee().cmp(&a.fee()));
+    mempool_txs.sort_by_key(|b| std::cmp::Reverse(b.fee()));
     mempool_txs.truncate(100);
 
     // Collect locked triangles from pending transfers
