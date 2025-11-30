@@ -3,6 +3,11 @@
 use secp256k1::SecretKey;
 use std::collections::HashSet;
 use trinitychain::config::load_config;
+use trinitychain::crypto::KeyPair;
+use trinitychain::miner::{mine_block, mine_block_parallel};
+use trinitychain::persistence::Database;
+use trinitychain::transaction::{CoinbaseTx, SubdivisionTx, Transaction};
+use trinitychain::wallet;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("⛏️  Mining Block...\n");
