@@ -75,18 +75,6 @@ enum Commands {
     NewWallet {
         name: Option<String>,
     },
-    /// Backs up the wallet
-    BackupWallet,
-    /// Restores the wallet
-    RestoreWallet,
-    /// Manages the address book
-    AddressBook,
-    /// Connects to a peer
-    Connect,
-    /// Runs the API server
-    Server,
-    /// Runs the Telegram bot
-    TelegramBot,
 }
 
 #[derive(Clone)]
@@ -1228,24 +1216,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::NewWallet { name }=> {
             run_new_wallet(name.as_deref()).await?;
-        }
-        Commands::BackupWallet => {
-            println!("'backup-wallet' command not yet implemented");
-        }
-        Commands::RestoreWallet => {
-            println!("'restore-wallet' command not yet implemented");
-        }
-        Commands::AddressBook => {
-            println!("'address-book' command not yet implemented");
-        }
-        Commands::Connect => {
-            println!("'connect' command not yet implemented");
-        }
-        Commands::Server => {
-            println!("'server' command not yet implemented");
-        }
-        Commands::TelegramBot => {
-            println!("'telegram-bot' command not yet implemented");
         }
     }
 
