@@ -1,60 +1,35 @@
 //! Mine a new block by subdividing a triangle
 
-use clap::Parser;
 use secp256k1::SecretKey;
 use std::collections::HashSet;
-use trinitychain::config::load_config;
+use std::env;
 use trinitychain::crypto::KeyPair;
 use trinitychain::miner::{mine_block, mine_block_parallel};
 use trinitychain::persistence::Database;
 use trinitychain::transaction::{CoinbaseTx, SubdivisionTx, Transaction};
 use trinitychain::wallet;
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// The name of the wallet to use for mining
-    #[arg(long)]
-    wallet: Option<String>,
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
     println!("⛏️  Mining Block...\n");
 
-    let config = load_config()?;
-    let threads = config.miner.threads;
-
-    // Load wallet first to get the beneficiary address
-    let wallet_data = match cli.wallet {
-        Some(name) => {
-            println!("👛 Using named wallet: {}", name);
-            wallet::load_named_wallet(&name)?
-        }
-        None => {
-            println!("👛 Using default wallet");
-            let wallet_path = wallet::get_default_wallet_path()?;
-            if !wallet_path.exists() {
-                println!("   -> No default wallet found. Creating a new one...");
-                wallet::create_default_wallet()?;
-                println!("   -> New wallet created at: {}", wallet_path.display());
+    let args: Vec<String> = env::args().collect();
+    let mut threads: usize = 1;
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--threads" || args[i] == "-t" {
+            if i + 1 < args.len() {
+                if let Ok(n) = args[i + 1].parse::<usize>() {
+                    threads = n.max(1);
+                }
             }
-            wallet::load_default_wallet()?
+            i += 2;
+        } else {
+            i += 1;
         }
-    };
+    }
 
-    let address = wallet_data.address.clone();
-    let secret_hex = wallet_data.secret_key_hex;
-    let secret_bytes = hex::decode(secret_hex)?;
-    let secret_key = SecretKey::from_slice(&secret_bytes)?;
-    let keypair = KeyPair::from_secret_key(secret_key);
-
-    // Now load the blockchain, using the wallet's address for the genesis block if needed
-    let db = Database::open(&config.database.path)?;
-    let mut chain = db.load_blockchain().unwrap_or_else(|_| {
-        trinitychain::blockchain::Blockchain::new(address.clone(), 1)
-            .expect("Failed to create new blockchain")
-    });
+    let db = Database::open("trinitychain.db")?;
+    let mut chain = db.load_blockchain()?;
 
     // Load mempool from disk if it exists
     if let Ok(mempool_data) = std::fs::read_to_string("mempool.json") {
@@ -77,9 +52,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Blockchain is empty")?;
     println!("📊 Current height: {}", current_height);
 
-    let mut mempool_txs = chain.mempool.get_all_transactions();
-    mempool_txs.sort_by_key(|b| std::cmp::Reverse(b.fee()));
-    mempool_txs.truncate(100);
+    let wallet_path = wallet::get_default_wallet_path()?;
+    if !wallet_path.exists() {
+        println!("👛 No default wallet found. Creating a new one...");
+        wallet::create_default_wallet()?;
+        println!("✅ New wallet created at: {}", wallet_path.display());
+    }
+
+    let wallet_data = wallet::load_default_wallet()?;
+
+    let address = wallet_data.address;
+    let secret_hex = wallet_data.secret_key_hex;
+    let secret_bytes = hex::decode(secret_hex)?;
+    let secret_key = SecretKey::from_slice(&secret_bytes)?;
+    let keypair = KeyPair::from_secret_key(secret_key);
+    let mempool_txs = chain.mempool.get_transactions_by_fee(100);
 
     // Collect locked triangles from pending transfers
     let mut locked_triangles = HashSet::new();
@@ -119,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message = tx.signable_message();
     let signature = keypair.sign(&message)?;
     let public_key = keypair.public_key.serialize().to_vec();
-    tx.sign(signature, public_key);
+    tx.sign(signature.to_vec(), public_key.to_vec());
 
     let coinbase = CoinbaseTx {
         reward_area: trinitychain::geometry::Coord::from_num(1000),
@@ -135,9 +122,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let last_block = chain.blocks.last().ok_or("Blockchain is empty")?;
     let mut new_block = trinitychain::blockchain::Block::new(
         last_block.header.height + 1,
-        last_block.hash(),
+        last_block.hash,
+        last_block.header.timestamp,
         chain.difficulty,
         transactions,
+        None,
     );
 
     if threads > 1 {
@@ -146,12 +135,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         new_block = mine_block(new_block)?;
     }
 
-    let new_hash_hex = hex::encode(new_block.hash());
+    let new_hash_hex = hex::encode(new_block.hash);
     let new_hash_prefix = &new_hash_hex[..16];
     println!("✅ Block mined! Hash: {}", new_hash_prefix);
 
     chain.apply_block(new_block.clone())?;
-    let db = Database::open(&config.database.path)?;
     db.save_block(&new_block)?;
     db.save_utxo_set(&chain.state)?;
 
@@ -159,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = std::fs::remove_file("mempool.json");
 
     println!("\n🎉 Block {} mined successfully!", chain.blocks.len() - 1);
-    println!("   UTXOs: {}", chain.state.utxo_set.len());
+    println!("   UTXOs: {}", chain.state.count());
 
     Ok(())
 }

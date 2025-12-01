@@ -33,7 +33,7 @@ impl Wallet {
     /// Create a new wallet with a generated keypair
     pub fn new(name: Option<String>) -> Result<Self, ChainError> {
         let keypair = KeyPair::generate()?;
-        let address = keypair.address();
+        let address = hex::encode(keypair.address());
         let secret_key_hex = hex::encode(keypair.secret_key.secret_bytes());
 
         Ok(Wallet {

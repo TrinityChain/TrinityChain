@@ -6,6 +6,7 @@
 use crate::error::ChainError;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+<<<<<<< HEAD
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
@@ -20,6 +21,13 @@ const MAX_ENTRIES: usize = 10_000;
 const BACKUP_SUFFIX: &str = ".backup";
 
 /// Address book entry with audit trail
+=======
+use std::collections::{hash_map::Entry, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+/// Address book entry
+>>>>>>> 310f51a (feat: Resolve compilation errors)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AddressEntry {
     /// Display label for the address (case-preserved)
@@ -84,6 +92,7 @@ impl AddressEntry {
 /// Thread-safe address book with atomic operations
 #[derive(Debug, Clone)]
 pub struct AddressBook {
+<<<<<<< HEAD
     inner: Arc<RwLock<AddressBookInner>>,
 }
 
@@ -136,11 +145,16 @@ impl AddressBookInner {
     fn touch(&mut self) {
         self.metadata.last_modified = chrono::Utc::now().to_rfc3339();
     }
+=======
+    /// Stores entries mapped by lowercase label for case-insensitive lookup
+    pub entries: HashMap<String, AddressEntry>,
+>>>>>>> 310f51a (feat: Resolve compilation errors)
 }
 
 impl AddressBook {
     /// Create a new empty address book
     pub fn new() -> Self {
+<<<<<<< HEAD
         AddressBook {
             inner: Arc::new(RwLock::new(AddressBookInner::default())),
         }
@@ -149,12 +163,19 @@ impl AddressBook {
     /// Add an address to the book
     ///
     /// Returns an error if the label already exists or validation fails.
+=======
+        Self::default()
+    }
+
+    /// Add an address to the book. Trims whitespace from inputs.
+>>>>>>> 310f51a (feat: Resolve compilation errors)
     pub fn add(
         &self,
         label: String,
         address: String,
         notes: Option<String>,
     ) -> Result<(), ChainError> {
+<<<<<<< HEAD
         let mut inner = self.inner.write();
 
         // Check size limit
@@ -202,6 +223,41 @@ impl AddressBook {
 
         let entry = inner
             .entries
+=======
+        let label_clean = label.trim();
+        let address_clean = address.trim();
+
+        if label_clean.is_empty() || address_clean.is_empty() {
+            return Err(ChainError::WalletError(
+                "Label and address cannot be empty".to_string(),
+            ));
+        }
+
+        let key = label_clean.to_lowercase();
+        
+        // Use Entry API to avoid double hashing (checking existence then inserting)
+        match self.entries.entry(key) {
+            Entry::Occupied(_) => Err(ChainError::WalletError(format!(
+                "Label '{}' already exists",
+                label_clean
+            ))),
+            Entry::Vacant(v) => {
+                v.insert(AddressEntry {
+                    label: label_clean.to_string(),
+                    address: address_clean.to_string(),
+                    notes: notes.filter(|n| !n.trim().is_empty()).map(|n| n.trim().to_string()),
+                    added: chrono::Utc::now().to_rfc3339(),
+                });
+                Ok(())
+            }
+        }
+    }
+
+    /// Remove an address from the book
+    pub fn remove(&mut self, label: &str) -> Result<AddressEntry, ChainError> {
+        let key = label.trim().to_lowercase();
+        self.entries
+>>>>>>> 310f51a (feat: Resolve compilation errors)
             .remove(&key)
             .ok_or_else(|| ChainError::WalletError(format!("Label '{}' not found", label)))?;
 
@@ -258,6 +314,7 @@ impl AddressBook {
     }
 
     /// Get an address by label
+<<<<<<< HEAD
     pub fn get(&self, label: &str) -> Option<AddressEntry> {
         let inner = self.inner.read();
         let key = label.to_lowercase();
@@ -277,6 +334,20 @@ impl AddressBook {
     pub fn search(&self, query: &str) -> Vec<AddressEntry> {
         let inner = self.inner.read();
         let query_lower = query.to_lowercase();
+=======
+    pub fn get(&self, label: &str) -> Option<&AddressEntry> {
+        self.entries.get(&label.trim().to_lowercase())
+    }
+
+    /// Search for addresses (by label, address, or notes)
+    pub fn search(&self, query: &str) -> Vec<&AddressEntry> {
+        let query_trimmed = query.trim();
+        if query_trimmed.is_empty() {
+            return self.list();
+        }
+
+        let query_lower = query_trimmed.to_lowercase();
+>>>>>>> 310f51a (feat: Resolve compilation errors)
 
         let mut results: Vec<_> = inner
             .entries
@@ -286,9 +357,8 @@ impl AddressBook {
                     || entry.address.to_lowercase().contains(&query_lower)
                     || entry
                         .notes
-                        .as_ref()
-                        .map(|n| n.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
+                        .as_deref()
+                        .map_or(false, |n| n.to_lowercase().contains(&query_lower))
             })
             .cloned()
             .collect();
@@ -298,6 +368,7 @@ impl AddressBook {
     }
 
     /// List all entries sorted by label
+<<<<<<< HEAD
     pub fn list(&self) -> Vec<AddressEntry> {
         let inner = self.inner.read();
         let mut entries: Vec<_> = inner.entries.values().cloned().collect();
@@ -351,6 +422,40 @@ impl AddressBook {
 
         file.write_all(json.as_bytes())
             .map_err(|e| ChainError::WalletError(format!("Failed to write address book: {}", e)))?;
+=======
+    pub fn list(&self) -> Vec<&AddressEntry> {
+        let mut entries: Vec<_> = self.entries.values().collect();
+        // Use localized collation if strict alphabetic order is needed, 
+        // but standard strict comparison is faster for general use.
+        entries.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+        entries
+    }
+
+    /// Save address book to file using atomic write pattern
+    pub fn save(&self, path: &Path) -> Result<(), ChainError> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                ChainError::WalletError(format!("Failed to create directory '{}': {}", parent.display(), e))
+            })?;
+        }
+
+        let json = serde_json::to_string_pretty(self).map_err(|e| {
+            ChainError::WalletError(format!("Failed to serialize address book: {}", e))
+        })?;
+
+        // Write to a temp file in the same directory to ensure atomic rename
+        let tmp_path = path.with_extension("tmp");
+        
+        fs::write(&tmp_path, json).map_err(|e| {
+            ChainError::WalletError(format!("Failed to write temporary file: {}", e))
+        })?;
+
+        fs::rename(&tmp_path, path).map_err(|e| {
+            // Attempt cleanup on failure, ignore cleanup errors
+            let _ = fs::remove_file(&tmp_path);
+            ChainError::WalletError(format!("Failed to commit address book file: {}", e))
+        })?;
+>>>>>>> 310f51a (feat: Resolve compilation errors)
 
         file.sync_all()
             .map_err(|e| ChainError::WalletError(format!("Failed to sync file: {}", e)))?;
@@ -364,6 +469,7 @@ impl AddressBook {
         Ok(())
     }
 
+<<<<<<< HEAD
     /// Load address book from file
     pub fn load(path: &Path) -> Result<Self, ChainError> {
         if !path.exists() {
@@ -501,29 +607,43 @@ fn validate_notes(notes: &str) -> Result<(), ChainError> {
 // Helper functions for default paths
 
 /// Get the default address book path
+=======
+    /// Load address book from a specific path
+    pub fn load(path: &Path) -> Result<Self, ChainError> {
+        let contents = fs::read_to_string(path)
+            .map_err(|e| ChainError::WalletError(format!("Failed to read address book: {}", e)))?;
+
+        serde_json::from_str(&contents)
+            .map_err(|e| ChainError::WalletError(format!("Failed to parse address book: {}", e)))
+    }
+
+    /// Load from path, or return new empty book if file doesn't exist
+    pub fn load_or_new(path: &Path) -> Result<Self, ChainError> {
+        if path.exists() {
+            Self::load(path)
+        } else {
+            Ok(Self::new())
+        }
+    }
+}
+
+/// Get the default address book path with cross-platform support
+>>>>>>> 310f51a (feat: Resolve compilation errors)
 pub fn get_addressbook_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home)
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
         .join(".trinitychain")
         .join("addressbook.json")
 }
 
-/// Load the default address book
+/// Load the default address book, creating a new one if missing
 pub fn load_default() -> Result<AddressBook, ChainError> {
-    AddressBook::load(&get_addressbook_path())
+    AddressBook::load_or_new(&get_addressbook_path())
 }
 
 /// Save to the default address book location
 pub fn save_default(book: &AddressBook) -> Result<(), ChainError> {
-    let path = get_addressbook_path();
-
-    // Ensure directory exists
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| ChainError::WalletError(format!("Failed to create directory: {}", e)))?;
-    }
-
-    book.save(&path)
+    book.save(&get_addressbook_path())
 }
 
 #[cfg(test)]
@@ -531,14 +651,36 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+<<<<<<< HEAD
     #[test]
     fn test_addressbook_add_and_get() {
         let book = AddressBook::new();
+=======
+    // RAII structure to auto-cleanup test files
+    struct TempFile(PathBuf);
+    
+    impl TempFile {
+        fn new(name: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!("trinity_test_{}_{}.json", name, uuid::Uuid::new_v4()));
+            Self(path)
+        }
+    }
+>>>>>>> 310f51a (feat: Resolve compilation errors)
 
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn test_addressbook_sanitization() {
+        let mut book = AddressBook::new();
         book.add(
-            "Alice".to_string(),
-            "abc123".to_string(),
-            Some("Friend".to_string()),
+            "  Alice  ".to_string(),
+            "  abc123  ".to_string(),
+            Some("  Friend  ".to_string()),
         )
         .unwrap();
 
@@ -546,6 +688,7 @@ mod tests {
         assert_eq!(entry.label, "Alice");
         assert_eq!(entry.address, "abc123");
         assert_eq!(entry.notes.as_deref(), Some("Friend"));
+<<<<<<< HEAD
     }
 
     #[test]
@@ -724,5 +867,44 @@ mod tests {
 
         handle.join().unwrap();
         assert_eq!(book.len(), 2);
+=======
+    }
+
+    #[test]
+    fn test_empty_notes_handling() {
+        let mut book = AddressBook::new();
+        // Should convert whitespace-only notes to None or store trimmed? 
+        // Logic implemented: stores trimmed string.
+        book.add("Bob".into(), "123".into(), Some("   ".into())).unwrap();
+        
+        let entry = book.get("bob").unwrap();
+        // Assuming we want to filter out empty notes entirely:
+        assert!(entry.notes.is_none()); 
+    }
+
+    #[test]
+    fn test_addressbook_persistence() {
+        let temp_file = TempFile::new("persistence");
+        
+        let mut book = AddressBook::new();
+        book.add("Bob".to_string(), "def456".to_string(), None).unwrap();
+        book.save(&temp_file.0).unwrap();
+
+        let loaded = AddressBook::load(&temp_file.0).unwrap();
+        assert_eq!(loaded.get("bob").unwrap().address, "def456");
+        // TempFile drop handles cleanup
+    }
+
+    #[test]
+    fn test_search_logic() {
+        let mut book = AddressBook::new();
+        book.add("Alice".into(), "123".into(), Some("Dev".into())).unwrap();
+        book.add("Bob".into(), "456".into(), Some("QA".into())).unwrap();
+
+        assert_eq!(book.search("alice").len(), 1);
+        assert_eq!(book.search("qa").len(), 1);
+        assert_eq!(book.search("23").len(), 1);
+        assert_eq!(book.search("  ").len(), 2);
+>>>>>>> 310f51a (feat: Resolve compilation errors)
     }
 }

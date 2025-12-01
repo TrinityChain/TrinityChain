@@ -155,13 +155,7 @@ impl SubdivisionTx {
         };
 
         let message = self.signable_message();
-        let is_valid = crate::crypto::verify_signature(public_key, &message, signature)?;
-
-        if !is_valid {
-            return Err(ChainError::InvalidTransaction(
-                "Invalid signature".to_string(),
-            ));
-        }
+        crate::crypto::verify_signature(public_key, &message, signature)?;
 
         Ok(())
     }
@@ -388,13 +382,7 @@ impl TransferTx {
         };
 
         let message = self.signable_message();
-        let is_valid = crate::crypto::verify_signature(public_key, &message, signature)?;
-
-        if !is_valid {
-            return Err(ChainError::InvalidTransaction(
-                "Invalid signature".to_string(),
-            ));
-        }
+        crate::crypto::verify_signature(public_key, &message, signature)?;
 
         Ok(())
     }

@@ -268,7 +268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message = tx.signable_message();
     let signature = keypair.sign(&message)?;
     let public_key = keypair.public_key.serialize().to_vec();
-    tx.sign(signature, public_key);
+    tx.sign(signature.to_vec(), public_key.to_vec());
 
     let transaction = Transaction::Transfer(tx);
     chain.mempool.add_transaction(transaction.clone())?;
