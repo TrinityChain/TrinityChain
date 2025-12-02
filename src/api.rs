@@ -795,7 +795,7 @@ async fn create_wallet() -> Result<Json<WalletResponse>, ApiError> {
         .map_err(|e| ApiError::InternalError(format!("Failed to generate keypair: {}", e)))?;
 
     Ok(Json(WalletResponse {
-        address: keypair.address(),
+        address: hex::encode(keypair.address()),
         public_key: hex::encode(keypair.public_key.serialize()),
     }))
 }

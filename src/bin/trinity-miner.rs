@@ -31,9 +31,7 @@ struct MiningStats {
     uptime_secs: u64,
     avg_block_time: f64,
     difficulty: u64,
-    current_reward: u64,
     total_earned: f64,
-    current_supply: u64,
     max_supply: u64,
     blocks_to_halving: u64,
     halving_era: u64,
@@ -54,9 +52,7 @@ impl Default for MiningStats {
             uptime_secs: 0,
             avg_block_time: 0.0,
             difficulty: 1,
-            current_reward: 1000,
             total_earned: 0.0,
-            current_supply: 0,
             max_supply: 420_000_000,
             blocks_to_halving: 210_000,
             halving_era: 0,
@@ -222,7 +218,7 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
             Span::styled("  │  ", Style::default().fg(Color::DarkGray)),
             Span::styled("Reward: ", Style::default().fg(Color::Gray)),
             Span::styled(
-                format!("{}", stats.current_reward),
+                format!("{} TRC", 1000 / (1 << stats.halving_era)),
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
@@ -246,7 +242,6 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
     f.render_widget(stats_widget, chunks[2]);
 
     // Supply Progress
-    let supply_pct = (stats.current_supply as f64 / stats.max_supply as f64) * 100.0;
     let gauge = Gauge::default()
         .block(
             TuiBlock::default()
@@ -255,12 +250,10 @@ fn draw_ui(f: &mut ratatui::Frame, stats: &MiningStats, beneficiary: &str) {
                 .border_style(Style::default().fg(Color::Magenta)),
         )
         .gauge_style(Style::default().fg(Color::Magenta).bg(Color::Black))
-        .percent(supply_pct.min(100.0) as u16)
         .label(format!(
-            "{} / {} ({:.3}%)",
-            format_number(stats.current_supply),
-            format_number(stats.max_supply),
-            supply_pct
+            "{} / {}",
+            format_number(stats.chain_height * 1000),
+            format_number(stats.max_supply)
         ));
     f.render_widget(gauge, chunks[3]);
 
@@ -408,7 +401,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_for_network = Database::open("trinitychain.db").expect("Failed to open database");
     let chain_for_network = db_for_network
         .load_blockchain()
-        .unwrap_or_else(|_| Blockchain::new());
+        .unwrap_or_else(|_| Blockchain::new("trinity-miner-genesis".to_string(), 1).unwrap());
     let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
 
@@ -465,7 +458,7 @@ async fn mining_loop(
     network: Option<Arc<NetworkNode>>,
 ) {
     let db = Database::open("trinitychain.db").expect("Failed to open database");
-    let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new());
+    let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new("trinity-miner-genesis".to_string(), 1).unwrap());
 
     let start_time = Instant::now();
     let mut blocks_mined = 0;
@@ -489,7 +482,7 @@ async fn mining_loop(
             beneficiary_address: beneficiary_address.clone(),
         });
 
-        let mut new_block = Block::new(new_height, last_block.hash, last_block.header.timestamp, difficulty, vec![coinbase_tx], None);
+        let mut new_block = Block::new(new_height, last_block.hash(), difficulty, vec![coinbase_tx]);
 
         if new_block.header.timestamp <= last_block.header.timestamp {
             new_block.header.timestamp = last_block.header.timestamp + 1;
@@ -499,56 +492,19 @@ async fn mining_loop(
         {
             let mut s = stats.lock().await;
             s.mining_status = format!("Mining block #{}...", new_height);
-            s.difficulty = difficulty;
+            s.difficulty = difficulty as u64;
         }
 
         let mine_start = Instant::now();
-        let mut hash_count = 0u64;
-        let mut last_update = Instant::now();
-
-        // Mine the block
-        loop {
-            new_block.hash = new_block.calculate_hash();
-            hash_count += 1;
-
-            // Update hashrate every 1000 hashes OR every 500ms, whichever comes first
-            if hash_count.is_multiple_of(1000) || last_update.elapsed() > Duration::from_millis(500) {
-                let elapsed = mine_start.elapsed().as_secs_f64();
-                let hashrate = if elapsed > 0.0 {
-                    hash_count as f64 / elapsed
-                } else {
-                    0.0
-                };
-
-                {
-                    let mut s = stats.lock().await;
-                    s.current_hash_rate = hashrate;
-
-                    // Update hashrate history every 5000 hashes to avoid too frequent updates
-                    if hash_count.is_multiple_of(5000) {
-                        s.hashrate_history.remove(0);
-                        s.hashrate_history.push(hashrate as u64);
-                    }
-                } // Lock dropped here
-
-                // Update network stats after releasing lock
-                if let Some(ref net) = network {
-                    let peer_count = net.list_peers().await.len();
-                    let mut s = stats.lock().await;
-                    s.network_peers = peer_count;
-                }
-
-                last_update = Instant::now();
+        let new_block = match trinitychain::miner::mine_block(new_block) {
+            Ok(b) => b,
+            Err(_) => {
+                sleep(Duration::from_secs(1)).await;
+                continue;
             }
-
-            if new_block.verify_proof_of_work() {
-                break;
-            }
-            new_block.header.nonce += 1;
-        }
-
+        };
         let mine_duration = mine_start.elapsed().as_secs_f64();
-        let hash_hex = hex::encode(new_block.hash);
+        let hash_hex = hex::encode(new_block.hash());
 
         if chain.apply_block(new_block.clone()).is_err() {
             sleep(Duration::from_secs(10)).await;
@@ -560,7 +516,7 @@ async fn mining_loop(
             network.broadcast_block(&new_block).await;
         }
 
-        if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty) {
+        if let Err(_e) = db.save_blockchain_state(&new_block, &chain.state, chain.difficulty as u64) {
             // Handle error silently
         }
 
@@ -570,8 +526,6 @@ async fn mining_loop(
         // Update stats
         {
             let current_height = new_height;
-            let current_supply = Blockchain::calculate_current_supply(current_height);
-            let current_reward = Blockchain::calculate_block_reward(current_height);
             let halving_era = current_height / 210_000;
             let blocks_to_halving = ((halving_era + 1) * 210_000).saturating_sub(current_height);
 
@@ -582,9 +536,7 @@ async fn mining_loop(
             s.chain_height = current_height;
             s.uptime_secs = elapsed.as_secs();
             s.avg_block_time = elapsed.as_secs_f64() / blocks_mined as f64;
-            s.current_reward = current_reward;
             s.total_earned = blocks_mined as f64 * 1000.0;
-            s.current_supply = current_supply;
             s.blocks_to_halving = blocks_to_halving;
             s.halving_era = halving_era;
             s.mining_status = format!("✓ Block #{} mined!", new_height);

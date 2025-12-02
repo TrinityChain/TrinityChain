@@ -98,7 +98,7 @@ async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn st
     let message_to_sign = tx.signable_message();
     let signature = keypair.sign(&message_to_sign)?;
     let public_key = keypair.public_key.serialize().to_vec();
-    tx.sign(signature, public_key);
+    tx.sign(signature.to_vec(), public_key.to_vec());
 
     let transaction = Transaction::Transfer(tx);
     chain.mempool.add_transaction(transaction.clone())?;
