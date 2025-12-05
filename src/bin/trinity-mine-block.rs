@@ -1,4 +1,5 @@
 use trinitychain::blockchain::{Blockchain, Block};
+use trinitychain::crypto::address_from_string;
 use trinitychain::transaction::{Transaction, CoinbaseTx};
 use trinitychain::persistence::Database;
 use trinitychain::miner::mine_block;
@@ -15,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open("trinitychain.db")?;
     let mut chain = db.load_blockchain().unwrap_or_else(|_| {
         println!("No chain found – creating genesis");
-        Blockchain::new(wallet_name.to_string(), 1).unwrap()
+        Blockchain::new(address_from_string(wallet_name), 1).unwrap()
     });
 
     let last_block = chain.blocks.last().cloned().unwrap();
@@ -23,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
         reward_area: trinitychain::geometry::Coord::from_num(1000),
-        beneficiary_address: wallet_name.to_string(),
+        beneficiary_address: address_from_string(wallet_name),
     });
 
     let transactions = vec![coinbase_tx];

@@ -1,6 +1,7 @@
 //! Database persistence layer for TrinityChain
 
 use crate::blockchain::{Block, BlockHeader, Blockchain, TriangleState};
+use crate::crypto::address_from_string;
 use crate::error::ChainError;
 use crate::geometry::Triangle;
 use crate::mempool::Mempool;
@@ -266,7 +267,7 @@ impl Database {
         }
 
         if blocks.is_empty() {
-            return Blockchain::new("".to_string(), 0);
+            return Blockchain::new(address_from_string(""), 0);
         }
 
         let mut utxo_set = HashMap::new();
@@ -360,7 +361,7 @@ mod tests {
     #[test]
     fn test_save_and_load_blockchain() {
         let db = Database::open(":memory:").unwrap();
-        let chain = Blockchain::new("miner".to_string(), 1).unwrap();
+        let chain = Blockchain::new(address_from_string("miner"), 1).unwrap();
 
         db.save_block(&chain.blocks[0]).unwrap();
         db.save_utxo_set(&chain.state).unwrap();

@@ -404,7 +404,7 @@ mod tests {
         let keypair_result = wallet.get_keypair();
         assert!(keypair_result.is_ok());
         let keypair = keypair_result.unwrap();
-        assert_eq!(wallet.address, keypair.address());
+        assert_eq!(wallet.address, hex::encode(keypair.address()));
     }
 
     #[test]

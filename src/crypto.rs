@@ -18,6 +18,19 @@ static SECP256K1_CONTEXT: Lazy<Secp256k1<All>> = Lazy::new(Secp256k1::new);
 /// We use a fixed-size array for internal type safety and performance.
 pub type Address = [u8; 32];
 
+/// Convenience function to create an address from a string (hashes the string).
+/// Useful for testing and debugging.
+pub fn address_from_string(s: &str) -> Address {
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    hasher.finalize().into()
+}
+
+/// Convert an address to a hex string for display.
+pub fn address_to_hex(addr: &Address) -> String {
+    hex::encode(addr)
+}
+
 #[derive(Debug, Clone)]
 pub struct KeyPair {
     pub secret_key: SecretKey,
@@ -186,7 +199,7 @@ mod tests {
         // Assert on the concrete error string for robust testing
         assert_eq!(
             result.unwrap_err().to_string(),
-            "CryptoError: Signature verification failed"
+            "Cryptographic error: Signature verification failed"
         );
     }
 
@@ -203,7 +216,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "CryptoError: Signature verification failed"
+            "Cryptographic error: Signature verification failed"
         );
     }
 

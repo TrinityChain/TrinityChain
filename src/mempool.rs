@@ -1,6 +1,7 @@
 //! Mempool for TrinityChain
 
 use crate::blockchain::Sha256Hash;
+use crate::crypto::Address;
 use crate::error::ChainError;
 use crate::transaction::Transaction;
 use chrono::Utc;
@@ -19,7 +20,8 @@ pub struct MempoolTransaction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mempool {
     transactions: HashMap<Sha256Hash, MempoolTransaction>,
-    by_sender: HashMap<String, Vec<Sha256Hash>>,
+    #[serde(skip)]
+    by_sender: HashMap<Address, Vec<Sha256Hash>>,
 }
 
 impl Default for Mempool {

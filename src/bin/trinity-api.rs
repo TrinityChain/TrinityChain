@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use trinitychain::api::{run_api_server, Node};
 use trinitychain::blockchain::Blockchain;
+use trinitychain::crypto::address_from_string;
 use trinitychain::error::ChainError;
 
 #[tokio::main]
@@ -16,7 +17,7 @@ async fn main() -> Result<(), ChainError> {
 
     // Create new blockchain (or load from persistence if you have that method)
     // For now, just create a new one
-    let blockchain = Blockchain::new("miner_address".to_string(), 1).unwrap();
+    let blockchain = Blockchain::new(address_from_string("miner_address"), 1).unwrap();
     println!("✅ Initialized blockchain");
 
     // Create node

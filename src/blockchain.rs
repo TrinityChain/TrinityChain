@@ -2,10 +2,11 @@
 //! chain validation, UTXO management, and mining difficulty adjustment.
 
 use crate::error::ChainError;
+use crate::crypto::Address;
 use crate::geometry::{Coord, Point, Triangle, GEOMETRIC_TOLERANCE};
 use crate::mempool::Mempool;
 use crate::miner::mine_block;
-use crate::transaction::{Address, CoinbaseTx, Transaction, TransferTx};
+use crate::transaction::{CoinbaseTx, Transaction, TransferTx};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -213,7 +214,7 @@ impl TriangleState {
                     self.utxo_set.insert(input_hash, consumed_triangle.clone());
                     return Err(ChainError::InvalidTransaction(format!(
                         "Sender {} does not own input UTXO (owned by {})",
-                        tx.sender, consumed_triangle.owner
+                        hex::encode(tx.sender), hex::encode(consumed_triangle.owner)
                     )));
                 }
 
@@ -294,7 +295,7 @@ impl TriangleState {
                     self.utxo_set.insert(input_hash, consumed_triangle.clone()); // Revert state change.
                     return Err(ChainError::InvalidTransaction(format!(
                         "Subdivision owner {} does not match parent triangle owner {}",
-                        tx.owner_address, consumed_triangle.owner
+                        hex::encode(tx.owner_address), hex::encode(consumed_triangle.owner)
                     )));
                 }
 
@@ -606,10 +607,11 @@ impl Blockchain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::address_from_string;
     use crate::geometry::{Coord, Point};
     use crate::transaction::{SubdivisionTx, TransferTx};
     fn create_test_address(id: &str) -> Address {
-        id.to_string()
+        address_from_string(id)
     }
 
     fn create_test_blockchain() -> Blockchain {

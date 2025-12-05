@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use trinitychain::api::Node; // Import the unified Node
 use trinitychain::blockchain::Blockchain;
+use trinitychain::crypto::address_from_string;
 use trinitychain::config::load_config;
 use trinitychain::persistence::Database;
 
@@ -57,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let db = Database::open(&db_path).expect("Failed to open database");
     let blockchain = db.load_blockchain().unwrap_or_else(|_| {
-        Blockchain::new("".to_string(), 1).expect("Failed to create new blockchain")
+        Blockchain::new(address_from_string(""), 1).expect("Failed to create new blockchain")
     });
 
     // Create the unified Node

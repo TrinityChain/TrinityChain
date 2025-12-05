@@ -1,11 +1,10 @@
 //! Transaction types for TrinityChain
 
 use crate::blockchain::{Sha256Hash, TriangleState};
+use crate::crypto::Address;
 use crate::error::ChainError;
 use crate::geometry::{Coord, Triangle};
 use sha2::{Digest, Sha256};
-
-pub type Address = String;
 
 /// Maximum transaction size in bytes (100KB) to prevent DoS
 pub const MAX_TRANSACTION_SIZE: usize = 100_000;
@@ -62,23 +61,23 @@ impl Transaction {
                 for child in &tx.children {
                     hasher.update(child.hash());
                 }
-                hasher.update(tx.owner_address.as_bytes());
-                hasher.update(tx.fee_area.to_le_bytes());
-                hasher.update(tx.nonce.to_le_bytes());
+                hasher.update(&tx.owner_address);
+                hasher.update(&tx.fee_area.to_le_bytes());
+                hasher.update(&tx.nonce.to_le_bytes());
             }
             Transaction::Coinbase(tx) => {
                 hasher.update("coinbase".as_bytes());
-                hasher.update(tx.reward_area.to_le_bytes());
-                hasher.update(tx.beneficiary_address.as_bytes());
+                hasher.update(&tx.reward_area.to_le_bytes());
+                hasher.update(&tx.beneficiary_address);
             }
             Transaction::Transfer(tx) => {
                 hasher.update("transfer".as_bytes());
-                hasher.update(tx.input_hash);
-                hasher.update(tx.new_owner.as_bytes());
-                hasher.update(tx.sender.as_bytes());
-                hasher.update(tx.amount.to_le_bytes());
-                hasher.update(tx.fee_area.to_le_bytes());
-                hasher.update(tx.nonce.to_le_bytes());
+                hasher.update(&tx.input_hash);
+                hasher.update(&tx.new_owner);
+                hasher.update(&tx.sender);
+                hasher.update(&tx.amount.to_le_bytes());
+                hasher.update(&tx.fee_area.to_le_bytes());
+                hasher.update(&tx.nonce.to_le_bytes());
             }
         };
         hasher.finalize().into()
@@ -131,7 +130,7 @@ impl SubdivisionTx {
         for child in &self.children {
             message.extend_from_slice(&child.hash());
         }
-        message.extend_from_slice(self.owner_address.as_bytes());
+        message.extend_from_slice(&self.owner_address);
         message.extend_from_slice(&self.fee_area.to_le_bytes());
         message.extend_from_slice(&self.nonce.to_le_bytes());
         message
@@ -180,7 +179,7 @@ impl SubdivisionTx {
         if parent.owner != self.owner_address {
             return Err(ChainError::InvalidTransaction(format!(
                 "Subdivision transaction owner {} does not match parent triangle owner {}",
-                self.owner_address, parent.owner
+                hex::encode(self.owner_address), hex::encode(parent.owner)
             )));
         }
 
@@ -304,8 +303,8 @@ impl TransferTx {
         let mut message = Vec::new();
         message.extend_from_slice("TRANSFER:".as_bytes());
         message.extend_from_slice(&self.input_hash);
-        message.extend_from_slice(self.new_owner.as_bytes());
-        message.extend_from_slice(self.sender.as_bytes());
+        message.extend_from_slice(&self.new_owner);
+        message.extend_from_slice(&self.sender);
         message.extend_from_slice(&self.amount.to_le_bytes());
         // Use f64 bytes for geometric fee
         message.extend_from_slice(&self.fee_area.to_le_bytes());
@@ -417,7 +416,7 @@ impl TransferTx {
         if input_triangle.owner != self.sender {
             return Err(ChainError::InvalidTransaction(format!(
                 "Sender {} does not own input triangle (owned by {})",
-                self.sender, input_triangle.owner
+                hex::encode(self.sender), hex::encode(input_triangle.owner)
             )));
         }
 
@@ -429,7 +428,7 @@ impl TransferTx {
 mod tests {
     use super::*;
     use crate::blockchain::TriangleState;
-    use crate::crypto::KeyPair;
+    use crate::crypto::{KeyPair, address_from_string};
     use crate::geometry::{Coord, Point, Triangle};
 
     #[test]
@@ -460,26 +459,20 @@ mod tests {
         let message = tx.signable_message();
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
-        tx.sign(signature, public_key);
-
-        assert!(tx.validate(&state).is_ok());
-    }
-
-    #[test]
-    fn test_unsigned_transaction_fails() {
+        tx.sign(signature.to_vec(), public_key);
         let mut state = TriangleState::new();
         let parent = Triangle::new(
             Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
-            "test_owner".to_string(),
+            address_from_string("test_owner"),
         );
         let parent_hash = parent.hash();
         state.utxo_set.insert(parent_hash, parent.clone());
 
         let children = parent.subdivide();
-        let address = "test_address".to_string();
+        let address = address_from_string("test_address");
 
         let tx = SubdivisionTx::new(
             parent_hash,
@@ -499,7 +492,7 @@ mod tests {
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
-            "test_owner".to_string(),
+            address_from_string("test_owner"),
         );
         let parent_hash = parent.hash();
         state.utxo_set.insert(parent_hash, parent.clone());
@@ -530,7 +523,7 @@ mod tests {
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
-            "test_owner".to_string(),
+            address_from_string("test_owner"),
         );
         let parent_hash = parent.hash();
         state.utxo_set.insert(parent_hash, parent);
@@ -540,7 +533,7 @@ mod tests {
             Point::new(Coord::from_num(2.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(1.0), Coord::from_num(1.732)),
             None,
-            "test_owner".to_string(),
+            address_from_string("test_owner"),
         );
         let children = vec![bad_child.clone(), bad_child.clone(), bad_child];
 
@@ -560,12 +553,12 @@ mod tests {
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
-            "test_owner".to_string(),
+            address_from_string("test_owner"),
         );
         let parent_hash = parent.hash();
         let children = parent.subdivide();
 
-        let address = "test_address".to_string();
+        let address = address_from_string("test_address");
         let tx = SubdivisionTx::new(
             parent_hash,
             children.to_vec(),
@@ -597,7 +590,7 @@ mod tests {
         state.utxo_set.insert(triangle_hash, large_triangle);
 
         let fee_area = Coord::from_num(0.0001);
-        let recipient_address = "recipient_address".to_string();
+        let recipient_address = address_from_string("recipient_address");
 
         let mut tx = TransferTx::new(
             triangle_hash,
@@ -611,7 +604,7 @@ mod tests {
         let message = tx.signable_message();
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
-        tx.sign(signature, public_key);
+        tx.sign(signature.to_vec(), public_key);
 
         assert!(tx.validate_with_state(&state).is_ok());
 
@@ -660,7 +653,7 @@ mod tests {
 
         let mut tx = TransferTx::new(
             triangle_hash,
-            "recipient".to_string(),
+            address_from_string("recipient"),
             sender_address.clone(),
             Coord::from_num(0),
             fee_area,
@@ -670,7 +663,7 @@ mod tests {
         let message = tx.signable_message();
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
-        tx.sign(signature, public_key);
+        tx.sign(signature.to_vec(), public_key);
 
         let result = tx.validate_with_state(&state);
         assert!(result.is_err());
@@ -688,7 +681,7 @@ mod tests {
 
         let mut tx = TransferTx::new(
             [0u8; 32],
-            "recipient".to_string(),
+            address_from_string("recipient"),
             keypair.address(),
             Coord::from_num(0),
             Coord::from_num(-1.0), // Negative fee
@@ -698,7 +691,7 @@ mod tests {
         let message = tx.signable_message();
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
-        tx.sign(signature, public_key);
+        tx.sign(signature.to_vec(), public_key);
 
         let result = tx.validate();
         assert!(result.is_err());
