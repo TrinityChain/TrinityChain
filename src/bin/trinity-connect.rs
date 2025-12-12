@@ -2,7 +2,6 @@ use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use trinitychain::blockchain::Blockchain;
-use trinitychain::crypto::address_from_string;
 use trinitychain::config::load_config;
 use trinitychain::network::NetworkNode;
 use trinitychain::persistence::Database;
@@ -33,7 +32,7 @@ async fn connect_peer(addr: &str) {
     let config = load_config().expect("Failed to load config");
     let db = Database::open(&config.database.path).expect("DB open failed");
     let blockchain = db.load_blockchain().unwrap_or_else(|_| {
-        Blockchain::new(address_from_string(""), 1).expect("Failed to create new blockchain")
+        Blockchain::new([0; 32], 1).expect("Failed to create new blockchain")
     });
     let node = Arc::new(NetworkNode::new(Arc::new(RwLock::new(blockchain))));
 

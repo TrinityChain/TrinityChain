@@ -6,6 +6,7 @@ use comfy_table::Color as TableColor;
 use comfy_table::{Attribute, Cell, ContentArrangement, Table};
 use trinitychain::cli::load_blockchain_from_config;
 use trinitychain::transaction::Transaction;
+use hex;
 
 const LOGO: &str = r#"
 ╔═══════════════════════════════════════════════════════════════╗
@@ -40,20 +41,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wallet_data: serde_json::Value = serde_json::from_str(&wallet_content)
         .map_err(|e| format!("Failed to parse wallet: {}", e))?;
 
-    let my_address = wallet_data["address"]
+    let my_address_str = wallet_data["address"]
         .as_str()
         .ok_or("Wallet address not found in wallet file")?;
 
+    let mut my_address_bytes = [0u8; 32];
+    hex::decode_to_slice(my_address_str, &mut my_address_bytes)
+        .map_err(|e| format!("Invalid address format in wallet: {}", e))?;
+
     let (_config, chain) = load_blockchain_from_config()?;
 
-    let addr_display = if my_address.len() > 40 {
+    let addr_display = if my_address_str.len() > 40 {
         format!(
             "{}...{}",
-            &my_address[..20],
-            &my_address[my_address.len() - 16..]
+            &my_address_str[..20],
+            &my_address_str[my_address_str.len() - 16..]
         )
     } else {
-        my_address.to_string()
+        my_address_str.to_string()
     };
 
     println!(
@@ -95,8 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for tx in &block.transactions {
             match tx {
                 Transaction::Transfer(transfer_tx) => {
-                    let is_sender = transfer_tx.sender == my_address;
-                    let is_receiver = transfer_tx.new_owner == my_address;
+                    let is_sender = transfer_tx.sender == my_address_bytes;
+                    let is_receiver = transfer_tx.new_owner == my_address_bytes;
 
                     if is_sender || is_receiver {
                         tx_count += 1;
@@ -119,14 +124,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         };
 
                         let other_party = if is_sender {
-                            let addr = &transfer_tx.new_owner;
+                            let addr = hex::encode(transfer_tx.new_owner);
                             if addr.len() > 20 {
                                 format!("To: {}...{}", &addr[..8], &addr[addr.len() - 8..])
                             } else {
                                 format!("To: {}", addr)
                             }
                         } else {
-                            let addr = &transfer_tx.sender;
+                            let addr = hex::encode(transfer_tx.sender);
                             if addr.len() > 20 {
                                 format!("From: {}...{}", &addr[..8], &addr[addr.len() - 8..])
                             } else {
@@ -155,7 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 Transaction::Coinbase(coinbase_tx) => {
-                    if coinbase_tx.beneficiary_address == my_address {
+                    if coinbase_tx.beneficiary_address == my_address_bytes {
                         tx_count += 1;
                         received_count += 1;
                         mining_count += 1;
@@ -171,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 Transaction::Subdivision(sub_tx) => {
-                    if sub_tx.owner_address == my_address {
+                    if sub_tx.owner_address == my_address_bytes {
                         tx_count += 1;
 
                         let hash_hex = hex::encode(sub_tx.parent_hash);

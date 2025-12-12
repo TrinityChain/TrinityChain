@@ -2,11 +2,15 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use std::collections::HashSet;
 use trinitychain::cli::load_blockchain_from_config;
+use trinitychain::crypto::Address;
 use trinitychain::geometry::Coord;
 use trinitychain::transaction::{Transaction, TransferTx};
 use trinitychain::wallet;
 
-const GUESTBOOK_ADDRESS: &str = "trinity-guestbook-address-00000000000000000";
+const GUESTBOOK_ADDRESS: Address = [
+    0x71, 0x66, 0x9c, 0xea, 0x10, 0xe2, 0x3f, 0x0d, 0x7b, 0x8c, 0xb4, 0x03, 0x74, 0x2b, 0xcc, 0x56,
+    0x54, 0x50, 0xbb, 0x58, 0xda, 0x8e, 0x8b, 0xb2, 0x7f, 0x1c, 0xd2, 0x6f, 0x2a, 0xe6, 0x16, 0x67,
+];
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -48,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "🖋️  Signing the guestbook...".bright_cyan());
 
-    let (from_wallet, from_address, keypair) = match wallet_name {
+    let (from_wallet, from_address_str, keypair) = match wallet_name {
         Some(name) => {
             let w = wallet::load_named_wallet(name)?;
             let kp = w.get_keypair()?;
@@ -62,6 +66,10 @@ async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn st
     };
 
     println!("Signing with wallet: {}", from_wallet.bright_yellow());
+
+    let mut from_address = [0u8; 32];
+    hex::decode_to_slice(&from_address_str, &mut from_address)
+        .map_err(|e| format!("Invalid from_address in wallet: {}", e))?;
 
     let (_config, mut chain) = load_blockchain_from_config()?;
 
@@ -87,7 +95,7 @@ async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn st
 
     let mut tx = TransferTx::new(
         *input_hash,
-        GUESTBOOK_ADDRESS.to_string(),
+        GUESTBOOK_ADDRESS,
         from_address,
         Coord::from_num(0),      // No value transferred to the guestbook address
         Coord::from_num(0.0001), // A small fee to get the transaction mined
@@ -128,7 +136,7 @@ fn view() -> Result<(), Box<dyn std::error::Error>> {
                         println!(
                             "{} from {}: {}",
                             "•".bright_yellow(),
-                            transfer_tx.sender.bright_green(),
+                            hex::encode(transfer_tx.sender).bright_green(),
                             memo
                         );
                     }

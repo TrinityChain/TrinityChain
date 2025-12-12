@@ -24,7 +24,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
 use crate::blockchain::{Block, Blockchain, Sha256Hash};
-use crate::crypto::{KeyPair, address_from_string};
+use crate::crypto::KeyPair;
 use crate::error::ChainError;
 use crate::geometry::Coord;
 use crate::miner;
@@ -208,11 +208,7 @@ impl Node {
 
                     let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
                         reward_area: Coord::from_num(reward),
-<<<<<<< HEAD
-                        beneficiary_address: address_from_string(&miner_address),
-=======
                         beneficiary_address: address,
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
                     });
 
                     let mut all_txs = vec![coinbase_tx];
@@ -734,9 +730,8 @@ async fn get_address_balance(
     }
 
     let blockchain = node.blockchain.read().await;
-    let address = address_from_string(&addr);
     // Format the balance (Coord) as a String to preserve floating-point precision
-    let balance = format!("{}", blockchain.state.get_balance(&address));
+    let balance = format!("{}", blockchain.state.get_balance(&addr));
 
     Json(BalanceResponse {
         balance, // Now a String
@@ -764,10 +759,7 @@ async fn get_address_transactions(
 
     // We will collect transactions found on the blockchain and transactions found in the mempool.
     let mut transactions: Vec<TransactionHistoryEntry> = Vec::new();
-<<<<<<< HEAD
-    let target_addr = address_from_string(&addr);
-=======
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
+
 
     // 1. Search confirmed transactions in the blockchain
     // We iterate backwards from the latest block for common chronological display in wallets.

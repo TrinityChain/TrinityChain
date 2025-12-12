@@ -1,9 +1,17 @@
 use trinitychain::blockchain::{Blockchain, Block};
-use trinitychain::crypto::address_from_string;
+use trinitychain::crypto::Address;
 use trinitychain::transaction::{Transaction, CoinbaseTx};
 use trinitychain::persistence::Database;
 use trinitychain::miner::mine_block;
 use std::env;
+use sha2::{Digest, Sha256};
+use hex;
+
+fn address_from_string(s: &str) -> Address {
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    hasher.finalize().into()
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -12,19 +20,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let wallet_name = &args[1];
+    let address = address_from_string(wallet_name);
 
     let db = Database::open("trinitychain.db")?;
-    let mut chain = db.load_blockchain().unwrap_or_else(|_| {
-        println!("No chain found – creating genesis");
-        Blockchain::new(address_from_string(wallet_name), 1).unwrap()
-    });
+    let mut chain = db.load_blockchain().unwrap_or_else(|_|
+        {
+            println!("No chain found – creating genesis");
+            Blockchain::new(address, 1).unwrap()
+        });
 
     let last_block = chain.blocks.last().cloned().unwrap();
     let new_height = last_block.header.height + 1;
 
     let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
         reward_area: trinitychain::geometry::Coord::from_num(1000),
-        beneficiary_address: address_from_string(wallet_name),
+        beneficiary_address: address,
     });
 
     let transactions = vec![coinbase_tx];

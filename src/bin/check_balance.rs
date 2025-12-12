@@ -1,6 +1,13 @@
 use trinitychain::persistence::Database;
-use trinitychain::crypto::address_from_string;
+use trinitychain::crypto::Address;
 use trinitychain::geometry::Coord;
+use sha2::{Digest, Sha256};
+
+fn address_from_string(s: &str) -> Address {
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    hasher.finalize().into()
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Address to check

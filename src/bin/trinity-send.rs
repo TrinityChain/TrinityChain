@@ -138,10 +138,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wallet::load_default_wallet()?
     };
 
-    let from_address = from_wallet.address.clone();
+    let from_address_str = from_wallet.address.clone();
+    let mut from_address = [0u8; 32];
+    hex::decode_to_slice(&from_address_str, &mut from_address)
+        .map_err(|e| format!("Invalid from_address in wallet: {}", e))?;
     let keypair = from_wallet.get_keypair()?;
 
     pb.set_message("Loading blockchain...");
+
+    let mut to_address_bytes = [0u8; 32];
+    hex::decode_to_slice(to_address, &mut to_address_bytes)
+        .map_err(|e| format!("Invalid to_address format: {}", e))?;
 
     let (_config, mut chain) = load_blockchain_from_config()?;
 
@@ -188,24 +195,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.finish_and_clear();
 
-    let from_display = if from_address.len() > 20 {
-        format!(
-            "{}...{}",
-            &from_address[..10],
-            &from_address[from_address.len() - 10..]
-        )
-    } else {
-        from_address.clone()
-    };
-    let to_display = if to_address.len() > 20 {
-        format!(
-            "{}...{}",
-            &to_address[..10],
-            &to_address[to_address.len() - 10..]
-        )
-    } else {
-        to_address.to_string()
-    };
+    let from_display = hex::encode(from_address);
+    let to_display = hex::encode(to_address_bytes);
 
     println!(
         "{}",
@@ -252,8 +243,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fee = Coord::from_num(0);
     let mut tx = TransferTx::new(
         *input_hash,
-        to_address.to_string(),
-        from_address.clone(),
+        to_address_bytes,
+        from_address,
         amount_coord,
         fee,
         chain.blocks.len() as u64,

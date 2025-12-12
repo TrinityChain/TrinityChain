@@ -4,7 +4,6 @@ use crate::blockchain::Sha256Hash;
 use crate::crypto::Address;
 use crate::error::ChainError;
 use crate::transaction::Transaction;
-use crate::crypto::Address;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -21,10 +20,7 @@ pub struct MempoolTransaction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mempool {
     transactions: HashMap<Sha256Hash, MempoolTransaction>,
-<<<<<<< HEAD
     #[serde(skip)]
-=======
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
     by_sender: HashMap<Address, Vec<Sha256Hash>>,
 }
 

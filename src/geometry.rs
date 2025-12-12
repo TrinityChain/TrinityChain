@@ -1,9 +1,5 @@
 use crate::blockchain::Sha256Hash;
-<<<<<<< HEAD
-use crate::crypto::{Address, address_from_string};
-=======
 use crate::crypto::Address;
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 use fixed::types::I32F32;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -170,11 +166,7 @@ impl Triangle {
         }
 
         // Include owner and value in the hash for uniqueness
-<<<<<<< HEAD
-        hasher.update(&self.owner);
-=======
         hasher.update(self.owner);
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         if let Some(value) = self.value {
             hasher.update(value.to_le_bytes());
         }
@@ -197,11 +189,7 @@ impl Triangle {
             Point::new(Coord::from_num(1.7320508), Coord::from_num(0)),
             Point::new(Coord::from_num(0.8660254), Coord::from_num(1.5)),
             None,
-<<<<<<< HEAD
-            address_from_string("genesis_owner"),
-=======
             [0; 32],
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         )
     }
 
@@ -288,11 +276,7 @@ mod tests {
             Point::new(Coord::from_num(10), Coord::from_num(0)),
             Point::new(Coord::from_num(0), Coord::from_num(10)),
             None,
-<<<<<<< HEAD
-            address_from_string("test_owner"),
-=======
             create_test_address("test_owner"),
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         )
     }
 
@@ -316,13 +300,8 @@ mod tests {
         let p2 = Point::new(Coord::from_num(3), Coord::from_num(4));
         let p3 = Point::new(Coord::from_num(5), Coord::from_num(6));
 
-<<<<<<< HEAD
-        let t1 = Triangle::new(p1, p2, p3, None, address_from_string("owner1"));
-        let t2 = Triangle::new(p3, p1, p2, None, address_from_string("owner1"));
-=======
         let t1 = Triangle::new(p1, p2, p3, None, create_test_address("owner1"));
         let t2 = Triangle::new(p3, p1, p2, None, create_test_address("owner1"));
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 
         assert_eq!(t1.hash(), t2.hash());
     }
@@ -333,13 +312,8 @@ mod tests {
         let p2 = Point::new(Coord::from_num(3), Coord::from_num(4));
         let p3 = Point::new(Coord::from_num(5), Coord::from_num(6));
 
-<<<<<<< HEAD
-        let t1 = Triangle::new(p1, p2, p3, None, address_from_string("owner1"));
-        let t2 = Triangle::new(p1, p2, p3, None, address_from_string("owner2"));
-=======
         let t1 = Triangle::new(p1, p2, p3, None, create_test_address("owner1"));
         let t2 = Triangle::new(p1, p2, p3, None, create_test_address("owner2"));
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 
         assert_ne!(t1.hash(), t2.hash());
     }
@@ -384,11 +358,7 @@ mod tests {
             Point::new(Coord::from_num(2), Coord::from_num(2)),
             Point::new(Coord::from_num(3), Coord::from_num(3)),
             None,
-<<<<<<< HEAD
-            address_from_string("owner"),
-=======
             create_test_address("owner"),
->>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         );
         assert!(!t_degenerate.is_valid());
     }
