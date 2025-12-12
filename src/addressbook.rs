@@ -554,7 +554,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_addressbook_sanitization() {
         let book = AddressBook::new();
         let result = book.add(
@@ -568,7 +567,7 @@ mod tests {
         }
         assert!(result.is_ok(), "Failed to add entry: {:?}", result);
 
-                let entry = book.get("alice").unwrap();
+        let entry = book.get("alice").unwrap();
         assert_eq!(entry.label, "Alice");
         assert_eq!(entry.address, "00000000000000000000000000000000000000000000000000000000000abc123");
         assert_eq!(entry.notes.as_deref(), Some("Friend"));
@@ -647,7 +646,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_addressbook_search() {
         let book = AddressBook::new();
         book.add(
