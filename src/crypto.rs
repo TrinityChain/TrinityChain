@@ -196,7 +196,6 @@ mod tests {
 
         let result = verify_signature(&pubkey2_bytes, message, &signature);
         assert!(result.is_err());
-        // Assert on the concrete error string for robust testing
         assert_eq!(
             result.unwrap_err().to_string(),
             "Cryptographic error: Signature verification failed"

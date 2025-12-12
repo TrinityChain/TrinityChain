@@ -4,6 +4,7 @@ use crate::blockchain::Sha256Hash;
 use crate::crypto::Address;
 use crate::error::ChainError;
 use crate::transaction::Transaction;
+use crate::crypto::Address;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -20,7 +21,10 @@ pub struct MempoolTransaction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mempool {
     transactions: HashMap<Sha256Hash, MempoolTransaction>,
+<<<<<<< HEAD
     #[serde(skip)]
+=======
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
     by_sender: HashMap<Address, Vec<Sha256Hash>>,
 }
 
@@ -51,8 +55,8 @@ impl Mempool {
         }
 
         let sender = match &tx {
-            Transaction::Transfer(tx) => tx.sender.clone(),
-            Transaction::Subdivision(tx) => tx.owner_address.clone(),
+            Transaction::Transfer(tx) => tx.sender,
+            Transaction::Subdivision(tx) => tx.owner_address,
             Transaction::Coinbase(_) => {
                 return Err(ChainError::InvalidTransaction(
                     "Coinbase transactions cannot be in mempool".to_string(),
@@ -60,7 +64,7 @@ impl Mempool {
             }
         };
 
-        let sender_txs = self.by_sender.entry(sender.clone()).or_default();
+        let sender_txs = self.by_sender.entry(sender).or_default();
         if sender_txs.len() >= MAX_TX_PER_ADDRESS {
             return Err(ChainError::InvalidTransaction(
                 "Exceeded maximum transactions per address".to_string(),
@@ -106,8 +110,8 @@ impl Mempool {
     pub fn remove_transaction(&mut self, tx_hash: &Sha256Hash) {
         if let Some(mempool_tx) = self.transactions.remove(tx_hash) {
             let sender = match &mempool_tx.tx {
-                Transaction::Transfer(tx) => tx.sender.clone(),
-                Transaction::Subdivision(tx) => tx.owner_address.clone(),
+                Transaction::Transfer(tx) => tx.sender,
+                Transaction::Subdivision(tx) => tx.owner_address,
                 Transaction::Coinbase(_) => return,
             };
 

@@ -1,11 +1,17 @@
 //! Transaction types for TrinityChain
 
+use crate::crypto::Address;
 use crate::blockchain::{Sha256Hash, TriangleState};
 use crate::crypto::Address;
 use crate::error::ChainError;
 use crate::geometry::{Coord, Triangle};
 use sha2::{Digest, Sha256};
 
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 /// Maximum transaction size in bytes (100KB) to prevent DoS
 pub const MAX_TRANSACTION_SIZE: usize = 100_000;
 
@@ -61,6 +67,7 @@ impl Transaction {
                 for child in &tx.children {
                     hasher.update(child.hash());
                 }
+<<<<<<< HEAD
                 hasher.update(&tx.owner_address);
                 hasher.update(&tx.fee_area.to_le_bytes());
                 hasher.update(&tx.nonce.to_le_bytes());
@@ -78,6 +85,25 @@ impl Transaction {
                 hasher.update(&tx.amount.to_le_bytes());
                 hasher.update(&tx.fee_area.to_le_bytes());
                 hasher.update(&tx.nonce.to_le_bytes());
+=======
+                hasher.update(tx.owner_address);
+                hasher.update(tx.fee_area.to_le_bytes());
+                hasher.update(tx.nonce.to_le_bytes());
+            }
+            Transaction::Coinbase(tx) => {
+                hasher.update("coinbase".as_bytes());
+                hasher.update(tx.reward_area.to_le_bytes());
+                hasher.update(tx.beneficiary_address);
+            }
+            Transaction::Transfer(tx) => {
+                hasher.update("transfer".as_bytes());
+                hasher.update(tx.input_hash);
+                hasher.update(tx.new_owner);
+                hasher.update(tx.sender);
+                hasher.update(tx.amount.to_le_bytes());
+                hasher.update(tx.fee_area.to_le_bytes());
+                hasher.update(tx.nonce.to_le_bytes());
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
             }
         };
         hasher.finalize().into()
@@ -236,7 +262,7 @@ impl CoinbaseTx {
         }
 
         // Validate beneficiary address is not empty
-        if self.beneficiary_address.is_empty() {
+        if self.beneficiary_address == [0; 32] {
             return Err(ChainError::InvalidTransaction(
                 "Coinbase beneficiary address cannot be empty".to_string(),
             ));
@@ -327,12 +353,12 @@ impl TransferTx {
         }
 
         // Validate addresses are not empty
-        if self.sender.is_empty() {
+        if self.sender == [0; 32] {
             return Err(ChainError::InvalidTransaction(
                 "Sender address cannot be empty".to_string(),
             ));
         }
-        if self.new_owner.is_empty() {
+        if self.new_owner == [0; 32] {
             return Err(ChainError::InvalidTransaction(
                 "New owner address cannot be empty".to_string(),
             ));
@@ -431,6 +457,13 @@ mod tests {
     use crate::crypto::{KeyPair, address_from_string};
     use crate::geometry::{Coord, Point, Triangle};
 
+    fn create_test_address(s: &str) -> Address {
+        let mut address = [0u8; 32];
+        let bytes = s.as_bytes();
+        address[..bytes.len()].copy_from_slice(bytes);
+        address
+    }
+
     #[test]
     fn test_tx_validation_success() {
         let mut state = TriangleState::new();
@@ -460,19 +493,36 @@ mod tests {
         let signature = keypair.sign(&message).unwrap();
         let public_key = keypair.public_key.serialize().to_vec();
         tx.sign(signature.to_vec(), public_key);
+<<<<<<< HEAD
+=======
+
+        assert!(tx.validate(&state).is_ok());
+    }
+
+    #[test]
+    fn test_unsigned_transaction_fails() {
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         let mut state = TriangleState::new();
         let parent = Triangle::new(
             Point::new(Coord::from_num(0.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
+<<<<<<< HEAD
             address_from_string("test_owner"),
+=======
+            create_test_address("test_owner"),
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         );
         let parent_hash = parent.hash();
         state.utxo_set.insert(parent_hash, parent.clone());
 
         let children = parent.subdivide();
+<<<<<<< HEAD
         let address = address_from_string("test_address");
+=======
+        let address = create_test_address("test_address");
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 
         let tx = SubdivisionTx::new(
             parent_hash,
@@ -492,7 +542,11 @@ mod tests {
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
+<<<<<<< HEAD
             address_from_string("test_owner"),
+=======
+            create_test_address("test_owner"),
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         );
         let parent_hash = parent.hash();
         state.utxo_set.insert(parent_hash, parent.clone());
@@ -523,7 +577,11 @@ mod tests {
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
+<<<<<<< HEAD
             address_from_string("test_owner"),
+=======
+            create_test_address("test_owner"),
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         );
         let parent_hash = parent.hash();
         state.utxo_set.insert(parent_hash, parent);
@@ -533,7 +591,11 @@ mod tests {
             Point::new(Coord::from_num(2.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(1.0), Coord::from_num(1.732)),
             None,
+<<<<<<< HEAD
             address_from_string("test_owner"),
+=======
+            create_test_address("test_owner"),
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         );
         let children = vec![bad_child.clone(), bad_child.clone(), bad_child];
 
@@ -553,12 +615,20 @@ mod tests {
             Point::new(Coord::from_num(1.0), Coord::from_num(0.0)),
             Point::new(Coord::from_num(0.5), Coord::from_num(0.866)),
             None,
+<<<<<<< HEAD
             address_from_string("test_owner"),
+=======
+            create_test_address("test_owner"),
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         );
         let parent_hash = parent.hash();
         let children = parent.subdivide();
 
+<<<<<<< HEAD
         let address = address_from_string("test_address");
+=======
+        let address = create_test_address("test_address");
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         let tx = SubdivisionTx::new(
             parent_hash,
             children.to_vec(),
@@ -590,7 +660,11 @@ mod tests {
         state.utxo_set.insert(triangle_hash, large_triangle);
 
         let fee_area = Coord::from_num(0.0001);
+<<<<<<< HEAD
         let recipient_address = address_from_string("recipient_address");
+=======
+        let recipient_address = create_test_address("recipient_address");
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 
         let mut tx = TransferTx::new(
             triangle_hash,
@@ -653,7 +727,11 @@ mod tests {
 
         let mut tx = TransferTx::new(
             triangle_hash,
+<<<<<<< HEAD
             address_from_string("recipient"),
+=======
+            create_test_address("recipient"),
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
             sender_address.clone(),
             Coord::from_num(0),
             fee_area,
@@ -681,7 +759,11 @@ mod tests {
 
         let mut tx = TransferTx::new(
             [0u8; 32],
+<<<<<<< HEAD
             address_from_string("recipient"),
+=======
+            create_test_address("recipient"),
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
             keypair.address(),
             Coord::from_num(0),
             Coord::from_num(-1.0), // Negative fee

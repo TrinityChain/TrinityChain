@@ -162,6 +162,10 @@ impl Node {
             ));
         }
 
+        let mut address = [0u8; 32];
+        hex::decode_to_slice(&miner_address, &mut address)
+            .map_err(|e| ApiError::InvalidInput(format!("Invalid miner address: {}", e)))?;
+
         // Check if already mining
         if self
             .is_mining
@@ -199,9 +203,16 @@ impl Node {
                     let height = bc.blocks.len() as u64;
                     let reward = Blockchain::calculate_block_reward(height);
 
+                    let mut address = [0u8; 32];
+                    hex::decode_to_slice(&miner_address, &mut address).unwrap();
+
                     let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
                         reward_area: Coord::from_num(reward),
+<<<<<<< HEAD
                         beneficiary_address: address_from_string(&miner_address),
+=======
+                        beneficiary_address: address,
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
                     });
 
                     let mut all_txs = vec![coinbase_tx];
@@ -709,8 +720,19 @@ async fn get_network_info(State(node): State<Arc<Node>>) -> impl IntoResponse {
 
 async fn get_address_balance(
     State(node): State<Arc<Node>>,
-    Path(addr): Path<String>,
+    Path(addr_str): Path<String>,
 ) -> impl IntoResponse {
+    let mut addr = [0u8; 32];
+    if hex::decode_to_slice(&addr_str, &mut addr).is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Invalid address format".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
     let blockchain = node.blockchain.read().await;
     let address = address_from_string(&addr);
     // Format the balance (Coord) as a String to preserve floating-point precision
@@ -718,19 +740,34 @@ async fn get_address_balance(
 
     Json(BalanceResponse {
         balance, // Now a String
-        address: addr,
+        address: addr_str,
     })
+    .into_response()
 }
 
 async fn get_address_transactions(
     State(node): State<Arc<Node>>,
-    Path(addr): Path<String>,
+    Path(addr_str): Path<String>,
 ) -> impl IntoResponse {
+    let mut target_addr = [0u8; 32];
+    if hex::decode_to_slice(&addr_str, &mut target_addr).is_err() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Invalid address format".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
     let blockchain = node.blockchain.read().await;
 
     // We will collect transactions found on the blockchain and transactions found in the mempool.
     let mut transactions: Vec<TransactionHistoryEntry> = Vec::new();
+<<<<<<< HEAD
     let target_addr = address_from_string(&addr);
+=======
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 
     // 1. Search confirmed transactions in the blockchain
     // We iterate backwards from the latest block for common chronological display in wallets.
@@ -785,10 +822,11 @@ async fn get_address_transactions(
     }
 
     Json(serde_json::json!({
-        "address": addr,
+        "address": addr_str,
         "count": transactions.len(),
         "transactions": transactions,
     }))
+    .into_response()
 }
 
 async fn create_wallet() -> Result<Json<WalletResponse>, ApiError> {

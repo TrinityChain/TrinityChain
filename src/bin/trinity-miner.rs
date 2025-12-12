@@ -402,7 +402,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_for_network = Database::open("trinitychain.db").expect("Failed to open database");
     let chain_for_network = db_for_network
         .load_blockchain()
+<<<<<<< HEAD
         .unwrap_or_else(|_| Blockchain::new(address_from_string("trinity-miner-genesis"), 1).unwrap());
+=======
+        .unwrap_or_else(|_| Blockchain::new([0; 32], 1).unwrap());
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
     let network = Arc::new(NetworkNode::new(Arc::new(RwLock::new(chain_for_network))));
     let network_clone = network.clone();
 
@@ -459,7 +463,11 @@ async fn mining_loop(
     network: Option<Arc<NetworkNode>>,
 ) {
     let db = Database::open("trinitychain.db").expect("Failed to open database");
+<<<<<<< HEAD
     let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new(address_from_string("trinity-miner-genesis"), 1).unwrap());
+=======
+    let mut chain = db.load_blockchain().unwrap_or_else(|_| Blockchain::new([0; 32], 1).unwrap());
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 
     let start_time = Instant::now();
     let mut blocks_mined = 0;
@@ -478,9 +486,15 @@ async fn mining_loop(
         let new_height = last_block.header.height + 1;
         let difficulty = chain.difficulty;
 
+        let mut address = [0u8; 32];
+        hex::decode_to_slice(&beneficiary_address, &mut address).unwrap();
         let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
             reward_area: trinitychain::geometry::Coord::from_num(1000),
+<<<<<<< HEAD
             beneficiary_address: address_from_string(&beneficiary_address),
+=======
+            beneficiary_address: address,
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
         });
 
         let mut new_block = Block::new(new_height, last_block.hash(), difficulty, vec![coinbase_tx]);

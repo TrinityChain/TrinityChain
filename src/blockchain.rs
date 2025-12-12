@@ -6,6 +6,10 @@ use crate::crypto::Address;
 use crate::geometry::{Coord, Point, Triangle, GEOMETRIC_TOLERANCE};
 use crate::mempool::Mempool;
 use crate::miner::mine_block;
+<<<<<<< HEAD
+=======
+use crate::crypto::Address;
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
 use crate::transaction::{CoinbaseTx, Transaction, TransferTx};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -611,7 +615,14 @@ mod tests {
     use crate::geometry::{Coord, Point};
     use crate::transaction::{SubdivisionTx, TransferTx};
     fn create_test_address(id: &str) -> Address {
+<<<<<<< HEAD
         address_from_string(id)
+=======
+        let mut address = [0u8; 32];
+        let bytes = id.as_bytes();
+        address[..bytes.len()].copy_from_slice(bytes);
+        address
+>>>>>>> cad6751 (Fix difficulty mismatch warning and related compilation errors)
     }
 
     fn create_test_blockchain() -> Blockchain {
