@@ -34,7 +34,7 @@ const WalletManager = ({ nodeUrl }) => {
 
   const fetchBalance = async (address) => {
     try {
-      const response = await fetch(`${nodeUrl}/api/address/${address}/balance`);
+      const response = await fetch(`${nodeUrl}/api/address/${address}/balance`, { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setBalances(prev => ({
@@ -62,6 +62,7 @@ const WalletManager = ({ nodeUrl }) => {
     try {
       const response = await fetch(`${nodeUrl}/api/wallet/create`, {
         method: 'POST',
+        credentials: 'include',
       });
 
       if (!response.ok) {

@@ -40,8 +40,8 @@ const MiningManager = ({ nodeUrl }) => {
   const fetchStats = async () => {
     try {
       const [miningRes, blockchainRes] = await Promise.all([
-        fetch(`${nodeUrl}/api/mining/status`),
-        fetch(`${nodeUrl}/api/blockchain/stats`)
+        fetch(`${nodeUrl}/api/mining/status`, { credentials: 'include' }),
+        fetch(`${nodeUrl}/api/blockchain/stats`, { credentials: 'include' })
       ]);
 
       if (miningRes.ok) {
@@ -70,6 +70,7 @@ const MiningManager = ({ nodeUrl }) => {
     try {
       const response = await fetch(`${nodeUrl}/api/mining/start`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ miner_address: address }),
       });
@@ -94,6 +95,7 @@ const MiningManager = ({ nodeUrl }) => {
     try {
       const response = await fetch(`${nodeUrl}/api/mining/stop`, {
         method: 'POST',
+        credentials: 'include',
       });
 
       if (!response.ok) {

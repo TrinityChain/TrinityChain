@@ -19,10 +19,10 @@ const NetworkManager = ({ nodeUrl }) => {
     setLoading(true);
     try {
       const [infoRes, peersRes, statsRes, apiRes] = await Promise.all([
-        fetch(`${nodeUrl}/api/network/info`).catch(() => ({ ok: false })),
-        fetch(`${nodeUrl}/api/network/peers`).catch(() => ({ ok: false })),
-        fetch(`${nodeUrl}/api/blockchain/stats`).catch(() => ({ ok: false })),
-        fetch(`${nodeUrl}/stats`).catch(() => ({ ok: false }))
+        fetch(`${nodeUrl}/api/network/info`, { credentials: 'include' }).catch(() => ({ ok: false })),
+        fetch(`${nodeUrl}/api/network/peers`, { credentials: 'include' }).catch(() => ({ ok: false })),
+        fetch(`${nodeUrl}/api/blockchain/stats`, { credentials: 'include' }).catch(() => ({ ok: false })),
+        fetch(`${nodeUrl}/stats`, { credentials: 'include' }).catch(() => ({ ok: false }))
       ]);
 
       if (infoRes.ok) {

@@ -167,8 +167,8 @@ def main():
     print_header("Test 7: System Endpoints")
     
     endpoints = [
-        ("/health", "GET", "Health check"),
-        ("/stats", "GET", "API statistics"),
+        ("/api/health", "GET", "Health check"),
+        ("/api/stats", "GET", "API statistics"),
     ]
     
     for path, method, desc in endpoints:

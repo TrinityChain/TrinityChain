@@ -5,7 +5,7 @@ import WalletManager from './WalletManager';
 import TransactionManager from './TransactionManager';
 import MiningManager from './MiningManager';
 import NetworkManager from './NetworkManager';
-import DebugComponent from './DebugComponent';
+import DiagnosticTerminal from './DiagnosticTerminal';
 
 const TrinityChainDashboard = () => {
   const [stats, setStats] = useState(null);
@@ -50,13 +50,17 @@ const TrinityChainDashboard = () => {
 
   const fetchData = async () => {
     try {
+      console.log('[Dashboard] Fetching from:', `${nodeUrl}/api/blockchain/stats`);
       const [statsRes, blocksRes] = await Promise.all([
-        fetch(`${nodeUrl}/api/blockchain/stats`),
-        fetch(`${nodeUrl}/api/blockchain/blocks?limit=50`)
+        fetch(`${nodeUrl}/api/blockchain/stats`, { credentials: 'include' }),
+        fetch(`${nodeUrl}/api/blockchain/blocks?limit=50`, { credentials: 'include' })
       ]);
 
+      console.log('[Dashboard] statsRes status:', statsRes.status);
+      console.log('[Dashboard] blocksRes status:', blocksRes.status);
+
       if (!statsRes.ok || !blocksRes.ok) {
-        throw new Error('Failed to fetch data from node');
+        throw new Error(`HTTP ${statsRes.status}/${blocksRes.status}`);
       }
 
       const statsData = await statsRes.json();
@@ -93,9 +97,12 @@ const TrinityChainDashboard = () => {
 
       setError(null);
       setLoading(false);
+      console.log('[Dashboard] Data fetched successfully');
     } catch (err) {
+      console.error('[Dashboard] Fetch error:', err);
       setError(err.message);
       setLoading(false);
+      // Still show loading=false so UI is visible even on error
     }
   };
 
@@ -150,7 +157,7 @@ const TrinityChainDashboard = () => {
     block.previousHash?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading && !stats) {
+  if (loading && !stats && !error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 flex items-center justify-center">
         <div className="text-center">
@@ -168,6 +175,8 @@ const TrinityChainDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 text-white">
+      <DiagnosticTerminal nodeUrl={nodeUrl} />
+      
       {/* Top Navigation Bar */}
       <div className="bg-slate-900/80 backdrop-blur-xl border-b border-purple-500/20 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
@@ -248,9 +257,6 @@ const TrinityChainDashboard = () => {
       </div>
 
       <div className="max-w-7xl mx-auto p-6">
-        {/* Debug Component */}
-        <DebugComponent />
-        
         {error && (
           <div className="bg-red-900/30 border-l-4 border-red-500 rounded-lg p-4 mb-6 backdrop-blur-sm">
             <div className="flex items-center gap-3">
