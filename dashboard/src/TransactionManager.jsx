@@ -52,7 +52,7 @@ const TransactionManager = ({ nodeUrl }) => {
 
   const fetchBalance = async (address) => {
     try {
-      const response = await fetch(`${nodeUrl}/api/address/${address}/balance`);
+      const response = await fetch(`${nodeUrl}/api/address/${address}/balance`, { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setBalance(parseFloat(data.balance || 0));
@@ -64,7 +64,7 @@ const TransactionManager = ({ nodeUrl }) => {
 
   const fetchTransactionHistory = async (address) => {
     try {
-      const response = await fetch(`${nodeUrl}/api/address/${address}/transactions`);
+      const response = await fetch(`${nodeUrl}/api/address/${address}/transactions`, { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setTransactions(data.transactions || []);
@@ -76,7 +76,7 @@ const TransactionManager = ({ nodeUrl }) => {
 
   const fetchMempool = async () => {
     try {
-      const response = await fetch(`${nodeUrl}/api/mempool`);
+      const response = await fetch(`${nodeUrl}/api/mempool`, { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
         setMempool(data.transactions || []);
@@ -127,6 +127,7 @@ const TransactionManager = ({ nodeUrl }) => {
 
       const response = await fetch(`${nodeUrl}/api/transaction`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(transaction),
       });
