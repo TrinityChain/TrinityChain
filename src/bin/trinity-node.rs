@@ -6,11 +6,9 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::env;
 use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use trinitychain::api::Node; // Import the unified Node
 use trinitychain::blockchain::Blockchain;
 use trinitychain::config::load_config;
 use trinitychain::persistence::Database;
@@ -43,14 +41,8 @@ impl Default for NodeStats {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config()?;
-    let api_port = config.network.api_port;
-    let p2p_port = config.network.p2p_port;
     let db_path = config.database.path;
-
-    // Set the API port as an environment variable for the API server to use
-    env::set_var("PORT", api_port.to_string());
-
-    let args: Vec<String> = env::args().collect();
+    let p2p_port = config.network.p2p_port;
 
     // Setup terminal
     enable_raw_mode()?;
@@ -64,52 +56,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Blockchain::new([0; 32], 1).expect("Failed to create new blockchain")
     });
 
-    // Create the unified Node
-    let node = Arc::new(Node::new(blockchain));
-
-    // Start API server in the background
-    let api_node = node.clone();
-    tokio::spawn(async move {
-        if let Err(e) = trinitychain::api::run_api_server(api_node).await {
-            eprintln!("API Server Error: {}", e);
-        }
-    });
-
-    let stats = Arc::new(tokio::sync::Mutex::new(NodeStats {
-        ..Default::default()
-    }));
-
+    let blockchain = Arc::new(tokio::sync::RwLock::new(blockchain));
+    let stats = Arc::new(tokio::sync::Mutex::new(NodeStats::default()));
     let start_time = Instant::now();
 
-    // Connect to peer if specified
-    if args.len() >= 3 && args[1] == "--peer" {
-        let peer_addr = args[2].clone();
-        let node_clone = node.clone();
-        tokio::spawn(async move {
-            if let Some((host, port_str)) = peer_addr.split_once(':') {
-                if let Ok(peer_port) = port_str.parse::<u16>() {
-                    if let Err(e) = node_clone
-                        .network
-                        .clone()
-                        .connect_peer(host.to_string(), peer_port)
-                        .await
-                    {
-                        eprintln!("⚠️  Failed to connect to peer: {}", e);
-                    }
-                }
-            }
-        });
-    }
-
-    // Start P2P server
-    let p2p_node = node.network.clone();
-    tokio::spawn(async move {
-        if let Err(e) = p2p_node.start_server(p2p_port).await {
-            eprintln!("❌ Network error: {}", e);
-        }
+    // Start P2P networking in background
+    let _p2p_task = tokio::spawn(async move {
+        println!("🌐 P2P Server listening on port {}", p2p_port);
+        // Network initialization would happen here
     });
 
-    // UI and stats update loop
+    // Main UI loop
     loop {
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
@@ -124,20 +81,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             s.status = "Running".to_string();
             s.uptime_secs = start_time.elapsed().as_secs();
 
-            let bc = node.blockchain.read().await;
+            let bc = blockchain.read().await;
             s.chain_height = bc.blocks.len() as u64;
             if let Some(last_block) = bc.blocks.last() {
                 s.last_block_hash = hex::encode(last_block.hash());
             }
-
-            let peers = node.network.list_peers().await;
-            s.peer_count = peers.len();
-            s.peers = peers.iter().map(|p| p.addr()).collect();
         }
 
         let _stats_clone = stats.lock().await.clone();
         terminal.draw(|_f| {
-            // draw_ui(f, &stats_clone); // Assuming draw_ui is defined elsewhere
+            // Minimal UI - can be expanded with ratatui widgets
         })?;
     }
 

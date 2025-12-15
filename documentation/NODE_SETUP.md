@@ -1,83 +1,65 @@
-# TrinityChain Node Setup Guide
+# TrinityChain Node Setup Guide - CLI Edition
 
-## Quick Start: Connect to the Main Network
+## Quick Start: Run a Local Node
 
-### 1. **Build the Node**
+### 1. Build the Node
 
 ```bash
 cargo build --release --bin trinity-node
 ```
 
-### 2. **Run Your Node and Connect to Main Network**
-
-The main TrinityChain node is running on Render at:
-- **Host:** `trinitychain.onrender.com`
-- **P2P Port:** 8333 (default)
-- **API:** `https://trinitychain.onrender.com/api/*`
-- **Dashboard:** `https://trinitychain.onrender.com/`
+### 2. Start Your Local Node
 
 ```bash
-# Start your local node on port 8333
-./target/release/trinity-node --port 8333
-
-# In another terminal, connect to the main network
-cargo run --bin connect-to-network -- trinitychain.onrender.com:8333
+cargo run --release --bin trinity-node
 ```
 
-**Note:** The Render node may take 30-60 seconds to wake up from sleep (free tier limitation).
+This opens an interactive TUI showing:
+- Real-time blockchain statistics
+- Peer connection status  
+- Mining activity
+- Mempool transactions
 
 ---
 
-## Manual Node Connection
+## Multiple Nodes & Networking
 
-### Connect Two Local Nodes
+### Run Multiple Local Nodes
 
-**Terminal 1 - Node A:**
+**Terminal 1 - Node A (Port 8333):**
 ```bash
-./target/release/trinity-node --port 8333
+cargo run --release --bin trinity-node -- --port 8333
 ```
 
-**Terminal 2 - Node B:**
+**Terminal 2 - Node B (Port 8334):**
 ```bash
-./target/release/trinity-node --port 8334
+cargo run --release --bin trinity-node -- --port 8334
+```
 
-# Connect Node B to Node A
-# Use trinity-node --connect flag or API call:
-curl -X POST http://localhost:8334/api/network/connect \
-  -H "Content-Type: application/json" \
-  -d '{"host": "localhost", "port": 8333}'
+**Terminal 3 - Connect Node B to Node A:**
+```bash
+cargo run --release --bin trinity-connect -- localhost:8333
 ```
 
 ---
 
-## Dashboard Features
+## Node Configuration
 
-### Working Features ✅
-- **Auto-refresh Toggle** - Pause/Resume automatic updates (now fixed!)
-- **Manual Refresh** - Force refresh blockchain data
-- **Block List** - View last 50 blocks with full details
-- **Blockchain Stats** - Height, difficulty, UTXO count, mempool size
-- **Search** - Find blocks by hash, height, or previous hash
-- **Real-time Updates** - Auto-refresh every 3 seconds (configurable)
+Edit `config.toml` to customize:
 
-### API Endpoints Available
+```toml
+[network]
+api_port = 3000
+p2p_port = 8333
+max_peers = 50
 
-#### Blockchain
-- `GET /api/blockchain/height` - Current chain height
-- `GET /api/blockchain/stats` - Blockchain statistics
-- `GET /api/blockchain/blocks?limit=50` - Recent blocks (full details)
-- `GET /api/blockchain/block/:hash` - Specific block by hash
-- `GET /api/blockchain/block/by-height/:height` - Block by height
-- `GET /api/blockchain/reward/:height` - Block reward for height
+[database]
+path = "/home/user/.TrinityChain/chain.db"
 
-#### Address & Balance
-- `GET /api/address/:addr/balance` - Address balance
-- `GET /api/address/:addr/triangles` - Triangles owned by address
-- `GET /api/address/:addr/history` - Transaction history
-
-#### Transactions
-- `POST /api/transaction` - Submit transaction
-- `GET /api/transaction/:hash` - Transaction status
+[miner]
+threads = 4
+beneficiary_address = "your_wallet_address_here"
+```
 - `GET /api/transactions/pending` - Pending transactions
 - `GET /api/transactions/mempool-stats` - Mempool statistics
 

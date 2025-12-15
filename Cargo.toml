@@ -2,114 +2,89 @@
 name = "trinitychain"
 version = "0.2.0"
 edition = "2021"
+authors = ["TrinityChain Contributors"]
+license = "MIT"
+description = "A geometric blockchain where value is represented as triangles"
+repository = "https://github.com/TrinityChain/TrinityChain"
 
 [lib]
 name = "trinitychain"
 path = "src/lib.rs"
 
+# Core & Serialization
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 serde_json = "1.0"
-dirs = "5.0"
+bincode = "1.3"
+toml = "0.8"
+
+# Cryptography & Security
 sha2 = "0.10"
-chrono = { version = "0.4", features = ["serde"] }
 secp256k1 = { version = "0.29", features = ["rand-std"] }
 rand = "0.8"
-rusqlite = { version = "0.32", features = ["bundled"] }
-hex = "0.4"
-tokio = { version = "1.42", features = ["full"] }
-bincode = "1.3"
-colored = "2.1"
 aes-gcm = "0.10"
 argon2 = "0.5"
 base64 = "0.21"
-rpassword = "7.3"
-axum = { version = "0.7.9", features = ["macros"] }
+bip39 = "2.2"
+bip32 = "0.5"
+
+# Database & Persistence
+rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = "3.23.0"
+
+# Async & Networking
+tokio = { version = "1.42", features = ["full"] }
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
-tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+# HTTP & Web (Optional - only for trinity-api)
+axum = { version = "0.7.9", features = ["macros"], optional = true }
+tower-http = { version = "0.5", features = ["cors", "fs"], optional = true }
+
+# CLI & TUI
+clap = { version = "4.5.53", features = ["derive"] }
+colored = "2.1"
 indicatif = "0.17"
 console = "0.15"
 comfy-table = "7.1"
 ratatui = "0.26"
 crossterm = "0.27"
+rpassword = "7.3"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
+hex = "0.4"
 humantime = "2.1"
 parking_lot = "0.12"
 ipnetwork = "0.20"
-teloxide = { version = "0.12", features = ["macros"] }
-log = "0.4"
-env_logger = "0.10"
 rayon = "1.8"
 lru = "0.12"
-bip39 = "2.2"
-bip32 = "0.5"
-tempfile = "3.23.0"
 crossbeam-channel = "0.5.15"
 once_cell = "1.19.0"
+fixed = { version = "1.29.0", features = ["serde"] }
+thiserror = "1.0"
+
+# Logging & Tracing
+log = "0.4"
+env_logger = "0.10"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-fixed = { version = "1.29.0", features = ["serde"] }
-toml = "0.8"
-thiserror = "1.0"
-clap = { version = "4.5.53", features = ["derive"] }
+
+# Integration - Telegram (Optional)
+teloxide = { version = "0.12", features = ["macros"], optional = true }
+
+[features]
+default = ["cli"]
+cli = []
+api = ["axum", "tower-http"]
+telegram = ["teloxide"]
+all = ["api", "telegram"]
 
 [[bin]]
 name = "help"
 path = "src/bin/main.rs"
-
-[[bin]]
-
-name = "trinity-addressbook"
-path = "src/bin/trinity-addressbook.rs"
-
-[[bin]]
-name = "trinity-api"
-path = "src/bin/trinity-api.rs"
-
-[[bin]]
-name = "trinity-balance"
-path = "src/bin/trinity-balance.rs"
-
-[[bin]]
-name = "trinity-connect"
-path = "src/bin/trinity-connect.rs"
-
-[[bin]]
-name = "trinity-guestbook"
-path = "src/bin/trinity-guestbook.rs"
-
-[[bin]]
-name = "trinity-history"
-path = "src/bin/trinity-history.rs"
-
-[[bin]]
-name = "trinity-mine-block"
-path = "src/bin/trinity-mine-block.rs"
-
-[[bin]]
-name = "trinity-miner"
-path = "src/bin/trinity-miner.rs"
-
-[[bin]]
-name = "trinity-node"
-path = "src/bin/trinity-node.rs"
-
-[[bin]]
-name = "trinity-send"
-path = "src/bin/trinity-send.rs"
-
-[[bin]]
-name = "trinity-server"
-path = "src/bin/trinity-server.rs"
-
-[[bin]]
-name = "trinity-telegram-bot"
-path = "src/bin/trinity-telegram-bot.rs"
-
-[[bin]]
-name = "trinity-user"
-path = "src/bin/trinity-user.rs"
 
 [[bin]]
 name = "trinity-wallet"
@@ -122,6 +97,61 @@ path = "src/bin/trinity-wallet-backup.rs"
 [[bin]]
 name = "trinity-wallet-restore"
 path = "src/bin/trinity-wallet-restore.rs"
+
+[[bin]]
+name = "trinity-miner"
+path = "src/bin/trinity-miner.rs"
+
+[[bin]]
+name = "trinity-mine-block"
+path = "src/bin/trinity-mine-block.rs"
+
+[[bin]]
+name = "trinity-send"
+path = "src/bin/trinity-send.rs"
+
+[[bin]]
+name = "trinity-balance"
+path = "src/bin/trinity-balance.rs"
+
+[[bin]]
+name = "trinity-history"
+path = "src/bin/trinity-history.rs"
+
+[[bin]]
+name = "trinity-node"
+path = "src/bin/trinity-node.rs"
+
+[[bin]]
+name = "trinity-connect"
+path = "src/bin/trinity-connect.rs"
+
+[[bin]]
+name = "trinity-addressbook"
+path = "src/bin/trinity-addressbook.rs"
+
+[[bin]]
+name = "trinity-guestbook"
+path = "src/bin/trinity-guestbook.rs"
+
+[[bin]]
+name = "trinity-user"
+path = "src/bin/trinity-user.rs"
+
+[[bin]]
+name = "trinity-api"
+path = "src/bin/trinity-api.rs"
+required-features = ["api"]
+
+[[bin]]
+name = "trinity-server"
+path = "src/bin/trinity-server.rs"
+required-features = ["api"]
+
+[[bin]]
+name = "trinity-telegram-bot"
+path = "src/bin/trinity-telegram-bot.rs"
+required-features = ["telegram"]
 
 [dev-dependencies]
 axum-test = "14.1.1"

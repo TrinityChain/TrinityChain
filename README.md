@@ -35,8 +35,8 @@ TrinityChain implements a proof-of-work blockchain where every UTXO is a triangl
    33.3 + 33.3 + 33.3 = 100.0 TRC
 ```
 
-**Current Status:** Functional implementation with test coverage, CLI tools, REST API, and web dashboard.
-This project is actively maintained.
+**Current Status:** Functional CLI implementation with full mining, wallet, and transaction support.
+This project is actively maintained as a command-line blockchain interface.
 
 ---
 
@@ -133,34 +133,74 @@ cargo test -- --nocapture
 # Created: 2025-12-15T17:03:28.761074746+00:00
 ```
 
-### Run Node
+### CLI Commands
+
+#### Node Operations
 
 ```bash
-# Start a node with networking
+# Start a network node with TUI interface
 ./target/release/trinity-node
 
-# To connect to a peer
-./target/release/trinity-connect <peer_address:port>
+# View node help
+./target/release/help
 ```
 
-### Mining
+#### Wallet Management
 
 ```bash
-# Start the persistent miner
-./target/release/trinity-miner
+# Create new wallet
+cargo run --bin trinity-wallet -- new
 
-# To mine a single block
-./target/release/trinity-mine-block
+# Get wallet address
+cargo run --bin trinity-wallet -- address
+
+# List all wallets
+cargo run --bin trinity-wallet -- list
+
+# Backup wallet
+cargo run --bin trinity-wallet -- backup <wallet_name>
+
+# Restore wallet
+cargo run --bin trinity-wallet -- restore <backup_file>
 ```
 
-### Send Transaction
+#### Mining
 
 ```bash
-# Send transaction to an address
-./target/release/trinity-send <to_address> <amount> --from <wallet_name>
+# Start persistent miner
+cargo run --bin trinity-miner
 
-# Example:
-./target/release/trinity-send 9448bf87d9a554a672ad99acef2a811b4f27f20568ea3d55c413b3ec4b0624d3 50 --from alice "Payment memo"
+# Mine a single block
+cargo run --bin trinity-mine-block
+
+# Check mining status
+cargo run --bin trinity-node
+```
+
+#### Transactions
+
+```bash
+# Send transaction
+cargo run --bin trinity-send -- <recipient_address> <amount> --from <wallet_name>
+
+# View transaction history
+cargo run --bin trinity-history -- <address>
+
+# Check address balance
+cargo run --bin trinity-balance -- <address>
+```
+
+#### Other Utilities
+
+```bash
+# View address book
+cargo run --bin trinity-addressbook
+
+# Connect to peer
+cargo run --bin trinity-connect -- <peer_address:port>
+
+# Run Telegram bot
+cargo run --bin trinity-telegram-bot
 ```
 
 ---
@@ -221,59 +261,47 @@ src/
 
 ---
 
-## API
+## Command Line Interface
 
-### HTTP Endpoints
+### Primary Interface: CLI Tools
 
-```
-GET  /api/blockchain/height             # Current block height
-GET  /api/blockchain/blocks             # Recent blocks
-GET  /api/blockchain/block/:height      # Block details by height
-GET  /api/blockchain/stats              # Chain metrics
-GET  /api/address/:addr/balance         # Address balance
-GET  /api/address/:addr/transactions    # Address transaction history
-POST /api/transaction                   # Submit signed transaction
-GET  /api/transaction/:hash             # Transaction details
-GET  /api/mempool                       # Pending transactions
-POST /api/mining/start                  # Begin mining
-POST /api/mining/stop                   # Halt mining
-GET  /api/mining/status                 # Mining status
-GET  /api/network/peers                 # Connected peers
-GET  /api/network/info                  # Network information
-POST /api/wallet/create                 # Create new wallet
-GET  /api/health                        # Health check
-```
+TrinityChain is designed as a command-line-first blockchain. All functionality is accessible through dedicated CLI binaries:
 
-### Example Usage
+| Binary | Purpose | Example |
+|--------|---------|---------|
+| `trinity-wallet` | Wallet creation and management | `cargo run --bin trinity-wallet -- new` |
+| `trinity-send` | Send transactions | `cargo run --bin trinity-send -- <addr> <amount>` |
+| `trinity-balance` | Check address balance | `cargo run --bin trinity-balance -- <address>` |
+| `trinity-node` | Run blockchain node (TUI) | `cargo run --bin trinity-node` |
+| `trinity-miner` | Persistent background miner | `cargo run --bin trinity-miner` |
+| `trinity-mine-block` | Mine a single block | `cargo run --bin trinity-mine-block` |
+| `trinity-history` | Transaction history | `cargo run --bin trinity-history -- <address>` |
+| `trinity-connect` | Connect to peer nodes | `cargo run --bin trinity-connect -- <addr>` |
+| `trinity-addressbook` | Manage address book | `cargo run --bin trinity-addressbook` |
+| `trinity-telegram-bot` | Telegram bot interface | `cargo run --bin trinity-telegram-bot` |
 
-```bash
-# Get blockchain statistics
-curl http://localhost:3000/api/blockchain/stats | jq
+### Terminal User Interface
 
-# Query address balance
-curl http://localhost:3000/api/address/e54369c2ef44435ba34ef6ee881f33b2fa3126c0/balance
-
-# Check mining status
-curl http://localhost:3000/api/mining/status | jq
-```
-
----
-
-## Dashboard
-
-Web-based monitoring interface with real-time updates:
+The `trinity-node` command provides an interactive TUI with:
+- Real-time blockchain stats
+- Peer connection status
+- Mining controls
+- Transaction visualization
 
 ```bash
-# Access at http://localhost:3000
-# The dashboard is served alongside the API server
-./target/release/trinity-api
+cargo run --bin trinity-node
 ```
 
-**Features:**
-- Real-time blockchain stats (height, difficulty, transaction count)
-- Block explorer with transaction details
-- Mining control panel
-- Network peer visualization
+### REST API (Optional)
+
+For programmatic access, an optional REST API server is available:
+
+```bash
+# Start API server (separate from CLI tools)
+cargo run --bin trinity-api
+```
+
+**Note:** The REST API is provided for integration and development purposes. The CLI is the primary and recommended interface.
 
 ---
 
