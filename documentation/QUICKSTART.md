@@ -1,6 +1,6 @@
-# 🚀 Quickstart Guide - Get Mining in 5 Minutes!
+# 🚀 Quickstart Guide - CLI Mining in 5 Minutes
 
-Welcome to the **Sierpinski Triangle Blockchain**! This guide will get you from zero to mining your first blocks.
+Welcome to **TrinityChain** - a geometric blockchain you control entirely from the command line!
 
 ---
 
@@ -8,76 +8,65 @@ Welcome to the **Sierpinski Triangle Blockchain**! This guide will get you from 
 
 ```bash
 # 1. Clone and build
-git clone https://github.com/littlekickoffkittie/trinitychain.git
-cd trinitychain && cargo build --release
+git clone https://github.com/TrinityChain/TrinityChain.git
+cd TrinityChain && cargo build --release
 
-# 2. Create wallet
+# 2. Create your wallet
 cargo run --release --bin trinity-wallet -- new
 
-# 3. Configure your miner address in config.toml
-#    (replace "trinity-default-miner-address" with your address from step 2)
-#    Then start mining:
+# 3. Start mining
 cargo run --release --bin trinity-miner
 ```
 
-That's it! You're now mining triangular cryptocurrency. 🔺⛓️
+**That's it!** You're now mining triangles on TrinityChain. ⛓️🔺
 
 ---
 
-## 📋 Detailed Setup
+## 📋 Detailed CLI Setup
 
 ### Prerequisites
 
 **Required:**
-- Rust 1.90+ ([install here](https://rustup.rs/))
-- SQLite (usually pre-installed on Linux/Mac)
+- Rust 1.70+ ([install here](https://rustup.rs/))
+- SQLite (usually pre-installed)
 - 100MB disk space
 
 **Platform Support:**
-- ✅ Linux (Ubuntu, Debian, Arch, etc.)
-- ✅ macOS
-- ✅ Windows (WSL recommended)
+- ✅ Linux (Ubuntu, Debian, Arch, Fedora)
+- ✅ macOS (Intel & Apple Silicon)
+- ✅ Windows (WSL2 recommended)
 - ✅ Termux (Android)
 
 ### Step 1: Install Rust
 
 ```bash
-# If you don't have Rust installed:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Follow the prompts, then:
 source $HOME/.cargo/env
-
-# Verify installation:
 rustc --version
-# Should show: rustc 1.90.0 or higher
 ```
 
-### Step 2: Clone Repository
+### Step 2: Clone & Build
 
 ```bash
-git clone https://github.com/littlekickoffkittie/trinitychain.git
-cd trinitychain
-```
-
-### Step 3: Build Project
-
-```bash
-# Build all binaries (takes 1-3 minutes first time)
+git clone https://github.com/TrinityChain/TrinityChain.git
+cd TrinityChain
 cargo build --release
-
-# Binaries will be in: target/release/
 ```
 
-**Available Commands:**
-- `trinity-wallet` - View wallet info, create new wallets with `new` subcommand
-- `trinity-miner` - Mine blocks (recommended)
-- `trinity-balance` - Check your balance
-- `trinity-send` - Transfer triangles
-- `trinity-node` - Run P2P node
-- `trinity-api` - REST API server
-- `trinity-guestbook` - Sign and view the guestbook
-- `trinity-user` - User login/logout management
+### Step 3: Create a Wallet
+
+```bash
+# Create new wallet
+cargo run --release --bin trinity-wallet -- new
+
+# List your wallets
+cargo run --release --bin trinity-wallet -- list
+
+# Get your address
+cargo run --release --bin trinity-wallet -- address
+```
+
+**Save your wallet address!** You'll need it for mining.
 
 ### Step 4: Create Wallet
 
@@ -88,127 +77,73 @@ cargo run --release --bin trinity-wallet -- new
 **Output:**
 ```
 🎉 Wallet created successfully!
-📁 Location: /home/you/.TrinityChain/wallet.json
-
-📋 Your Address:
-1KjT9P8mW...xyz123
-
-⚠️  IMPORTANT: Backup your wallet file! Without it, you lose access to your triangles.
-```
-
-**Save your address** - you'll need it for mining!
-
-### Step 5: Start Mining
-
-First, open the `config.toml` file in the project root and replace `"trinity-default-miner-address"` with **YOUR address** from step 4.
-
-```toml
-# In config.toml
-[miner]
-threads = 1
-beneficiary_address = "1KjT9P8mW...xyz123" # <-- PASTE YOUR ADDRESS HERE
-```
-
-Now, start the miner:
+Save your wallet backup:
 ```bash
+# Backup your wallet
+cargo run --release --bin trinity-wallet -- backup <wallet_name>
+```
+
+### Step 4: Start Mining
+
+```bash
+# Start the miner
 cargo run --release --bin trinity-miner
 ```
 
-Alternatively, to mine a single block with a named wallet:
-```bash
-cargo run --release --bin trinity-mine-block --wallet <your_wallet_name>
+**You'll see:**
+```
+⛏️  Mining block #1...
+[████████████████░░░░░] 75% - Attempts: 15,234 - Speed: 1.2 MH/s
+
+✨ BLOCK FOUND!
+├─ Height: 1
+├─ Difficulty: 2
+├─ Hash: 00a3f7b9...8c2d1e4f
+├─ Reward: 50 TRC
+└─ Time: 2.3s
 ```
 
-**What you'll see:**
-```
-╔═══════════════════════════════════════════════════════════════╗
-║         ███████╗██╗███████╗██████╗ ████████╗██████╗ ██╗      ║
-║         ██╔════╝██║██╔════╝██╔══██╗╚══██╔══╝██╔══██╗██║      ║
-║         ███████╗██║█████╗  ██████╔╝   ██║   ██████╔╝██║      ║
-║         ╚════██║██║██╔══╝  ██╔══██╗   ██║   ██╔══██╗██║      ║
-║         ███████║██║███████╗██║  ██║   ██║   ██║  ██║██║      ║
-║         ╚══════╝╚═╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝      ║
-║                    ⛏️  FRACTAL MINER ⛏️                        ║
-╚═══════════════════════════════════════════════════════════════╝
-
-⛏️  Mining block #1 (difficulty: 2)...
-
-┌─────────────────────────────────────────────────────────────┐
-│ ✨ BLOCK FOUND! #1                                           │
-├─────────────────────────────────────────────────────────────┤
-│ Hash: 00a3f7b9...8c2d1e4f                                   │
-│ Attempts: 1,247                                             │
-│ Time: 2.3s                                                  │
-│ Avg Hashrate: 542 H/s                                       │
-└─────────────────────────────────────────────────────────────┘
-
-╔══════════════════════════════════════════════════════════╗
-║                    📊 MINING STATS                       ║
-╠══════════════════════════════════════════════════════════╣
-║ 🔺 Blocks Mined: 1                                       ║
-║ 🏔️  Chain Height: 1                                      ║
-║ 🎯 Difficulty: 2                                         ║
-║ 💎 Current Reward: 50 area units + fees                  ║
-║ 📈 Total Supply: 1,000 / 420,000,000 (0.0002%)          ║
-║ ⏰ Blocks to Halving: 209,999                            ║
-║ 🎚️  Halving Era: 0                                       ║
-╚══════════════════════════════════════════════════════════╝
-```
-
-**Congratulations! You just mined your first block!** 🎉
+**Congratulations!** 🎉 You've mined your first block!
 
 ---
 
-## 🔍 Understanding the Stats
-
-| Stat | Meaning |
-|------|---------|
-| **Blocks Mined** | How many blocks YOU found this session |
-| **Chain Height** | Total blocks in the blockchain |
-| **Difficulty** | How hard it is to find blocks (adjusts every 2,016 blocks) |
-| **Current Reward** | Area units you earn per block (halves every 210k blocks) |
-| **Total Supply** | Total area units mined by everyone / max supply (420M) |
-| **Blocks to Halving** | When mining reward drops by 50% |
-| **Halving Era** | Which halving cycle we're in (0 = first era) |
-
----
-
-## ✅ Next Steps
+## 🔍 Common CLI Commands
 
 ### Check Your Balance
 
 ```bash
-cargo run --release --bin trinity-balance
+cargo run --release --bin trinity-balance -- <address>
 ```
 
-**Output:**
-```
-💰 Your Balance:
-
-Triangle 1:
-  Hash: a3b5c7...xyz
-  Area: 1000.0
-  Owner: 1KjT9P8mW...xyz123
-
-Triangle 2:
-  Hash: d4e6f8...abc
-  Area: 1000.0
-  Owner: 1KjT9P8mW...xyz123
-
-Total: 2 triangles, 2000.0 area units
-```
-
-### Send Triangles to Someone
+### View Transaction History
 
 ```bash
-# Get a friend's address, then:
-cargo run --release --bin trinity-send <FRIEND_ADDRESS> <TRIANGLE_HASH>
-
-# Example:
-cargo run --release --bin trinity-send \
-  1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2 \
-  a3b5c7d9e1f3...xyz123
+cargo run --release --bin trinity-history -- <address>
 ```
+
+### Send Triangles
+
+```bash
+cargo run --release --bin trinity-send -- <recipient_address> <amount> --from <wallet_name>
+```
+
+### Connect to Peers
+
+```bash
+cargo run --release --bin trinity-connect -- <peer_address:port>
+```
+
+### Run a Node
+
+```bash
+cargo run --release --bin trinity-node
+```
+
+This starts an interactive TUI showing:
+- Real-time blockchain stats
+- Peer connections
+- Mining activity
+- Mempool transactions
 
 ### Connect to Another Node (Multi-Player!)
 
