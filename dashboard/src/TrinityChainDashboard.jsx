@@ -1,14 +1,35 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Activity, Boxes, Clock, TrendingUp, Award, Coins, Layers, Zap, Database, Target, Search, ChevronDown, ChevronUp, Network, Cpu, BarChart3, Terminal, RefreshCw, Settings, Play, Pause } from 'lucide-react';
+import { Activity, Boxes, Clock, TrendingUp, Award, Coins, Layers, Zap, Database, Target, Search, ChevronDown, ChevronUp, Network, Cpu, BarChart3, Terminal, RefreshCw, Settings, Play, Pause, Wallet, Send, Zap as Mining } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import WalletManager from './WalletManager';
+import TransactionManager from './TransactionManager';
+import MiningManager from './MiningManager';
+import NetworkManager from './NetworkManager';
+import DebugComponent from './DebugComponent';
 
 const TrinityChainDashboard = () => {
   const [stats, setStats] = useState(null);
   const [blocks, setBlocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // Use empty string for relative URLs (works on Render) or localhost for dev
-  const [nodeUrl, setNodeUrl] = useState(window.location.hostname === 'localhost' ? 'http://localhost:3000' : '');
+  // Determine API URL based on environment
+  const getNodeUrl = () => {
+    // Local development
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'http://localhost:3000';
+    }
+    // GitHub Codespaces: replace -5173. with -3000. in the hostname
+    if (window.location.hostname.includes('.github.dev')) {
+      return window.location.origin.replace('-5173.', '-3000.');
+    }
+    // Production: try to use API on same domain
+    if (window.location.hostname.includes('render.com') || window.location.hostname.includes('vercel.app')) {
+      return window.location.origin;
+    }
+    // Fallback
+    return `${window.location.protocol}//${window.location.hostname}:3000`;
+  };
+  const [nodeUrl, setNodeUrl] = useState(getNodeUrl());
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBlock, setSelectedBlock] = useState(null);
@@ -227,6 +248,9 @@ const TrinityChainDashboard = () => {
       </div>
 
       <div className="max-w-7xl mx-auto p-6">
+        {/* Debug Component */}
+        <DebugComponent />
+        
         {error && (
           <div className="bg-red-900/30 border-l-4 border-red-500 rounded-lg p-4 mb-6 backdrop-blur-sm">
             <div className="flex items-center gap-3">
@@ -245,9 +269,12 @@ const TrinityChainDashboard = () => {
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
           {[
             { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+            { id: 'wallet', label: 'Wallet', icon: Wallet },
+            { id: 'transactions', label: 'Transactions', icon: Send },
+            { id: 'mining', label: 'Mining', icon: Mining },
+            { id: 'network', label: 'Network', icon: Network },
             { id: 'analytics', label: 'Analytics', icon: Activity },
-            { id: 'explorer', label: 'Block Explorer', icon: Boxes },
-            { id: 'network', label: 'Network', icon: Network }
+            { id: 'explorer', label: 'Block Explorer', icon: Boxes }
           ].map(tab => (
             <button
               key={tab.id}
@@ -263,6 +290,34 @@ const TrinityChainDashboard = () => {
             </button>
           ))}
         </div>
+
+        {/* Wallet Tab */}
+        {activeTab === 'wallet' && (
+          <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+            <WalletManager nodeUrl={nodeUrl} />
+          </div>
+        )}
+
+        {/* Transactions Tab */}
+        {activeTab === 'transactions' && (
+          <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+            <TransactionManager nodeUrl={nodeUrl} />
+          </div>
+        )}
+
+        {/* Mining Tab */}
+        {activeTab === 'mining' && (
+          <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
+            <MiningManager nodeUrl={nodeUrl} />
+          </div>
+        )}
+
+        {/* Network Tab */}
+        {activeTab === 'network' && (
+          <div className="space-y-6">
+            <NetworkManager nodeUrl={nodeUrl} />
+          </div>
+        )}
 
         {activeTab === 'dashboard' && stats && (
           <>
@@ -586,21 +641,6 @@ const TrinityChainDashboard = () => {
                   <Line yAxisId="right" type="monotone" dataKey="hashrate" stroke="#a855f7" strokeWidth={2} name="Hashrate" />
                 </LineChart>
               </ResponsiveContainer>
-            </div>
-
-            <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/20 shadow-xl">
-              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Terminal className="text-green-400" />
-                Node Information
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <InfoRow label="Node URL" value={nodeUrl} />
-                <InfoRow label="Protocol Version" value="1.0.0" />
-                <InfoRow label="Network ID" value="TrinityChain" />
-                <InfoRow label="Sync Status" value="Synchronized" />
-                <InfoRow label="Peer Count" value="1" />
-                <InfoRow label="Latest Block" value={`#${stats?.chainHeight || 0}`} />
-              </div>
             </div>
           </>
         )}
