@@ -208,8 +208,7 @@ impl Node {
 
                     let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
                         reward_area: Coord::from_num(reward),
-                        beneficiary_address: address,
-                    });
+                        beneficiary_address: address,                        nonce: 0,                    });
 
                     let mut all_txs = vec![coinbase_tx];
                     all_txs.extend(transactions);

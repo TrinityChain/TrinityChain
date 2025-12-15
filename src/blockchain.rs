@@ -395,6 +395,7 @@ impl Blockchain {
         let coinbase_tx = Transaction::Coinbase(CoinbaseTx {
             reward_area: Coord::from_num(1_000_000.0), // Initial fixed supply
             beneficiary_address: miner_address,
+            nonce: 0,
         });
 
         let transactions = vec![coinbase_tx];

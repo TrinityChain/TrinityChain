@@ -70,6 +70,7 @@ impl Transaction {
                 hasher.update("coinbase".as_bytes());
                 hasher.update(tx.reward_area.to_le_bytes());
                 hasher.update(tx.beneficiary_address);
+                hasher.update(tx.nonce.to_le_bytes());
             }
             Transaction::Transfer(tx) => {
                 hasher.update("transfer".as_bytes());
@@ -214,6 +215,8 @@ impl SubdivisionTx {
 pub struct CoinbaseTx {
     pub reward_area: Coord,
     pub beneficiary_address: Address,
+    #[serde(default)]
+    pub nonce: u64,
 }
 
 impl CoinbaseTx {
