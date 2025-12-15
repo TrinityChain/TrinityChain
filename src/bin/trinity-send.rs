@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use trinitychain::cli::load_blockchain_from_config;
+use trinitychain::crypto::address_from_hex;
 use trinitychain::geometry::Coord;
 use trinitychain::network::NetworkNode;
 use trinitychain::transaction::{Transaction, TransferTx};
@@ -88,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", LOGO.bright_cyan());
 
     let to_address = &args[1];
+    let to_address_bytes = address_from_hex(to_address)?;
     let amount: f64 = args[2].parse()?;
     let amount_coord = Coord::from_num(amount);
 
@@ -138,17 +140,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wallet::load_default_wallet()?
     };
 
-    let from_address_str = from_wallet.address.clone();
-    let mut from_address = [0u8; 32];
-    hex::decode_to_slice(&from_address_str, &mut from_address)
-        .map_err(|e| format!("Invalid from_address in wallet: {}", e))?;
+    let from_address = from_wallet.address.clone();
+    let from_address_bytes = address_from_hex(&from_address)?;
     let keypair = from_wallet.get_keypair()?;
 
     pb.set_message("Loading blockchain...");
-
-    let mut to_address_bytes = [0u8; 32];
-    hex::decode_to_slice(to_address, &mut to_address_bytes)
-        .map_err(|e| format!("Invalid to_address format: {}", e))?;
 
     let (_config, mut chain) = load_blockchain_from_config()?;
 
@@ -187,7 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .utxo_set
         .iter()
         .find(|(hash, triangle)| {
-            triangle.owner == from_address
+            triangle.owner == from_address_bytes
                 && triangle.effective_value() >= amount_coord
                 && !locked_triangles.contains(*hash)
         })
@@ -195,8 +191,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     pb.finish_and_clear();
 
-    let from_display = hex::encode(from_address);
-    let to_display = hex::encode(to_address_bytes);
+    let from_display = if from_address.len() > 20 {
+        format!(
+            "{}...{}",
+            &from_address[..10],
+            &from_address[from_address.len() - 10..]
+        )
+    } else {
+        from_address.clone()
+    };
+    let to_display = if to_address.len() > 20 {
+        format!(
+            "{}...{}",
+            &to_address[..10],
+            &to_address[to_address.len() - 10..]
+        )
+    } else {
+        to_address.to_string()
+    };
 
     println!(
         "{}",
@@ -244,7 +256,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut tx = TransferTx::new(
         *input_hash,
         to_address_bytes,
-        from_address,
+        from_address_bytes,
         amount_coord,
         fee,
         chain.blocks.len() as u64,

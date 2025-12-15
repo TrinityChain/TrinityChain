@@ -4,6 +4,7 @@ use colored::*;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::Color as TableColor;
 use comfy_table::{Attribute, Cell, ContentArrangement, Table};
+use trinitychain::crypto::address_from_hex;
 use trinitychain::persistence::Database;
 
 const LOGO: &str = r#"
@@ -25,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
 
     // Check if address was provided as argument
-    let my_address_str = if args.len() > 1 {
+    let my_address = if args.len() > 1 {
         args[1].clone()
     } else {
         // Otherwise, load from wallet file (support WALLET_NAME env var)
@@ -60,9 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .to_string()
     };
 
-    let mut my_address_bytes = [0u8; 32];
-    hex::decode_to_slice(&my_address_str, &mut my_address_bytes)
-        .map_err(|e| format!("Invalid address format: {}", e))?;
+    let my_address_bytes = address_from_hex(&my_address)?;
 
     let db =
         Database::open("trinitychain.db").map_err(|e| format!("Failed to open database: {}", e))?;
@@ -86,14 +85,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!();
 
-    let addr_display = if my_address_str.len() > 50 {
+    let addr_display = if my_address.len() > 50 {
         format!(
             "{}...{}",
-            &my_address_str[..24],
-            &my_address_str[my_address_str.len() - 24..]
+            &my_address[..24],
+            &my_address[my_address.len() - 24..]
         )
     } else {
-        my_address_str.to_string()
+        my_address.to_string()
     };
 
     println!("{}", format!("📍 Address: {}", addr_display).cyan());
@@ -114,9 +113,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (hash, triangle) in &chain.state.utxo_set {
         if triangle.owner == my_address_bytes {
             my_triangles += 1;
-            total_area += triangle.area();
+            total_area += triangle.effective_value();
             let hash_hex = hex::encode(hash);
-            triangle_list.push((hash_hex, triangle.area()));
+            triangle_list.push((hash_hex, triangle.effective_value()));
         }
     }
 

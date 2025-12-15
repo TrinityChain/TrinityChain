@@ -2,15 +2,12 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use std::collections::HashSet;
 use trinitychain::cli::load_blockchain_from_config;
-use trinitychain::crypto::Address;
+use trinitychain::crypto::{address_from_hex, address_from_string, address_to_hex};
 use trinitychain::geometry::Coord;
 use trinitychain::transaction::{Transaction, TransferTx};
 use trinitychain::wallet;
 
-const GUESTBOOK_ADDRESS: Address = [
-    0x71, 0x66, 0x9c, 0xea, 0x10, 0xe2, 0x3f, 0x0d, 0x7b, 0x8c, 0xb4, 0x03, 0x74, 0x2b, 0xcc, 0x56,
-    0x54, 0x50, 0xbb, 0x58, 0xda, 0x8e, 0x8b, 0xb2, 0x7f, 0x1c, 0xd2, 0x6f, 0x2a, 0xe6, 0x16, 0x67,
-];
+const GUESTBOOK_ADDRESS: &str = "trinity-guestbook-address-00000000000000000";
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -52,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "🖋️  Signing the guestbook...".bright_cyan());
 
-    let (from_wallet, from_address_str, keypair) = match wallet_name {
+    let (from_wallet, from_address, keypair) = match wallet_name {
         Some(name) => {
             let w = wallet::load_named_wallet(name)?;
             let kp = w.get_keypair()?;
@@ -67,9 +64,7 @@ async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn st
 
     println!("Signing with wallet: {}", from_wallet.bright_yellow());
 
-    let mut from_address = [0u8; 32];
-    hex::decode_to_slice(&from_address_str, &mut from_address)
-        .map_err(|e| format!("Invalid from_address in wallet: {}", e))?;
+    let from_address_bytes = address_from_hex(&from_address)?;
 
     let (_config, mut chain) = load_blockchain_from_config()?;
 
@@ -89,14 +84,14 @@ async fn sign(message: &str, wallet_name: Option<&str>) -> Result<(), Box<dyn st
         .utxo_set
         .iter()
         .find(|(hash, triangle)| {
-            triangle.owner == from_address && !locked_triangles.contains(*hash)
+            triangle.owner == from_address_bytes && !locked_triangles.contains(*hash) && triangle.effective_value() >= Coord::from_num(0.0001)
         })
         .ok_or("No UTXOs available to pay for the guestbook signing fee.")?;
 
     let mut tx = TransferTx::new(
         *input_hash,
-        GUESTBOOK_ADDRESS,
-        from_address,
+        address_from_string(GUESTBOOK_ADDRESS),
+        from_address_bytes,
         Coord::from_num(0),      // No value transferred to the guestbook address
         Coord::from_num(0.0001), // A small fee to get the transaction mined
         chain.blocks.len() as u64,
@@ -130,13 +125,13 @@ fn view() -> Result<(), Box<dyn std::error::Error>> {
     for block in &chain.blocks {
         for tx in &block.transactions {
             if let Transaction::Transfer(transfer_tx) = tx {
-                if transfer_tx.new_owner == GUESTBOOK_ADDRESS {
+                if transfer_tx.new_owner == address_from_string(GUESTBOOK_ADDRESS) {
                     if let Some(memo) = &transfer_tx.memo {
                         entries_found = true;
                         println!(
                             "{} from {}: {}",
                             "•".bright_yellow(),
-                            hex::encode(transfer_tx.sender).bright_green(),
+                            address_to_hex(&transfer_tx.sender).bright_green(),
                             memo
                         );
                     }

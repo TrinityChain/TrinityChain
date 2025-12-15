@@ -300,7 +300,7 @@ impl AddressBook {
                     || entry
                         .notes
                         .as_deref()
-                        .map_or(false, |n| n.to_lowercase().contains(&query_lower))
+                        .is_some_and(|n| n.to_lowercase().contains(&query_lower))
             })
             .cloned()
             .collect();
