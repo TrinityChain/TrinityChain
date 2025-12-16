@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! View transaction history for your wallet - Beautiful edition!
 
 use colored::*;

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use trinitychain::persistence::Database;
 use trinitychain::crypto::Address;
 use trinitychain::geometry::Coord;

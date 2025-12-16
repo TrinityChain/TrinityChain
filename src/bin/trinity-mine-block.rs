@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use trinitychain::blockchain::{Blockchain, Block};
 use trinitychain::crypto::{address_from_hex, address_to_hex};
 use trinitychain::transaction::{Transaction, CoinbaseTx};

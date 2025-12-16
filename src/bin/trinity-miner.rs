@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Miner CLI for TrinityChain - Clean TUI edition!
 
 use crossterm::{

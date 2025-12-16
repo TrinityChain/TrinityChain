@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Check wallet balance - Beautiful edition!
 
 use colored::*;

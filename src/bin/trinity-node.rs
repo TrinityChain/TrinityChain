@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Network node for TrinityChain - TUI Edition
 
 use crossterm::{

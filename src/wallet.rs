@@ -412,7 +412,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let wallet_path = temp_dir.path().join("encrypted_wallet.json");
 
-        let password = "strong_password";
+        let password = "test_password_123";
         let wallet = Wallet::new(Some("encrypted_test".to_string())).unwrap();
 
         let encrypted_wallet = EncryptedWallet::from_wallet(&wallet, password).unwrap();

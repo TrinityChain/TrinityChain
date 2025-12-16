@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Send triangles to another address - Beautiful edition!
 
 use colored::*;

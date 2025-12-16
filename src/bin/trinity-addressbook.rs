@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Trinity Address Book CLI - Simple version without clap
 //!
 //! Command-line interface for managing TrinityChain address book

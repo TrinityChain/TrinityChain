@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Combined API Server + Telegram Bot for TrinityChain
 //! Runs both services in one process for efficiency
 

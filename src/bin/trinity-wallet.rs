@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Wallet CLI for TrinityChain - Beautiful edition!
 
 use colored::*;

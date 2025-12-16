@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Restore wallet from encrypted backup
 
 use std::io::{self, Write};

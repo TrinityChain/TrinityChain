@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Backup wallet with password encryption
 
 use std::io::{self, Write};

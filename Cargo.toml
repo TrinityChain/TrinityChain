@@ -22,7 +22,8 @@ toml = "0.8"
 # Cryptography & Security
 sha2 = "0.10"
 secp256k1 = { version = "0.29", features = ["rand-std"] }
-rand = "0.8"
+rand = { version = "0.8.5", features = ["std_rng"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
 aes-gcm = "0.10"
 argon2 = "0.5"
 base64 = "0.21"
@@ -30,13 +31,12 @@ bip39 = "2.2"
 bip32 = "0.5"
 
 # Database & Persistence
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.31.0", features = ["bundled"] }
 tempfile = "3.23.0"
 
 # Async & Networking
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.42", features = ["rt-multi-thread", "sync", "time", "net", "io-util", "macros"] }
 tokio-tungstenite = "0.21"
-futures-util = "0.3"
 
 # HTTP & Web (Optional - only for trinity-api)
 axum = { version = "0.7.9", features = ["macros"], optional = true }
@@ -53,7 +53,7 @@ crossterm = "0.27"
 rpassword = "7.3"
 
 # Utilities
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.42", features = ["serde"] }
 dirs = "5.0"
 hex = "0.4"
 humantime = "2.1"
@@ -80,7 +80,7 @@ default = ["cli"]
 cli = []
 api = ["axum", "tower-http"]
 telegram = ["teloxide"]
-all = ["api", "telegram"]
+full = ["api", "telegram"]
 
 [[bin]]
 name = "help"
@@ -152,6 +152,13 @@ required-features = ["api"]
 name = "trinity-telegram-bot"
 path = "src/bin/trinity-telegram-bot.rs"
 required-features = ["telegram"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
 
 [dev-dependencies]
 axum-test = "14.1.1"

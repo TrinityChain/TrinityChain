@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use log::{info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;

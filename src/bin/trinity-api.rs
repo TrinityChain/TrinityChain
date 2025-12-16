@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Trinity API Server Binary
 //!
 //! Standalone HTTP API server for TrinityChain
