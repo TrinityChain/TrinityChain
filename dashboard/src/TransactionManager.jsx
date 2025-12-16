@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Send, History, DollarSign, ArrowUp, ArrowDown, Clock, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { sign } from '@noble/secp256k1';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 const TransactionManager = ({ nodeUrl }) => {
   const [wallets, setWallets] = useState([]);
@@ -112,18 +114,24 @@ const TransactionManager = ({ nodeUrl }) => {
       const wallet = getWallet(selectedWalletName);
       
       // Create transaction object
-      const transaction = {
-        Transfer: {
-          input_hash: '0x' + '0'.repeat(64), // Placeholder
-          new_owner: toAddress,
-          sender: wallet.address,
-          amount: amount,
-          fee_area: fee,
-          nonce: 0,
-          signature: '0x' + '0'.repeat(128), // Placeholder - in real app, sign with private key
-          public_key: wallet.public_key,
-        }
+      const transferTx = {
+        input_hash: '0x' + '0'.repeat(64), // Placeholder - should be actual UTXO hash
+        new_owner: toAddress,
+        sender: wallet.address,
+        amount: amount,
+        fee_area: fee,
+        nonce: 0,
+        signature: null, // Will be set after signing
+        public_key: wallet.public_key,
       };
+
+      const transaction = {
+        Transfer: transferTx
+      };
+
+      // Sign the transaction
+      const privateKeyBytes = hexToBytes(wallet.private_key);
+      transferTx.signature = signTransaction(transaction, privateKeyBytes);
 
       const response = await fetch(`${nodeUrl}/api/transaction`, {
         method: 'POST',
@@ -156,9 +164,62 @@ const TransactionManager = ({ nodeUrl }) => {
     }
   };
 
-  const showMessage = (type, text) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+  const signTransaction = (tx, privateKey) => {
+    // Create signable message
+    const transfer = tx.Transfer;
+    const message = new Uint8Array(8 + 32 + 32 + 32 + 8 + 8 + 8); // "TRANSFER:" (8) + hashes (32*3) + amounts (8*2) + nonce (8)
+    
+    // "TRANSFER:"
+    const transferBytes = new TextEncoder().encode('TRANSFER:');
+    message.set(transferBytes, 0);
+    
+    let offset = transferBytes.length;
+    
+    // input_hash (32 bytes)
+    const inputHashBytes = hexToBytes(transfer.input_hash.slice(2)); // remove 0x
+    message.set(inputHashBytes, offset);
+    offset += 32;
+    
+    // new_owner (32 bytes)
+    const newOwnerBytes = hexToBytes(transfer.new_owner);
+    message.set(newOwnerBytes, offset);
+    offset += 32;
+    
+    // sender (32 bytes)
+    const senderBytes = hexToBytes(transfer.sender);
+    message.set(senderBytes, offset);
+    offset += 32;
+    
+    // amount (f64 little endian)
+    const amountView = new DataView(message.buffer, offset, 8);
+    amountView.setFloat64(0, parseFloat(transfer.amount), true);
+    offset += 8;
+    
+    // fee_area (f64 little endian)
+    const feeView = new DataView(message.buffer, offset, 8);
+    feeView.setFloat64(0, parseFloat(transfer.fee_area), true);
+    offset += 8;
+    
+    // nonce (u64 little endian)
+    const nonceView = new DataView(message.buffer, offset, 8);
+    nonceView.setBigUint64(0, BigInt(transfer.nonce), true);
+    
+    // Hash the message
+    const messageHash = sha256(message);
+    
+    // Sign
+    const signature = sign(messageHash, privateKey);
+    
+    // Return compact signature as hex
+    return '0x' + Array.from(signature).map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const hexToBytes = (hex) => {
+    const bytes = [];
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes.push(parseInt(hex.substr(i, 2), 16));
+    }
+    return new Uint8Array(bytes);
   };
 
   const formatAddress = (addr) => {

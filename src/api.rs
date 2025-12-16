@@ -409,6 +409,7 @@ pub struct StartMiningRequest {
 struct WalletResponse {
     address: String,
     public_key: String,
+    private_key: String,
 }
 
 #[derive(Serialize)]
@@ -832,6 +833,7 @@ async fn create_wallet() -> Result<Json<WalletResponse>, ApiError> {
     Ok(Json(WalletResponse {
         address: hex::encode(keypair.address()),
         public_key: hex::encode(keypair.public_key.serialize()),
+        private_key: hex::encode(keypair.secret_key.as_ref()),
     }))
 }
 

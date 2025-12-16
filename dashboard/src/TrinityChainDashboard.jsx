@@ -18,6 +18,10 @@ const TrinityChainDashboard = () => {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       return 'http://localhost:3000';
     }
+    // Dev container environment - use localhost
+    if (window.location.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+      return 'http://localhost:3000';
+    }
     // GitHub Codespaces: replace -5173. with -3000. in the hostname
     if (window.location.hostname.includes('.github.dev')) {
       return window.location.origin.replace('-5173.', '-3000.');
@@ -66,7 +70,23 @@ const TrinityChainDashboard = () => {
       const statsData = await statsRes.json();
       const blocksData = await blocksRes.json();
 
-      setStats(statsData);
+      // Map API response to expected format
+      const mappedStats = {
+        chainHeight: statsData.height || 0,
+        difficulty: statsData.difficulty || 0,
+        mempoolSize: statsData.mempool_size || 0,
+        totalBlocks: statsData.total_blocks || 0,
+        // Add dummy values for missing fields
+        blocksMined: statsData.height || 0,
+        totalEarned: 0,
+        currentReward: 0,
+        avgBlockTime: 10, // dummy
+        uptime: 0,
+        totalSupply: 0,
+        maxSupply: 420000000,
+      };
+
+      setStats(mappedStats);
       setBlocks(blocksData.blocks || []);
 
       // Build chart data from recent blocks
@@ -325,36 +345,36 @@ const TrinityChainDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'dashboard' && stats && (
+        {activeTab === 'dashboard' && (
           <>
             {/* Hero Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <HeroStatCard
                 icon={<Boxes className="text-purple-400" size={28} />}
                 label="Chain Height"
-                value={formatFullNumber(stats.chainHeight || 0)}
-                subtext={`${formatNumber(stats.blocksMined || 0)} mined`}
+                value={stats ? formatFullNumber(stats.chainHeight || 0) : "Loading..."}
+                subtext={stats ? `${formatNumber(stats.blocksMined || 0)} mined` : ""}
                 gradient="from-purple-600 to-purple-800"
               />
               <HeroStatCard
                 icon={<Zap className="text-yellow-400" size={28} />}
                 label="Hashrate"
-                value={`${calculateHashrate()} H/s`}
-                subtext={`Difficulty: ${stats.difficulty || 0}`}
+                value={stats ? `${calculateHashrate()} H/s` : "Loading..."}
+                subtext={stats ? `Difficulty: ${stats.difficulty || 0}` : ""}
                 gradient="from-yellow-600 to-orange-600"
               />
               <HeroStatCard
                 icon={<Coins className="text-green-400" size={28} />}
                 label="Total Earned"
-                value={formatNumber(stats.totalEarned || 0)}
-                subtext={`${formatNumber(stats.currentReward || 0)} per block`}
+                value={stats ? formatNumber(stats.totalEarned || 0) : "Loading..."}
+                subtext={stats ? `${formatNumber(stats.currentReward || 0)} per block` : ""}
                 gradient="from-green-600 to-emerald-600"
               />
               <HeroStatCard
                 icon={<Clock className="text-blue-400" size={28} />}
                 label="Block Time"
-                value={`${(stats.avgBlockTime || 0).toFixed(2)}s`}
-                subtext={`Uptime: ${formatTime(stats.uptime || 0)}`}
+                value={stats ? `${(stats.avgBlockTime || 0).toFixed(2)}s` : "Loading..."}
+                subtext={stats ? `Uptime: ${formatTime(stats.uptime || 0)}` : ""}
                 gradient="from-blue-600 to-cyan-600"
               />
             </div>
@@ -377,21 +397,21 @@ const TrinityChainDashboard = () => {
                   <div className="flex justify-between items-end">
                     <div>
                       <p className="text-purple-300 text-sm">Current Supply</p>
-                      <p className="text-3xl font-bold">{formatNumber(stats.totalSupply || 0)}</p>
+                      <p className="text-3xl font-bold">{formatNumber(stats?.totalSupply || 0)}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-purple-300 text-sm">Max Supply</p>
-                      <p className="text-2xl font-bold">{formatNumber(stats.maxSupply || 420000000)}</p>
+                      <p className="text-2xl font-bold">{formatNumber(stats?.maxSupply || 420000000)}</p>
                     </div>
                   </div>
                   <div className="relative">
                     <div className="w-full bg-slate-800 rounded-full h-6 overflow-hidden">
                       <div
                         className="h-6 rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 transition-all duration-1000 flex items-center justify-end pr-3"
-                        style={{ width: `${Math.min(100, calculatePercentage(stats.totalSupply || 0, stats.maxSupply || 420000000))}%` }}
+                        style={{ width: `${Math.min(100, calculatePercentage(stats?.totalSupply || 0, stats?.maxSupply || 420000000))}%` }}
                       >
                         <span className="text-xs font-bold text-white drop-shadow-lg">
-                          {calculatePercentage(stats.totalSupply || 0, stats.maxSupply || 420000000)}%
+                          {calculatePercentage(stats?.totalSupply || 0, stats?.maxSupply || 420000000)}%
                         </span>
                       </div>
                     </div>
@@ -399,11 +419,11 @@ const TrinityChainDashboard = () => {
                   <div className="grid grid-cols-3 gap-3 pt-2">
                     <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                       <p className="text-purple-300 text-xs mb-1">Remaining</p>
-                      <p className="font-bold text-sm">{formatNumber((stats.maxSupply || 420000000) - (stats.totalSupply || 0))}</p>
+                      <p className="font-bold text-sm">{formatNumber((stats?.maxSupply || 420000000) - (stats?.totalSupply || 0))}</p>
                     </div>
                     <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                       <p className="text-purple-300 text-xs mb-1">Circulating</p>
-                      <p className="font-bold text-sm">{formatNumber(stats.totalSupply || 0)}</p>
+                      <p className="font-bold text-sm">{formatNumber(stats?.totalSupply || 0)}</p>
                     </div>
                     <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                       <p className="text-purple-300 text-xs mb-1">Burned</p>
@@ -430,12 +450,12 @@ const TrinityChainDashboard = () => {
                     <div>
                       <p className="text-pink-300 text-sm">Current Era</p>
                       <p className="text-5xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-                        {stats.halvingEra || 0}
+                        {stats?.halvingEra || 0}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-pink-300 text-sm">Current Reward</p>
-                      <p className="text-3xl font-bold text-green-400">{formatNumber(stats.currentReward || 0)}</p>
+                      <p className="text-3xl font-bold text-green-400">{formatNumber(stats?.currentReward || 0)}</p>
                     </div>
                   </div>
                   <div className="relative">
@@ -443,11 +463,11 @@ const TrinityChainDashboard = () => {
                       <div
                         className="h-6 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-pink-500 transition-all duration-1000 flex items-center justify-end pr-3"
                         style={{
-                          width: `${Math.min(100, Math.max(0, 100 - ((stats.blocksToHalving || 0) / 210000 * 100)))}%`
+                          width: `${Math.min(100, Math.max(0, 100 - ((stats?.blocksToHalving || 0) / 210000 * 100)))}%`
                         }}
                       >
                         <span className="text-xs font-bold text-white drop-shadow-lg">
-                          {Math.max(0, 100 - ((stats.blocksToHalving || 0) / 210000 * 100)).toFixed(1)}%
+                          {Math.max(0, 100 - ((stats?.blocksToHalving || 0) / 210000 * 100)).toFixed(1)}%
                         </span>
                       </div>
                     </div>
@@ -455,15 +475,15 @@ const TrinityChainDashboard = () => {
                   <div className="grid grid-cols-3 gap-3 pt-2">
                     <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                       <p className="text-pink-300 text-xs mb-1">Blocks Left</p>
-                      <p className="font-bold text-sm">{formatNumber(stats.blocksToHalving || 0)}</p>
+                      <p className="font-bold text-sm">{formatNumber(stats?.blocksToHalving || 0)}</p>
                     </div>
                     <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                       <p className="text-pink-300 text-xs mb-1">Next Block</p>
-                      <p className="font-bold text-sm">{formatNumber((stats.chainHeight || 0) + (stats.blocksToHalving || 0))}</p>
+                      <p className="font-bold text-sm">{formatNumber((stats?.chainHeight || 0) + (stats?.blocksToHalving || 0))}</p>
                     </div>
                     <div className="bg-slate-800/50 rounded-lg p-3 text-center">
                       <p className="text-pink-300 text-xs mb-1">Next Reward</p>
-                      <p className="font-bold text-sm">{formatNumber((stats.currentReward || 1000) / 2)}</p>
+                      <p className="font-bold text-sm">{formatNumber((stats?.currentReward || 1000) / 2)}</p>
                     </div>
                   </div>
                 </div>

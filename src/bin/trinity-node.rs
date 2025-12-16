@@ -16,10 +16,8 @@ use trinitychain::persistence::Database;
 #[derive(Clone)]
 struct NodeStats {
     chain_height: u64,
-    peer_count: usize,
     uptime_secs: u64,
     status: String,
-    peers: Vec<String>,
     last_block_hash: String,
 }
 
@@ -27,10 +25,8 @@ impl Default for NodeStats {
     fn default() -> Self {
         Self {
             chain_height: 0,
-            peer_count: 0,
             uptime_secs: 0,
             status: "Initializing...".to_string(),
-            peers: Vec::new(),
             last_block_hash: "N/A".to_string(),
         }
     }
